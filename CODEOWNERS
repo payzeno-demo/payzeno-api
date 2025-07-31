@@ -1,0 +1,8 @@
+# payzeno-api code owners.
+#
+# Platform owns this repo. The extra lines exist because three surfaces here are
+# operationally or contractually owned by someone else, and we would rather have the
+# review request fire automatically than find out in an incident.
+#
+# One approval required (org default). Last matching pattern wins — that is a GitHub
+# rule, not ours, so ordering below is deliberate: broad first, specific last.
