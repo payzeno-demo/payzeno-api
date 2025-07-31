@@ -1,0 +1,250 @@
+name: ci
+
+# payzeno-api CI.
+#
+# payzeno-api resolves "@payzeno/contracts": "workspace:*", so every job checks the
+# contracts repo out as a sibling and installs from the generated workspace root. If
+# contracts main is broken, this repo is red — that is intentional. Pin the contracts
+# ref on a PR by adding a `contracts-ref: <sha>` line to the PR body.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  merge_group:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '20.11.1'
+  PNPM_VERSION: '8.15.8'
+  CONTRACTS_REF: main
+
+jobs:
+  lint:
+    name: lint + typecheck
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: payzeno-api, fetch-depth: 0 }
+      - uses: actions/checkout@v4
+        with:
+          repository: payzeno/payzeno-contracts
+          ref: ${{ env.CONTRACTS_REF }}
+          token: ${{ secrets.PAYZENO_CI_TOKEN }}
+          path: payzeno-contracts
+      - name: assemble workspace
+        run: |
+          cp payzeno-api/.github/workspace/pnpm-workspace.yaml .
+          cp payzeno-api/.github/workspace/package.json .
+          cp payzeno-api/pnpm-lock.yaml .
+      - uses: pnpm/action-setup@v3
+        with: { version: '${{ env.PNPM_VERSION }}' }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @payzeno/contracts build
+      - name: prettier
+        run: pnpm --filter @payzeno/api format:check
+      - name: eslint (includes the layer-boundary rule)
+        run: pnpm --filter @payzeno/api lint
+      - name: tsc --noEmit
+        run: pnpm --filter @payzeno/api typecheck
+
+  test:
+    name: unit (jest, 80% line gate)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: payzeno-api }
+      - uses: actions/checkout@v4
+        with:
+          repository: payzeno/payzeno-contracts
+          ref: ${{ env.CONTRACTS_REF }}
+          token: ${{ secrets.PAYZENO_CI_TOKEN }}
+          path: payzeno-contracts
+      - name: assemble workspace
+        run: |
+          cp payzeno-api/.github/workspace/pnpm-workspace.yaml .
+          cp payzeno-api/.github/workspace/package.json .
+          cp payzeno-api/pnpm-lock.yaml .
+      - uses: pnpm/action-setup@v3
+        with: { version: '${{ env.PNPM_VERSION }}' }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @payzeno/contracts build
+      - name: jest
+        run: pnpm --filter @payzeno/api test:cov -- --ci --reporters=default --reporters=jest-junit
+        env:
+          JEST_JUNIT_OUTPUT_DIR: payzeno-api/reports
+          TZ: UTC
+      - name: upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: payzeno-api/coverage/
+          retention-days: 7
+      - name: publish test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit
+          path: payzeno-api/reports/
+
+  e2e:
+    name: e2e (supertest against a booted app)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: payzeno
+          POSTGRES_PASSWORD: payzeno
+          POSTGRES_DB: payzeno_api_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U payzeno"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: payzeno-api }
+      - uses: actions/checkout@v4
+        with:
+          repository: payzeno/payzeno-contracts
+          ref: ${{ env.CONTRACTS_REF }}
+          token: ${{ secrets.PAYZENO_CI_TOKEN }}
+          path: payzeno-contracts
+      - name: assemble workspace
+        run: |
+          cp payzeno-api/.github/workspace/pnpm-workspace.yaml .
+          cp payzeno-api/.github/workspace/package.json .
+          cp payzeno-api/pnpm-lock.yaml .
+      - uses: pnpm/action-setup@v3
+        with: { version: '${{ env.PNPM_VERSION }}' }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @payzeno/contracts build
+      - name: migrations (the e2e suite asserts the schema, it does not synchronize)
+        working-directory: payzeno-api
+        run: pnpm migration:run
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgres://payzeno:payzeno@localhost:5432/payzeno_api_test
+      - name: jest --config jest.e2e.config.ts
+        working-directory: payzeno-api
+        run: pnpm test:e2e
+        env:
+          NODE_ENV: test
+          TZ: UTC
+          DATABASE_URL: postgres://payzeno:payzeno@localhost:5432/payzeno_api_test
+          REDIS_URL: redis://localhost:6379/1
+          # Every upstream is faked. InMemoryTransport + InMemoryLedgerClient own the
+          # sockets; a real egress attempt in e2e is a test bug and fails loudly.
+          LEDGER_BASE_URL: http://ledger.invalid
+          BILLING_LEGACY_BASE_URL: http://billing.invalid
+          VAULT_BASE_URL: http://vault.invalid
+          WORLDFLOW_BASE_URL: http://worldflow.invalid
+          NORDPAY_BASE_URL: http://nordpay.invalid
+          INTERNAL_API_SECRET: ci-internal-secret
+          SESSION_SECRET: ci-session-secret-32-bytes-minimum-ok
+          API_KEY_PEPPER: ci-pepper
+          IDEMPOTENCY_BACKEND: postgres
+          AWS_REGION: eu-west-1
+
+  contract:
+    name: ledger route contract
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: payzeno-api }
+      - uses: actions/checkout@v4
+        with:
+          repository: payzeno/payzeno-contracts
+          ref: ${{ env.CONTRACTS_REF }}
+          token: ${{ secrets.PAYZENO_CI_TOKEN }}
+          path: payzeno-contracts
+      - name: assemble workspace
+        run: |
+          cp payzeno-api/.github/workspace/pnpm-workspace.yaml .
+          cp payzeno-api/.github/workspace/package.json .
+          cp payzeno-api/pnpm-lock.yaml .
+      - uses: pnpm/action-setup@v3
+        with: { version: '${{ env.PNPM_VERSION }}' }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @payzeno/contracts build
+      # Asserts every path LedgerHttpClient calls exists in contracts/ledger-openapi.json.
+      # This is the job that catches a ledger route rename before prod does.
+      - name: contract suite
+        working-directory: payzeno-api
+        run: pnpm exec jest --config jest.config.ts --roots test/contract --coverage=false
+
+  image:
+    name: docker build
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: payzeno-api }
+      - uses: actions/checkout@v4
+        with:
+          repository: payzeno/payzeno-contracts
+          ref: ${{ env.CONTRACTS_REF }}
+          token: ${{ secrets.PAYZENO_CI_TOKEN }}
+          path: payzeno-contracts
+      - name: assemble workspace
+        run: |
+          cp payzeno-api/.github/workspace/pnpm-workspace.yaml .
+          cp payzeno-api/.github/workspace/package.json .
+          cp payzeno-api/pnpm-lock.yaml .
+          cp payzeno-api/pnpm-lock.yaml .
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: payzeno-api/Dockerfile
+          push: false
+          load: true
+          tags: payzeno/api:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: boot the image and hit /healthz
+        run: |
+          docker run -d --name api-smoke -p 8080:8080 \
+            -e NODE_ENV=production -e DATABASE_URL=postgres://x/x -e REDIS_URL=redis://x \
+            -e SESSION_SECRET=ci-session-secret-32-bytes-minimum-ok \
+            -e API_KEY_PEPPER=ci -e INTERNAL_API_SECRET=ci -e AWS_REGION=eu-west-1 \
+            payzeno/api:${{ github.sha }}
+          for i in $(seq 1 30); do
+            curl -fsS http://localhost:8080/healthz && exit 0
+            sleep 2
+          done
+          echo "::error::image never became healthy"
+          docker logs api-smoke
+          exit 1

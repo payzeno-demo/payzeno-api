@@ -1,0 +1,28 @@
+# Local-only override for the payzeno-api service.
+#
+# The service itself is defined ONCE, in payzeno-infrastructure/docker-compose.yml
+# (interfaces.md §6.2). This file only extends it so you can iterate on the API without
+# rebuilding the image. Do not add ports, depends_on or new services here — infra owns
+# the topology and apager will send it back.
+#
+#   docker compose -f ../payzeno-infrastructure/docker-compose.yml \
+#                  -f docker-compose.override.yml up payzeno-api
+
+services:
+  payzeno-api:
+    extends:
+      file: ../payzeno-infrastructure/docker-compose.yml
+      service: payzeno-api
+    build:
+      context: ..
+      dockerfile: payzeno-api/Dockerfile
+      target: deps
+    command: ['pnpm', '--filter', '@payzeno/api', 'start:dev']
+    environment:
+      NODE_ENV: development
+      LOG_LEVEL: debug
+      IDEMPOTENCY_BACKEND: postgres
+    volumes:
+      - ./src:/repo/payzeno-api/src:cached
+      - ./test:/repo/payzeno-api/test:cached
+      - ../payzeno-contracts/src:/repo/payzeno-contracts/src:cached

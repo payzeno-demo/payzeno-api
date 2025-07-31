@@ -1,0 +1,121 @@
+name: deploy
+
+# Builds the image once, pushes it to ECR, and rolls the ECS service.
+# staging is automatic on green main. production is a manual dispatch with an
+# environment approval — apager and osquash are the reviewers on that gate.
+#
+# The task definition lives in payzeno-infrastructure (module.ecs_service_api). This
+# workflow only swaps the image tag; it never edits infra.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: target environment
+        type: choice
+        options: [staging, production]
+        default: staging
+        required: true
+      image_tag:
+        description: image tag to promote (defaults to this commit)
+        type: string
+        required: false
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-${{ inputs.environment || 'staging' }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: eu-west-1
+  ECR_REPOSITORY: payzeno/api
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: payzeno-api }
+      - uses: actions/checkout@v4
+        with:
+          repository: payzeno/payzeno-contracts
+          ref: main
+          token: ${{ secrets.PAYZENO_CI_TOKEN }}
+          path: payzeno-contracts
+      - name: assemble workspace
+        run: |
+          cp payzeno-api/.github/workspace/pnpm-workspace.yaml .
+          cp payzeno-api/.github/workspace/package.json .
+          cp payzeno-api/pnpm-lock.yaml .
+      - id: meta
+        run: echo "tag=${{ inputs.image_tag || github.sha }}" >> "$GITHUB_OUTPUT"
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_CI_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: payzeno-api/Dockerfile
+          push: true
+          tags: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ steps.meta.outputs.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  migrate:
+    needs: build-and-push
+    runs-on: ubuntu-22.04
+    environment: ${{ inputs.environment || 'staging' }}
+    timeout-minutes: 20
+    steps:
+      # Migrations run as a one-off ECS task inside the VPC, never from the runner.
+      # Every migration in this repo is additive-then-backfill; a deploy is never
+      # blocked on a migration and a migration never depends on the new image.
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_CI_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: run typeorm migrations
+        run: |
+          aws ecs run-task \
+            --cluster payzeno-${{ inputs.environment || 'staging' }} \
+            --task-definition payzeno-api-migrate \
+            --launch-type FARGATE \
+            --overrides '{"containerOverrides":[{"name":"api","command":["pnpm","migration:run"]}]}' \
+            --network-configuration "$(cat .github/ecs-network.json 2>/dev/null || echo '{}')" \
+            --wait
+
+  release:
+    needs: [build-and-push, migrate]
+    runs-on: ubuntu-22.04
+    environment: ${{ inputs.environment || 'staging' }}
+    timeout-minutes: 30
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_CI_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: roll the service
+        run: |
+          aws ecs update-service \
+            --cluster payzeno-${{ inputs.environment || 'staging' }} \
+            --service payzeno-api \
+            --force-new-deployment
+          aws ecs wait services-stable \
+            --cluster payzeno-${{ inputs.environment || 'staging' }} \
+            --services payzeno-api
+      - name: smoke /readyz through the ALB
+        run: |
+          curl -fsS --retry 10 --retry-delay 5 --retry-all-errors \
+            "https://api.${{ inputs.environment == 'production' && '' || 'staging.' }}payzeno.com/readyz"
