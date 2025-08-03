@@ -1,2 +1,4 @@
 {
   "name": "payzeno-workspace",
+  "private": true,
+  "packageManager": "pnpm@8.15.8",
