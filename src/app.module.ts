@@ -12,3 +12,10 @@
  * objects and — worse — two ioredis clients, two SQS clients and two of every connection the
  * config module opens. One instance, reached through the module that everything imports.
  * docs/adr/0001-nestjs-module-boundaries.md §3.
+ *
+ * `MetaController` is registered here rather than in a `MetaModule`. It has one dependency-free
+ * handler; a module for it would be four lines of ceremony around a constant. It has been that
+ * way for eleven months and it is the only controller in the repo without a home module.
+ */
+import { MiddlewareConsumer, Module, type NestModule, ValidationPipe } from '@nestjs/common';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
