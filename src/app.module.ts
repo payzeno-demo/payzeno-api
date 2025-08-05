@@ -19,3 +19,10 @@
  */
 import { MiddlewareConsumer, Module, type NestModule, ValidationPipe } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
+import { TypeOrmModule } from '@nestjs/typeorm';
+
+import { ApiModule } from './api/api.module';
+import { AuditModule } from './audit/audit.module';
+import { AuthModule } from './auth/auth.module';
+import { RateLimitGuard } from './auth/guards/rate-limit.guard';
+import { BillingModule } from './billing/billing.module';
