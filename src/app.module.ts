@@ -33,3 +33,11 @@ import { IdempotencyInterceptor } from './common/idempotency/idempotency.interce
 import { ApiVersionInterceptor } from './common/interceptors/api-version.interceptor';
 import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor';
 import { RateLimitInterceptor } from './common/interceptors/rate-limit.interceptor';
+import { SerializerInterceptor } from './common/interceptors/serializer.interceptor';
+import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware';
+import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
+import { StructuredLoggerMiddleware } from './common/middleware/structured-logger.middleware';
+import { RedactionInterceptor } from './common/redaction/redaction.interceptor';
+import { API_CONFIG, type ApiConfig } from './config/api-config.type';
+import { buildDataSourceOptions } from './config/database.config';
+import { DisputesModule } from './disputes/disputes.module';
