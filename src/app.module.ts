@@ -55,3 +55,10 @@ import { ReportingModule } from './reporting/reporting.module';
 import { StaffModule } from './staff/staff.module';
 import { SupportModule } from './support/support.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
+
+/**
+ * The root connection. `synchronize` and `migrationsRun` are both false in
+ * `buildDataSourceOptions` — the schema is owned by `src/migrations/` and by nothing else.
+ */
+const TYPEORM_ROOT = TypeOrmModule.forRootAsync({
+  imports: [CommonModule],
