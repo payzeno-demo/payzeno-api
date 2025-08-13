@@ -47,3 +47,28 @@ mkdir payzeno && cd payzeno
 git clone git@github.com:payzeno/payzeno-contracts.git
 git clone git@github.com:payzeno/payzeno-api.git
 cp payzeno-api/.github/workspace/pnpm-workspace.yaml .
+cp payzeno-api/.github/workspace/package.json .
+cp payzeno-api/pnpm-lock.yaml .
+
+corepack enable && corepack prepare pnpm@8.15.8 --activate
+pnpm install
+pnpm --filter @payzeno/contracts build
+```
+
+Then, from `payzeno-api/`:
+
+```bash
+cp .env.example .env
+docker compose -f ../payzeno-infrastructure/docker-compose.yml up -d \
+  payzeno-postgres-api payzeno-redis payzeno-localstack payzeno-vault
+pnpm migration:run
+pnpm start:dev            # http://localhost:8080
+```
+
+`GET /healthz` is liveness and touches nothing. `GET /readyz` pings Postgres, Redis and
+the ledger — if it is red on a fresh machine it is almost always the ledger, not you.
+
+To run the whole world instead (nginx, ledger, legacy biller, console):
+
+```bash
+docker compose -f ../payzeno-infrastructure/docker-compose.yml \
