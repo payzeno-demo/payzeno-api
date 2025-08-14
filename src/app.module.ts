@@ -55,3 +55,17 @@ import { ReportingModule } from './reporting/reporting.module';
 import { StaffModule } from './staff/staff.module';
 import { SupportModule } from './support/support.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
+
+/**
+ * The root connection. `synchronize` and `migrationsRun` are both false in
+ * `buildDataSourceOptions` — the schema is owned by `src/migrations/` and by nothing else.
+ */
+const TYPEORM_ROOT = TypeOrmModule.forRootAsync({
+  imports: [CommonModule],
+  inject: [API_CONFIG],
+  useFactory: (config: ApiConfig) => buildDataSourceOptions(config),
+});
+
+/**
+ * Global interceptors, registered in api-surface.md §1.5 order. Nest runs them outermost-first
+ * on the way in and innermost-first on the way out, which is why `RedactionInterceptor` is
