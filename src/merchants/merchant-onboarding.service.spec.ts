@@ -1,0 +1,85 @@
+import type { EntityManager } from 'typeorm';
+
+import { ValidationException } from 'src/common/errors/api.exception';
+import { LedgerUnavailableException } from 'src/common/errors/upstream.exceptions';
+import { IdFactory } from 'src/common/ids/id.factory';
+import { NoopLogger } from 'src/common/logging/logger';
+import type { TransactionManager } from 'src/common/persistence/transaction.manager';
+import type { EventPublisher } from 'src/events/publisher';
+import type { LedgerHttpClient } from 'src/ledger/ledger-http.client';
+import { MerchantOnboardingService } from 'src/merchants/merchant-onboarding.service';
+import type { MerchantRepository } from 'src/merchants/merchant.repository';
+
+import { makeCreateMerchantRequest } from 'test/factories/merchant.factory';
+import { FixedClock } from 'test/support/fixed-clock';
+
+/**
+ * Chain E of the blueprint, and the only cross-repo WRITE payzeno-api performs inside a
+ * request. The ledger bootstrap is deliberately INSIDE the transaction (PAY-1284): the
+ * alternative leaves a merchant that exists here with no chart of accounts there, and the
+ * first authorisation for that merchant then fails in the money path.
+ *
+ * `AccountResolver.get_or_create` is idempotent ledger-side, so the staff operator's retry
+ * with the same Idempotency-Key is free. An orphaned merchant is not.
+ */
+describe('MerchantOnboardingService', () => {
+  const clock = new FixedClock('2026-02-01T10:00:00.000Z');
+
+  let service: MerchantOnboardingService;
+
+  describe('duplicate detection', () => {
+    it('rejects a legal name already onboarded in the same country', async () => {
+      merchants.findByLegalName.mockResolvedValue({ id: 'mch_existing' });
+
+      await expect(service.onboard(request, true, 'stf_operator')).rejects.toBeInstanceOf(
+        ValidationException,
+      );
+      expect(merchants.insertMapped).not.toHaveBeenCalled();
+    });
+
+    it('points the field error at legal_name so the console highlights the right input', async () => {
+      merchants.findByLegalName.mockResolvedValue({ id: 'mch_existing' });
+
+      try {
+        await service.onboard(request, true, 'stf_operator');
+        throw new Error('expected a ValidationException');
+      } catch (err) {
+        const fieldErrors = (err as ValidationException).fieldErrors;
+        expect(fieldErrors[0]).toMatchObject({ path: 'legal_name', code: 'duplicate' });
+        expect(fieldErrors[0].message).toContain('mch_existing');
+      }
+    });
+
+    it('checks before it inserts, not after the 23505', async () => {
+      await service.onboard(request, true, 'stf_operator');
+
+      // Note the raw values: the duplicate check runs against the request as received,
+      // before `build()` trims and upper-cases. `findByLegalName` is lower()-compared and
+      // the trailing whitespace has never mattered in practice — but a console that stops
+      // trimming client-side would slip a duplicate past this. Filed as PAY-2093.
+      expect(merchants.findByLegalName).toHaveBeenCalledWith(
+        '  Aurora Coffee Roasters Ltd  ',
+        'gb',
+      );
+    });
+  });
+
+  describe('when the ledger is unavailable', () => {
+    it('rethrows so the transaction rolls back — better no merchant than no accounts', async () => {
+      ledger.bootstrapAccounts.mockRejectedValue(
+        new LedgerUnavailableException('bootstrapAccounts', 'connect timeout'),
+      );
+
+      await expect(service.onboard(request, true, 'stf_operator')).rejects.toBeInstanceOf(
+        LedgerUnavailableException,
+      );
+    });
+
+    it('rethrows any other upstream failure too', async () => {
+      class Weird extends Error {}
+      ledger.bootstrapAccounts.mockRejectedValue(new Weird('unparseable'));
+
+      await expect(service.onboard(request, true, 'stf_operator')).rejects.toBeInstanceOf(Weird);
+    });
+  });
+});
