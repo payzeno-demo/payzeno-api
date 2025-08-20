@@ -41,3 +41,45 @@ import { RedactionInterceptor } from './common/redaction/redaction.interceptor';
 import { API_CONFIG, type ApiConfig } from './config/api-config.type';
 import { buildDataSourceOptions } from './config/database.config';
 import { DisputesModule } from './disputes/disputes.module';
+import { EventsModule } from './events/events.module';
+import { HealthModule } from './health/health.module';
+import { InternalModule } from './internal/internal.module';
+import { JobsModule } from './jobs/jobs.module';
+import { LedgerModule } from './ledger/ledger.module';
+import { MerchantsModule } from './merchants/merchants.module';
+import { MetaController } from './meta/meta.controller';
+import { NotificationsModule } from './notifications/notifications.module';
+import { PaymentsModule } from './payments/payments.module';
+import { RefundsModule } from './refunds/refunds.module';
+import { ReportingModule } from './reporting/reporting.module';
+import { StaffModule } from './staff/staff.module';
+import { SupportModule } from './support/support.module';
+import { WebhooksModule } from './webhooks/webhooks.module';
+
+/**
+ * The root connection. `synchronize` and `migrationsRun` are both false in
+ * `buildDataSourceOptions` — the schema is owned by `src/migrations/` and by nothing else.
+ */
+const TYPEORM_ROOT = TypeOrmModule.forRootAsync({
+  imports: [CommonModule],
+  inject: [API_CONFIG],
+  useFactory: (config: ApiConfig) => buildDataSourceOptions(config),
+});
+
+/**
+ * Global interceptors, registered in api-surface.md §1.5 order. Nest runs them outermost-first
+ * on the way in and innermost-first on the way out, which is why `RedactionInterceptor` is
+ * first (it must see the raw body before anything logs it) and `SerializerInterceptor` is last
+ * (it must be the closest wrapper around the handler's return value).
+ *
+ * `RateLimitGuard` is the only global guard. Auth guards are per-controller: there is no single
+ * default credential in this API — `/v1/payment_intents` takes an api key, `/v1/auth/me` takes
+ * a session, `/internal/v1/*` takes a service secret — and a global auth guard with a
+ * `@Public()` escape hatch means the day someone forgets the decorator, the route is open.
+ */
+const REQUEST_CHAIN = [
+  { provide: APP_INTERCEPTOR, useClass: RedactionInterceptor },
+  { provide: APP_GUARD, useClass: RateLimitGuard },
+  { provide: APP_INTERCEPTOR, useClass: RateLimitInterceptor },
+  { provide: APP_INTERCEPTOR, useClass: ApiVersionInterceptor },
+  { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
