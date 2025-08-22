@@ -13,6 +13,8 @@
 /** Injection token. `ApiModule` binds it to `UndiciTransport`, or `InMemoryTransport` under NODE_ENV=test. */
 export const HTTP_TRANSPORT = Symbol('HTTP_TRANSPORT');
 
+export type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
+
 export interface TransportRequest {
   method: HttpMethod;
   /** Fully-resolved absolute URL, query string already encoded. */
@@ -23,6 +25,13 @@ export interface TransportRequest {
   connectTimeoutMs: number;
   readTimeoutMs: number;
 }
+
+export type TransportFailureKind =
+  | 'connect_timeout'
+  | 'read_timeout'
+  | 'connection_reset'
+  | 'dns_failure'
+  | 'network';
 
 export class TransportError extends Error {
   constructor(
@@ -39,5 +48,10 @@ export class TransportError extends Error {
   get definitelyNotDelivered(): boolean {
     return this.kind === 'connect_timeout' || this.kind === 'dns_failure';
   }
+}
+
+export interface HttpTransport {
+  readonly name: 'undici' | 'in-memory';
+  send(req: TransportRequest): Promise<TransportResponse>;
 }
 
