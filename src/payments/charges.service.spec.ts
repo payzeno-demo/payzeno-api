@@ -1,0 +1,86 @@
+import { Test } from '@nestjs/testing';
+
+import { ChargeNotFoundException } from 'src/common/errors/not-found.exceptions';
+import { NoopLogger, PayzenoLogger } from 'src/common/logging/logger';
+import { ChargeRepository } from 'src/payments/charge.repository';
+import { ChargesService } from 'src/payments/charges.service';
+import { LedgerReadThroughService } from 'src/ledger/ledger-read-through.service';
+
+import { makeApiKeyPrincipal, makeSessionPrincipal } from 'test/factories/principal.factory';
+import { TEST_MERCHANT_ID } from 'test/factories/ids';
+import { makeCapturedCharge, makeCharge, makeSettledCharge } from 'test/factories/charge.factory';
+
+/**
+ * `ChargesService` is read-heavy — the write path lives in
+ * `ChargeAuthorizationService` / `ChargeCaptureService`. Its one interesting write is
+ * `markSettled`, which the internal surface and PAY-2042's 218 remediation refunds both
+ * went through.
+ */
+describe('ChargesService', () => {
+  let service: ChargesService;
+  let repo: jest.Mocked<ChargeRepository>;
+  let ledger: jest.Mocked<LedgerReadThroughService>;
+
+  const principal = makeApiKeyPrincipal({ merchant_id: TEST_MERCHANT_ID });
+
+  beforeEach(async () => {
+    repo = {
+      findScoped: jest.fn(),
+      paginateCursor: jest.fn(),
+      markSettled: jest.fn(),
+      findByProcessorReference: jest.fn(),
+    } as unknown as jest.Mocked<ChargeRepository>;
+
+    ledger = {
+      listChargeTransactions: jest.fn(),
+    } as unknown as jest.Mocked<LedgerReadThroughService>;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        ChargesService,
+        { provide: ChargeRepository, useValue: repo },
+        { provide: LedgerReadThroughService, useValue: ledger },
+        { provide: PayzenoLogger, useValue: new NoopLogger() },
+      ],
+    }).compile();
+
+    service = moduleRef.get(ChargesService);
+  });
+
+  it('names its entity', () => {
+    expect(service.entityName).toBe('charge');
+  });
+
+  describe('get', () => {
+    it('moves a captured charge to settled and stamps the batch', async () => {
+      const charge = makeCapturedCharge();
+      repo.findScoped.mockResolvedValue(charge as never);
+      repo.markSettled.mockResolvedValue(
+        makeSettledCharge({ id: charge.id, settlement_batch_id: 'sb_20260113_wf' }) as never,
+      );
+
+      const result = await service.markSettled(charge.id, {
+        settlement_batch_id: 'sb_20260113_wf',
+        settled_at: '2026-01-13T04:20:00.000Z',
+        transaction_id: 'ltx_000777',
+      });
+
+      expect(result.status).toBe('settled');
+      expect(repo.markSettled).toHaveBeenCalledWith(
+        charge.id,
+        expect.objectContaining({ settlement_batch_id: 'sb_20260113_wf' }),
+      );
+    });
+
+    it('resolves an inbound acquirer webhook back to a charge', async () => {
+      const charge = makeCharge();
+      repo.findByProcessorReference.mockResolvedValue(charge as never);
+
+      const result = await service.findByProcessorReference('worldflow', 'wf_auth_0001');
+
+      expect(result?.id).toBe(charge.id);
+      expect(repo.findByProcessorReference).toHaveBeenCalledWith('worldflow', 'wf_auth_0001');
+    });
+
+  });
+});
