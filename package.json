@@ -9,14 +9,20 @@
   },
   "packageManager": "pnpm@8.15.8",
   "scripts": {
+    "build": "nest build",
+    "test:watch": "jest --config jest.config.ts --watch",
     "jobs": "node dist/jobs/cli.js"
   },
   "dependencies": {
     "@aws-sdk/client-kms": "3.577.0",
     "@nestjs/platform-express": "10.3.7",
     "@nestjs/typeorm": "10.0.2",
+    "@opentelemetry/auto-instrumentations-node": "0.46.1",
+    "@opentelemetry/exporter-trace-otlp-http": "0.51.1",
     "class-transformer": "0.5.1",
     "pino": "9.1.0",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.1",
     "@types/cookie-parser": "1.4.7",
     "@typescript-eslint/parser": "7.8.0",
     "jest": "29.7.0",
