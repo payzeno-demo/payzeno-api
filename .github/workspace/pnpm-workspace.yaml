@@ -1,3 +1,4 @@
 # CI-only workspace root.
 #
 # payzeno-api and payzeno-contracts are separate repos but a single pnpm workspace at
+# build time — that is what makes "@payzeno/contracts": "workspace:*" resolve without a
