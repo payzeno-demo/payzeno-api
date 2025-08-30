@@ -60,4 +60,39 @@ const SEAMS = [
   { provide: DISTRIBUTED_LOCK, useClass: RedisLockService },
 ];
 
+const IDEMPOTENCY = [
+  PostgresIdempotencyStore,
+  RedisIdempotencyStore,
+  { provide: POSTGRES_IDEMPOTENCY_STORE, useExisting: PostgresIdempotencyStore },
+  { provide: REDIS_IDEMPOTENCY_STORE, useExisting: RedisIdempotencyStore },
+  {
+    /**
+     * The default store. `POST /v1/payment_intents` pins redis through
+     * `@Idempotent({ backend: 'redis' })` regardless of this; everything else follows
+     * IDEMPOTENCY_BACKEND. The two stores compute `Retry-After` slightly differently and one
+     * spec asserts each separately — see docs/runbooks/idempotency-and-replays.md.
+     */
+    provide: IDEMPOTENCY_STORE,
+    inject: [API_CONFIG, PostgresIdempotencyStore, RedisIdempotencyStore],
+    useFactory: (
+      config: ApiConfig,
+      postgres: PostgresIdempotencyStore,
+      redis: RedisIdempotencyStore,
+    ): IdempotencyStore => (config.idempotency.backend === 'redis' ? redis : postgres),
+  },
+];
+
+const HTTP_PLUMBING = [
+  RequestIdMiddleware,
+  CorrelationIdMiddleware,
+  StructuredLoggerMiddleware,
+  RedactionInterceptor,
+  SerializerInterceptor,
+  AuditLogInterceptor,
+  ApiVersionInterceptor,
+  RateLimitInterceptor,
+  IdempotencyInterceptor,
+  HttpExceptionFilter,
+];
+
 export class CommonModule {}
