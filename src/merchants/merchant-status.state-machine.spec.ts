@@ -63,4 +63,18 @@ describe('MerchantStatusStateMachine', () => {
     }
   });
 
+  describe('isFrozen', () => {
+    it('is true for the statuses that stop money moving in either direction', () => {
+      expect(machine.isFrozen('suspended')).toBe(true);
+      expect(machine.isFrozen('closed')).toBe(true);
+      expect(machine.isFrozen('rejected')).toBe(true);
+    });
+
+    it('is false for restricted — a restricted merchant may still charge', () => {
+      expect(machine.isFrozen('restricted')).toBe(false);
+      expect(machine.isFrozen('active')).toBe(false);
+      expect(machine.isFrozen('pending_review')).toBe(false);
+    });
+  });
+
 });

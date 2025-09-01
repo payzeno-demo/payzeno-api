@@ -28,3 +28,4 @@ export interface DisputeRateInput {
 
 export const MINIMUM_SAMPLE = 50;
 
+@Injectable()
