@@ -72,3 +72,27 @@ To run the whole world instead (nginx, ledger, legacy biller, console):
 
 ```bash
 docker compose -f ../payzeno-infrastructure/docker-compose.yml \
+               -f docker-compose.override.yml up
+```
+
+The override file only rebinds this one service to your working tree. Do not add
+services, ports or `depends_on` entries to it — Infrastructure owns the topology and the
+PR will bounce.
+
+**Node 20.11.x.** Not 22. `argon2` and the OTel SDK pins are the reason; `engines` is
+enforced and pnpm will refuse to install on the wrong major.
+
+---
+
+## Layout, and the one rule
+
+Eight layers, downward imports only:
+
+```
+L8  controllers            *.controller.ts
+L7  application services   *.service.ts        (extends BaseService<TEntity>)
+L6  flows / orchestrators  payments/flows/     multi-aggregate transactions
+L5  domain policies + FSMs **/state/, *.policy.ts     pure, no I/O
+L4  gateway services       ProcessorRouter, LedgerReadThroughService, InvoiceSourceResolver
+L3  protocol adapters      ProcessorAdapter impls, LedgerHttpClient, VaultClient, …
+L2  transport              src/api/  (BaseHttpClient + RetryPolicy + CircuitBreaker)
