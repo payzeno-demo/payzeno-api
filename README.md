@@ -96,3 +96,28 @@ L5  domain policies + FSMs **/state/, *.policy.ts     pure, no I/O
 L4  gateway services       ProcessorRouter, LedgerReadThroughService, InvoiceSourceResolver
 L3  protocol adapters      ProcessorAdapter impls, LedgerHttpClient, VaultClient, …
 L2  transport              src/api/  (BaseHttpClient + RetryPolicy + CircuitBreaker)
+L1  persistence            PayzenoRepository<T> → TypeORM Repository<T>
+L0  primitives             ids, money, clock, logger, flags, errors, decorators
+```
+
+A module may import from its own layer and any layer below it. Never above.
+
+This is not a style preference, it is `eslint-plugin-boundaries` in `.eslintrc.cjs` and it
+fails CI. When you see `boundaries/element-types` in a red build, you reached upward —
+usually a controller calling a repository directly, or a policy that grew an HTTP call.
+Move the call into the layer that owns it. The fix is never to add an exception to the
+config.
+
+Corollaries, all lint-enforced:
+
+- **`process.env` is read in exactly one file**: `src/config/configuration.ts`. Everything
+  else takes `ApiConfig` by injection. `config.schema.ts` validates all 41 vars at boot and
+  the process exits non-zero on the first bad one.
+- **`HttpException` is constructed in exactly one file**: `src/common/filters/http-exception.filter.ts`.
+  Everywhere else you throw an `ApiException` subclass from `src/common/errors/`. There is
+  a class per error code; that is deliberate, and no, do not collapse them into an enum.
+- **Feature flags are read through `FeatureFlags`**, never `process.env.FLAG_*`.
+- **Every DTO `implements` its `@payzeno/contracts` type.** A DTO that restates a contract
+  shape by hand will be rejected — the whole point of the contracts package is that the
+  console and the ledger break at compile time when we change a payload.
+
