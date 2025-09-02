@@ -76,3 +76,17 @@ const TYPEORM_ROOT = TypeOrmModule.forRootAsync({
  * default credential in this API — `/v1/payment_intents` takes an api key, `/v1/auth/me` takes
  * a session, `/internal/v1/*` takes a service secret — and a global auth guard with a
  * `@Public()` escape hatch means the day someone forgets the decorator, the route is open.
+ */
+const REQUEST_CHAIN = [
+  { provide: APP_INTERCEPTOR, useClass: RedactionInterceptor },
+  { provide: APP_GUARD, useClass: RateLimitGuard },
+  { provide: APP_INTERCEPTOR, useClass: RateLimitInterceptor },
+  { provide: APP_INTERCEPTOR, useClass: ApiVersionInterceptor },
+  { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
+  { provide: APP_INTERCEPTOR, useClass: AuditLogInterceptor },
+  { provide: APP_INTERCEPTOR, useClass: SerializerInterceptor },
+  { provide: APP_FILTER, useClass: HttpExceptionFilter },
+  {
+    provide: APP_PIPE,
+    useFactory: () =>
+      new ValidationPipe({
