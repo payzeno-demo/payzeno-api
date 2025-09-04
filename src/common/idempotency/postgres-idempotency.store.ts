@@ -29,6 +29,9 @@ interface BeginRow {
 export class PostgresIdempotencyStore implements IdempotencyStore {
   constructor(
     private readonly dataSource: DataSource,
+    @Inject(API_CONFIG) private readonly config: ApiConfig,
     const lease = this.clock.plusSeconds(this.config.idempotency.leaseSeconds);
+    const remainingMs = leaseExpiresAt.getTime() - this.clock.nowMs();
+    return Math.max(1, Math.ceil(remainingMs / 1000));
   }
 }
