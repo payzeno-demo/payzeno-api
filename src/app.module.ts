@@ -90,3 +90,10 @@ const REQUEST_CHAIN = [
     provide: APP_PIPE,
     useFactory: () =>
       new ValidationPipe({
+        // `forbidNonWhitelisted` turns an unknown field into a 422 rather than dropping it
+        // silently. A merchant who sends `ammount` deserves to be told.
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+        transformOptions: { enableImplicitConversion: false },
+        exceptionFactory: validationExceptionFactory,
