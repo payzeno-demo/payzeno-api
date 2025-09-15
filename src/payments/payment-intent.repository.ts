@@ -44,4 +44,22 @@ export class PaymentIntentRepository extends PayzenoRepository<PaymentIntentEnti
     return manager.save(PaymentIntentEntity, entity);
   }
 
+  list(merchantId: MerchantId, query: PaymentIntentListQuery): Promise<Paginated<PaymentIntentEntity>> {
+    const where: FindOptionsWhere<PaymentIntentEntity> = {
+      merchant_id: merchantId,
+    } as FindOptionsWhere<PaymentIntentEntity>;
+    if (query.status) {
+      (where as Record<string, unknown>).status = query.status;
+    }
+    if (query.customer_reference) {
+      (where as Record<string, unknown>).customer_reference = query.customer_reference;
+    }
+    return this.paginateCursor(query, where, { column: 'created_at', direction: 'DESC' });
+  }
+
+  /** Used by `ClientSecretGuard` only. The secret is the credential; there is no merchant scope yet. */
+  findByClientSecret(clientSecret: string): Promise<PaymentIntentEntity | null> {
+    return this.findOne({ where: { client_secret: clientSecret } as FindOptionsWhere<PaymentIntentEntity> });
+  }
+
 }
