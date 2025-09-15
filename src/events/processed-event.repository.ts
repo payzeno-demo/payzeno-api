@@ -29,4 +29,7 @@ export class ProcessedEventRepository extends PayzenoRepository<ProcessedEvent> 
     await this.manager.delete(ProcessedEvent, { eventId, consumer });
   }
 
+  retentionCutoff(now: Date): Date {
+    return new Date(now.getTime() - PROCESSED_EVENT_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+  }
 }
