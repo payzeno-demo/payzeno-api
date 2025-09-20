@@ -50,3 +50,16 @@ export function mapTypeOrmError(err: unknown): unknown {
   }
 }
 
+function mapUniqueViolation(driver: DriverError): ApiException {
+  switch (driver.constraint) {
+    case 'uq_dispute_charge_open':
+      return new DuplicateDisputeException(extractChargeId(driver.detail) ?? 'unknown');
+    case 'idempotency_record_pkey':
+      return new IdempotencyKeyReuseException(extractKey(driver.detail) ?? 'unknown');
+    default:
+      return new ConflictException(`Conflicts with an existing record (${driver.constraint ?? 'unique'})`, {
+        constraint: driver.constraint ?? null,
+      });
+  }
+}
+
