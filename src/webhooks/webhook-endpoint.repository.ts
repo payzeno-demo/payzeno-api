@@ -28,6 +28,10 @@ export class WebhookEndpointRepository extends PayzenoRepository<WebhookEndpoint
       .getMany();
   }
 
+  async findScopedById(merchantId: MerchantId, id: string): Promise<WebhookEndpointEntity | null> {
+    return this.findOneBy({ merchantId, id } as never);
+  }
+
   async recordFailure(id: string): Promise<number> {
     await this.createQueryBuilder()
       .update(WebhookEndpointEntity)

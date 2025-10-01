@@ -53,3 +53,31 @@ export class WebhookEventRepository extends PayzenoRepository<WebhookEventEntity
         .orderBy('w.next_attempt_at', 'ASC')
         .limit(limit)
         .setLock('pessimistic_write')
+        .setOnLocked('skip_locked')
+        .getMany();
+
+      if (due.length === 0) {
+        return [];
+      }
+
+      await tx.update(
+        WebhookEventEntity,
+        { id: In(due.map((row) => row.id)) },
+        { status: 'delivering' as WebhookEventStatus },
+      );
+      return due;
+    });
+  }
+
+  async markDelivered(id: string, responseStatus: number, at: Date): Promise<void> {
+    await this.update({ id } as never, {
+      status: 'delivered' as WebhookEventStatus,
+      lastResponseStatus: responseStatus,
+      lastError: null,
+      deliveredAt: at,
+      nextAttemptAt: null,
+    });
+  }
+
+  async markRetrying(
+    id: string,
