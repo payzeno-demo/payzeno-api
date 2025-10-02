@@ -33,6 +33,64 @@ export class HttpJsonDeliveryStrategy implements WebhookDeliveryStrategy {
 
   constructor(
     private readonly secrets: WebhookSecretService,
+    @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
+  ) {}
+
+  async deliver(event: WebhookEventEntity, endpoint: WebhookEndpointEntity): Promise<DeliveryResult> {
     const material = await this.secrets.signingMaterial(endpoint, this.clock.now());
+    const signatures = [this.sign(body, material.current, timestamp)];
+    if (material.previous) {
+      // Rotation overlap: the merchant may still be verifying against the old secret.
+      signatures.push(this.sign(body, material.previous, timestamp));
+    }
+
+    try {
+      const response = await request(endpoint.url, {
+        method: 'POST',
+        body,
+        headers: {
+          'content-type': 'application/json',
+          'user-agent': 'Payzeno/1.0 (+https://payzeno.com/docs/webhooks)',
+          [SIGNATURE_HEADER.toLowerCase()]: formatSignatureHeader(timestamp, signatures),
+          'payzeno-event-id': event.id,
+          'payzeno-event-type': event.type,
+          'payzeno-delivery-attempt': String(event.attemptCount + 1),
+        },
+        headersTimeout: DELIVERY_TIMEOUT_MS,
+        bodyTimeout: DELIVERY_TIMEOUT_MS,
+      });
+
+      // Drain the body: undici holds the socket open until it is consumed, and merchant
+      // endpoints love returning a 200 with 2MB of HTML.
+      await response.body.text();
+
+      return {
+        delivered: isSuccessStatus(response.statusCode),
+        responseStatus: response.statusCode,
+        error: isSuccessStatus(response.statusCode)
+          ? null
+          : `endpoint responded ${response.statusCode}`,
+        durationMs: Date.now() - startedAt,
+        nextAttemptAt: null,
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn('webhook.delivery_transport_error', {
+        webhook_event_id: event.id,
+        endpoint_id: endpoint.id,
+        error: message,
+      });
+      return {
+        delivered: false,
+        responseStatus: null,
+        error: message,
+        durationMs: Date.now() - startedAt,
+        nextAttemptAt: null,
+      };
+    }
+  }
+
+  sign(body: string, secret: string, timestamp: number): string {
+    return createHmac('sha256', secret).update(`${timestamp}.${body}`).digest('hex');
   }
 }

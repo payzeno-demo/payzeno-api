@@ -28,6 +28,40 @@ export class WebhookEndpointRepository extends PayzenoRepository<WebhookEndpoint
       .getMany();
   }
 
+  async findScopedById(merchantId: MerchantId, id: string): Promise<WebhookEndpointEntity | null> {
+    return this.findOneBy({ merchantId, id } as never);
+  }
+
+  async recordFailure(id: string): Promise<number> {
+    await this.createQueryBuilder()
+      .update(WebhookEndpointEntity)
+      .set({ consecutiveFailureCount: () => 'consecutive_failure_count + 1' })
+      .where('id = :id', { id })
+      .execute();
+
+    const row = await this.findOneBy({ id } as never);
+    return row?.consecutiveFailureCount ?? 0;
+  }
+
+  /**
+   * domain-model.md §10: no successful delivery for 72h AND at least 20 consecutive dead
+   * events moves the endpoint to `disabled`. The merchant re-enables it from the console.
+   */
+  async findStale(
+    olderThan: Date,
+    minConsecutiveFailures: number,
+    limit: number,
+  ): Promise<WebhookEndpointEntity[]> {
+    return this.createQueryBuilder('e')
+      .where("e.status = 'enabled'")
+      .andWhere('e.consecutive_failure_count >= :minConsecutiveFailures', {
+        minConsecutiveFailures,
+      })
+      .andWhere('(e.last_success_at is null or e.last_success_at < :olderThan)', { olderThan })
+      .limit(limit)
+      .getMany();
+  }
+
   /** Endpoints whose rotation overlap has expired and whose previous secret can be dropped. */
   async findRotationsToFinalise(before: Date): Promise<WebhookEndpointEntity[]> {
     return this.find({
