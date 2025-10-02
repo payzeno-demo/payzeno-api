@@ -27,8 +27,20 @@ describe('cursor.codec', () => {
       expect(encoded).not.toContain('/');
     });
 
+    it('produces different cursors for different rows', () => {
+      expect(encodeCursor(cursor)).not.toBe(
+        encodeCursor({ ...cursor, id: nextId('ch_') }),
+      );
+    });
+  });
+
+  describe('encodeFrom', () => {
     it('rejects a cursor that is not base64-decodable JSON', () => {
       expect(() => decodeCursor('not-a-cursor-at-all')).toThrow(ValidationException);
+    });
+
+    it('rejects an over-long cursor before attempting to decode it', () => {
+      expect(() => decodeCursor('A'.repeat(4_096))).toThrow(ValidationException);
     });
 
     it('reports the failure against the `cursor` field so the console can point at it', () => {
@@ -41,5 +53,13 @@ describe('cursor.codec', () => {
       }
     });
 
+    it('never throws a raw Error — every failure is a 422', () => {
+      for (const bad of ['', 'x', '!!!!', Buffer.from('{}').toString('base64url')]) {
+        expect(() => decodeCursor(bad)).toThrow(ValidationException);
+      }
+    });
+  });
+
+  describe('decodeOptionalCursor', () => {
   });
 });
