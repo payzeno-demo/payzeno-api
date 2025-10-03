@@ -25,6 +25,23 @@ export class EventOutbox {
   @Column({ name: 'merchant_id', type: 'text', nullable: true })
   merchantId!: MerchantId | null;
 
+  @Column({ name: 'correlation_id', type: 'text' })
+  correlationId!: string;
+
+  @Column({ name: 'causation_id', type: 'text', nullable: true })
+  causationId!: string | null;
+
+  /** When the fact became true in payzeno-api, not when the drain got to it. */
+  @Column({ name: 'occurred_at', type: 'timestamptz' })
+  occurredAt!: Date;
+
+  @Column({ name: 'attempt_count', type: 'smallint', default: 0 })
+  attemptCount!: number;
+
+  /**
+   * 2^attempt seconds with ±20% jitter. Without it a permanently failing event is
+   * re-selected every 5 seconds forever.
+   */
   @Column({ name: 'created_at', type: 'timestamptz', default: () => 'now()' })
   createdAt!: Date;
 
