@@ -16,6 +16,40 @@ class FakeSqs {
 
 class RecordingConsumer extends BaseEventConsumer {
   readonly consumerName = 'recording';
+  readonly handled: PayzenoEvent[] = [];
+  shouldThrow = false;
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async handle(event: PayzenoEvent, _tx: EntityManager): Promise<void> {
+    if (this.shouldThrow) {
+      throw new Error('handler blew up');
+    }
+    this.handled.push(event);
+  }
+}
+
+function envelope(overrides: Partial<PayzenoEvent> = {}): Record<string, unknown> {
+  return {
+    id: 'evt_01HZZZ',
+    type: 'settlement.completed',
+    version: 2,
+    occurred_at: '2026-03-01T10:00:00.000Z',
+    source: 'payzeno-ledger',
+    correlation_id: 'corr_1',
+    causation_id: null,
+    merchant_id: 'mer_1',
+    livemode: true,
+    payload: { batch_id: 'sbt_1' },
+    ...overrides,
+  };
+}
+
+function sqsMessage(body: unknown, receipt = 'rh-1'): Message {
+  return { MessageId: 'm1', ReceiptHandle: receipt, Body: JSON.stringify(body) };
+}
+
+describe('BaseEventConsumer', () => {
+  let sqs: FakeSqs;
   let claim: jest.Mock;
   let consumer: RecordingConsumer;
 
@@ -55,6 +89,17 @@ class RecordingConsumer extends BaseEventConsumer {
       'consumer.handler_failed',
       expect.any(Error),
       expect.objectContaining({ event_id: 'evt_01HZZZ' }),
+    );
+  });
+
+  it('routes an unknown schema version to the DLQ instead of guessing', async () => {
+    await consumer.processMessage(sqsMessage(envelope({ version: 99 })));
+
+    expect(consumer.handled).toHaveLength(0);
+    expect(sqs.deleted).toEqual([]);
+    expect(logger.warn).toHaveBeenCalledWith(
+      'consumer.unknown_schema_version',
+      expect.objectContaining({ version: 99, known_version: 2 }),
     );
   });
 
