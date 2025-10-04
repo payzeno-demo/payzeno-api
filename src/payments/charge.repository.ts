@@ -52,4 +52,18 @@ export class ChargeRepository extends PayzenoRepository<ChargeEntity> {
     });
   }
 
+  async addRefundedAmount(manager: EntityManager, chargeId: ChargeId, amountMinor: number): Promise<void> {
+    await manager
+      .createQueryBuilder()
+      .update(ChargeEntity)
+      .set({ refunded_amount_minor: () => `refunded_amount_minor + ${Math.trunc(amountMinor)}` })
+      .where('id = :id', { id: chargeId })
+      .execute();
+  }
+
+  /**
+   * Rides `pix_charge_unsettled`. `UnsettledChargeSweepJob` (PAY-2058) reads it: a
+   * `settlement.completed` chunk lost to the DLQ strands charges `captured` forever, and until
+   * that job existed the partial index had no reader at all.
+   */
 }
