@@ -29,6 +29,19 @@ export interface PublishContext {
  * a set that no longer matched the infrastructure. `topics.ts` says "rename at your peril"
  * and it means it — the only safe way to name a topic here is to not name it here.
  */
+export interface OutboxRecord {
+  id: string;
+  type: EventType;
+  version: number;
+  payload: Record<string, unknown>;
+  merchantId: MerchantId | null;
+  correlationId: string;
+  causationId: string | null;
+  livemode: boolean;
+  occurredAt: Date;
+  attemptCount: number;
+}
+
 /** What a single drain pass did. Surfaced in `JobResult` and in the drain log line. */
 export interface DrainOutcome {
   claimed: number;
