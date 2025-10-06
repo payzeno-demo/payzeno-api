@@ -1,0 +1,85 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "payzeno-ledger internal API",
+    "version": "0.41.0",
+    "description": "Checked-in copy of payzeno-ledger's generated OpenAPI. Regenerate with `make sync-ledger-openapi`. test/contract/ledger-routes.contract.spec.ts fails when LedgerHttpClient grows a method this file does not describe."
+  },
+  "servers": [{ "url": "http://payzeno-ledger:8000" }],
+  "paths": {
+    "/internal/v1/accounts/bootstrap": {
+      "post": { "operationId": "bootstrap_accounts", "responses": { "201": { "description": "Created" } } }
+    },
+    "/internal/v1/accounts/{account_id}/freeze": {
+      "post": { "operationId": "freeze_account", "responses": { "200": { "description": "OK" } } }
+    },
+    "/internal/v1/balances/{merchant_id}": {
+      "get": { "operationId": "get_balance", "responses": { "200": { "description": "OK" } } }
+    },
+    "/internal/v1/balances/{merchant_id}/history": {
+      "get": { "operationId": "get_balance_history", "responses": { "200": { "description": "OK" } } }
+    },
+    "/internal/v1/transactions": {
+      "post": { "operationId": "post_transaction", "responses": { "201": { "description": "Created" } } },
+      "get": { "operationId": "list_transactions", "responses": { "200": { "description": "OK" } } }
+    },
+    "/internal/v1/transactions/{transaction_id}": {
+      "get": { "operationId": "get_transaction", "responses": { "200": { "description": "OK" } } }
+    },
+    "/internal/v1/transactions/{transaction_id}/reverse": {
+      "post": { "operationId": "reverse_transaction", "responses": { "201": { "description": "Created" } } }
+    },
+    "/internal/v1/settlement-batches": {
+      "get": { "operationId": "list_settlement_batches", "responses": { "200": { "description": "OK" } } }
+    },
+    "/internal/v1/settlement-batches/{batch_id}": {
+      "get": { "operationId": "get_settlement_batch", "responses": { "200": { "description": "OK" } } }
+    },
+    "/internal/v1/settlement-batches/{batch_id}/items": {
+      "get": { "operationId": "list_settlement_items", "responses": { "200": { "description": "OK" } } }
+    },
+    "/internal/v1/reconciliation/items/{item_id}/retry": {
+      "post": { "operationId": "retry_reconciliation_item", "responses": { "202": { "description": "Accepted" } } }
+    },
+    "/internal/v1/reconciliation/backlog": {
+      "get": { "operationId": "reconciliation_backlog", "responses": { "200": { "description": "OK" } } }
+    },
+    "/internal/v1/payouts": {
+      "get": { "operationId": "list_payouts", "responses": { "200": { "description": "OK" } } },
+      "post": { "operationId": "create_payout", "responses": { "201": { "description": "Created" } } }
+    },
+    "/internal/v1/payouts/{payout_id}": {
+      "get": { "operationId": "get_payout", "responses": { "200": { "description": "OK" } } }
+    },
+    "/internal/v1/payouts/{payout_id}/cancel": {
+      "post": { "operationId": "cancel_payout", "responses": { "200": { "description": "OK" } } }
+    },
+    "/internal/v1/ops/audit/trial-balance": {
+      "post": { "operationId": "trial_balance", "responses": { "200": { "description": "OK" } } }
+    },
+    "/healthz": {
+      "get": { "operationId": "healthz", "responses": { "200": { "description": "OK" } } }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ApiError": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": ["code", "message", "request_id"],
+            "properties": {
+              "code": { "type": "string" },
+              "message": { "type": "string" },
+              "request_id": { "type": "string" },
+              "retry_after": { "type": "integer" },
+              "details": { "type": "object" }
+            }
+          }
+        }
+      }
+    }
+  }
+}
