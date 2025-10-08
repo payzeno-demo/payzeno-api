@@ -35,4 +35,40 @@ export class DeadLetterConsumer extends BaseEventConsumer {
   readonly queueUrl: string;
   readonly consumerName = 'dead-letter';
 
+  async runOnce(): Promise<number> {
+    const response = await this.sqs.send(
+      new ReceiveMessageCommand({
+        QueueUrl: this.queueUrl,
+        MaxNumberOfMessages: 10,
+        WaitTimeSeconds: 5,
+        MessageAttributeNames: ['All'],
+      }),
+    );
+
+    const messages = response.Messages ?? [];
+    let redriven = 0;
+
+    for (const message of messages) {
+      const event = this.parse(message);
+      if (!event) {
+        this.logger.error('dlq.unparseable', null, { message_id: message.MessageId ?? '?' });
+        await this.acknowledge(message);
+        continue;
+      }
+
+      await this.processMessage(message);
+
+      if (await this.redrive(event, message)) {
+        redriven += 1;
+      }
+    }
+
+    return redriven;
+  }
+
+  /**
+   * Put the envelope back on the queue it failed on. Origin is taken from the message
+   * attribute the redrive policy stamps; without it we cannot know where to send it and the
+   * message stays parked for a human.
+   */
 }
