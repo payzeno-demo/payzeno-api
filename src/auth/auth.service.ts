@@ -61,6 +61,42 @@ export class AuthService {
 
     if (!merchant) throw new MerchantNotFoundException(user.merchantId);
 
+    const operator = await this.staff.authenticate(email.trim().toLowerCase(), password);
+
+    if (!operator) {
+      throw new AuthenticationRequiredException('Invalid email or password');
+    }
+
+    this.logger.info('auth.staff_login', { staff_id: operator.id, role: operator.role });
+
+    return this.sessions.issueStaff(operator.id, operator.role, origin);
+  }
+
+  /** `GET /v1/auth/me` — the console bootstrap call. Also refreshes `pz_csrf`. */
+  async describeSession(sessionId: string): Promise<{ body: SessionResponse; csrfToken: string }> {
+    const candidates = await this.users.findLoginCandidates(email.trim().toLowerCase());
+
+    for (const user of candidates) {
+      await this.sessions.destroyAllForUser(user.id);
+      this.logger.info('auth.password_reset_requested', {
+        user_id: user.id,
+        merchant_id: user.merchantId,
+      });
+    }
+
+    // No branch on `candidates.length`. The caller gets 202 either way.
+  }
+
+  /** One verify per candidate, and one against the dummy when there are none. */
+  private async verifyAgainst(
+    candidates: MerchantUserEntity[],
+    password: string,
+  ): Promise<MerchantUserEntity[]> {
+    if (candidates.length === 0) {
+      await this.burnTime(password);
+      return [];
+    }
+
   }
 }
 

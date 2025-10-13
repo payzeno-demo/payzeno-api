@@ -23,4 +23,10 @@ import { BaseAuthGuard, headerValue, type AuthenticatedRequest } from './base-au
 export class SessionGuard extends BaseAuthGuard {
   protected readonly scheme = 'session';
 
+  protected async authenticate(request: AuthenticatedRequest): Promise<AuthPrincipal | null> {
+    const sessionId = this.cookie(request, SESSION_COOKIE);
+    if (!sessionId) return null;
+
+    return this.sessions.resolve(sessionId, request.method, headerValue(request.headers[CSRF_HEADER]));
+  }
 }
