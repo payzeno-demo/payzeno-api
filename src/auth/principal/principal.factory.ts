@@ -31,6 +31,64 @@ import type { MerchantUserEntity } from '../../merchants/users/merchant-user.ent
 export type InternalCallerService = 'payzeno-ledger' | 'payzeno-billing-legacy';
 
 @Injectable()
+export class PrincipalFactory {
+  /** ApiKeyGuard, after ApiKeyResolver has verified the secret against `secret_hash`. */
+  fromApiKey(apiKey: ApiKeyEntity): AuthPrincipal {
+    return {
+      kind: 'api_key',
+      merchant_id: apiKey.merchantId,
+      api_key_id: apiKey.id,
+      mode: apiKey.mode as ApiKeyMode,
+      scopes: [...apiKey.scopes] as ApiKeyScope[],
+    };
+  }
+
+  /** SessionGuard, after SessionService has resolved the `pz_session` cookie. */
+  fromSessionUser(user: MerchantUserEntity): AuthPrincipal {
+    return {
+      kind: 'dashboard_session',
+      merchant_id: user.merchantId,
+      user_id: user.id,
+      role: user.role as UserRole,
+    };
+  }
+
+  fromSessionRecord(merchantId: MerchantId, userId: UserId, role: UserRole): AuthPrincipal {
+    return { kind: 'dashboard_session', merchant_id: merchantId, user_id: userId, role };
+  }
+
+  /**
+   * StaffGuard. `actingMerchantId` comes from the required `?merchant_id=` query parameter on
+   * every staff-marked merchant-scoped read (api-surface.md §1.2) and is null for the
+   * platform-wide routes (`POST /v1/merchants` has no merchant yet).
+   */
+  fromStaff(staffId: string, role: StaffRole, actingMerchantId: MerchantId | null): AuthPrincipal {
+    return {
+      kind: 'staff_session',
+      staff_id: staffId,
+      role,
+      acting_merchant_id: actingMerchantId,
+    };
+  }
+
+  /** InternalServiceGuard, after the shared-secret and `X-Payzeno-Service` checks pass. */
+  fromInternalService(service: InternalCallerService, scopes: string[] = []): AuthPrincipal {
+    return { kind: 'internal_service', service, scopes };
+  }
+
+  /** ClientSecretGuard. Scoped to exactly one PaymentIntent — no merchant-wide read. */
+  fromClientSecret(merchantId: MerchantId, paymentIntentId: PaymentIntentId): AuthPrincipal {
+    return { kind: 'client_secret', merchant_id: merchantId, payment_intent_id: paymentIntentId };
+  }
+}
+
+/**
+ * The tenant this principal acts on.
+ *
+ * Throws rather than returning null: every caller is a merchant-scoped handler that has
+ * nothing sensible to do without a tenant, and an `internal_service` principal reaching a
+ * `/v1/` route is a routing bug, not a permission the caller can be told about.
+ */
 export function merchantIdOf(principal: AuthPrincipal): MerchantId {
   switch (principal.kind) {
     case 'api_key':
@@ -52,6 +110,26 @@ export function merchantIdOf(principal: AuthPrincipal): MerchantId {
   }
 }
 
+/** Null-tolerant form, for the interceptors that run before a guard may have attached one. */
+export function optionalMerchantIdOf(principal: AuthPrincipal | undefined | null): MerchantId | null {
+  if (!principal) return null;
+  switch (principal.kind) {
+    case 'api_key':
+    case 'dashboard_session':
+    case 'client_secret':
+      return principal.merchant_id;
+    case 'staff_session':
+      return principal.acting_merchant_id;
+    case 'internal_service':
+      return null;
+  }
+}
+
+/**
+ * Live vs test. Only an API key carries the distinction natively; a dashboard session is
+ * always live, because the console switches mode by presenting a `sk_test_` key to the
+ * sandbox surface rather than by flipping a session field.
+ */
 export function livemodeOf(principal: AuthPrincipal): boolean {
   switch (principal.kind) {
     case 'api_key':
@@ -63,5 +141,10 @@ export function livemodeOf(principal: AuthPrincipal): boolean {
     case 'internal_service':
       return true;
   }
+}
+
+/** `staff_audit_log.staff_id`, and `RetryReconciliationItemRequest.requested_by`. */
+export function staffIdOf(principal: AuthPrincipal): string | null {
+  return principal.kind === 'staff_session' ? principal.staff_id : null;
 }
 

@@ -88,11 +88,49 @@ export class SessionService {
    * it carries no merchant, so every merchant-scoped staff route has to name one with
    * `?merchant_id=` and MerchantScopeGuard is what enforces that.
    */
+  async issueStaff(staffId: string, staffRole: StaffRole, origin: SessionOrigin): Promise<IssuedSession> {
+    const record = this.newRecord(origin, {
+      kind: 'staff',
+      userId: null,
+      merchantId: null,
+      role: null,
+      staffId,
+      staffRole,
+    });
+
+    await this.store.create(record, this.ttlSec);
+    this.logger.info('session.issued_staff', { staff_id: staffId, role: staffRole });
+
+    return this.issued(record);
+  }
+
+  /** The one place a record becomes a principal, so the two kinds cannot be confused. */
+  private toPrincipal(record: SessionRecord, actingMerchantId: MerchantId | null): AuthPrincipal {
+    if (record.kind === 'staff') {
+      return this.principals.fromStaff(record.staffId ?? 'stf_unknown', record.staffRole ?? 'support', actingMerchantId);
+    }
+
+    if (!record.merchantId || !record.userId || !record.role) {
+      throw new AuthenticationRequiredException('Session record is missing its merchant binding');
+    }
+
+    return this.principals.fromSessionRecord(record.merchantId, record.userId, record.role);
+  }
+
   /** For the WebSocket upgrade, which has no method to branch on and no body to protect. */
   async resolveForUpgrade(sessionId: string | undefined, csrfHeader: string | undefined): Promise<AuthPrincipal> {
     const record = await this.requireRecord(sessionId);
     this.csrf.assert('POST', csrfHeader, record.csrfToken);
     return this.toPrincipal(record, null);
+  }
+
+  async requireRecord(sessionId: string | undefined): Promise<SessionRecord> {
+    if (!sessionId) throw new AuthenticationRequiredException('No session cookie presented');
+
+    const record = await this.store.get(sessionId);
+    if (!record) throw new AuthenticationRequiredException('Session expired or unknown');
+
+    return record;
   }
 
   /** `GET /v1/auth/me` refreshes the CSRF cookie; the console calls it on every boot. */
@@ -106,4 +144,21 @@ export class SessionService {
     return this.csrf.cookieOptions();
   }
 
+  private sessionCookieOptions(): SessionCookieOptions {
+    return {
+      httpOnly: true,
+      secure: this.secureCookies,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: this.ttlSec * 1000,
+    };
+  }
+
+  /** Cookie clears are cookie sets with maxAge 0 — same flags, or the browser keeps them. */
+  expiredCookies(): Array<{ name: string; value: string; options: { path: '/'; maxAge: 0 } }> {
+    return [
+      { name: SESSION_COOKIE, value: '', options: { path: '/', maxAge: 0 } },
+      { name: this.csrf.name, value: '', options: { path: '/', maxAge: 0 } },
+    ];
+  }
 }
