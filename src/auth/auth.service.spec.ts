@@ -99,6 +99,45 @@ describe('AuthService', () => {
 
     staff = { authenticate: jest.fn(async () => null) } as never;
 
+    const clock = { nowMs: () => NOW.getTime(), now: () => NOW } as Clock;
+
+    service = new AuthService(
+      users as unknown as MerchantUserRepository,
+      merchants as unknown as MerchantRepository,
+      sessions as unknown as SessionService,
+      staff as unknown as StaffUsersService,
+      clock,
+      new NoopLogger(),
+    );
+  });
+
+  describe('login', () => {
+    it('issues a session for the single matching login', async () => {
+      users.findLoginCandidates.mockResolvedValue([user()]);
+
+      const outcome = await service.login('dana@example.com', 'correct-horse', null, origin);
+
+      expect(sessions.issue).toHaveBeenCalledWith('usr_0001', MERCHANT_A, 'admin', origin);
+      expect(outcome.body.object).toBe('login');
+      expect(outcome.body.merchant.id).toBe(MERCHANT_A);
+    });
+
+    it('lowercases and trims the address before the lookup', async () => {
+      users.findLoginCandidates.mockResolvedValue([user()]);
+
+      await service.login('  Dana@Example.com ', 'correct-horse', null, origin);
+
+      expect(users.findLoginCandidates).toHaveBeenCalledWith('dana@example.com');
+    });
+
+    it('rejects an unknown address', async () => {
+      users.findLoginCandidates.mockResolvedValue([]);
+
+      await expect(service.login('nobody@example.com', 'x', null, origin)).rejects.toBeInstanceOf(
+        AuthenticationRequiredException,
+      );
+    });
+
     it('spends an argon2 verify even when nothing matched', async () => {
       users.findLoginCandidates.mockResolvedValue([]);
 
@@ -171,6 +210,31 @@ describe('AuthService', () => {
       });
     });
 
+    it('rejects when the operator does not authenticate', async () => {
+      staff.authenticate.mockResolvedValue(null);
+
+      await expect(service.loginStaff('ops@payzeno.com', 'nope', origin)).rejects.toBeInstanceOf(
+        AuthenticationRequiredException,
+      );
+    });
+
+    it('never issues a merchant session for an operator', async () => {
+      staff.authenticate.mockResolvedValue({ id: 'stf_0001', role: 'support' } as never);
+
+      await service.loginStaff('ops@payzeno.com', 'hunter2', origin);
+
+      expect(sessions.issue).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('describeSession', () => {
+    const record = {
+      id: 'sess_1',
+      kind: 'merchant_user',
+      userId: 'usr_0001',
+      merchantId: MERCHANT_A,
+    };
+
     it('gives a viewer no permissions at all', async () => {
       sessions.requireRecord.mockResolvedValue(record as never);
       users.findByIdForMerchant.mockResolvedValue(user({ role: 'viewer' } as never));
@@ -191,6 +255,12 @@ describe('AuthService', () => {
       // A reset that does not invalidate the attacker's session resets nothing.
       expect(sessions.destroyAllForUser).toHaveBeenCalledWith('usr_a');
       expect(sessions.destroyAllForUser).toHaveBeenCalledWith('usr_b');
+    });
+
+    it('destroys the session', async () => {
+      await service.logout('sess_1');
+
+      expect(sessions.destroy).toHaveBeenCalledWith('sess_1');
     });
 
     it('tolerates a request with no cookie', async () => {
