@@ -52,6 +52,21 @@ export class ChargeRepository extends PayzenoRepository<ChargeEntity> {
     });
   }
 
+  async list(merchantId: MerchantId, query: ChargeListQuery): Promise<Paginated<ChargeEntity>> {
+    const where: FindOptionsWhere<ChargeEntity> = { merchant_id: merchantId } as FindOptionsWhere<ChargeEntity>;
+    if (query.status) {
+      (where as Record<string, unknown>).status = query.status;
+    }
+    if (query.payment_intent_id) {
+      (where as Record<string, unknown>).payment_intent_id = query.payment_intent_id;
+    }
+    if (query.settlement_batch_id) {
+      (where as Record<string, unknown>).settlement_batch_id = query.settlement_batch_id;
+    }
+    // Rides `ix_charge_merchant_created`; migration 14 exists because this was a seq scan.
+    return this.paginateCursor(query, where, { column: 'created_at', direction: 'DESC' });
+  }
+
   async addRefundedAmount(manager: EntityManager, chargeId: ChargeId, amountMinor: number): Promise<void> {
     await manager
       .createQueryBuilder()
@@ -66,4 +81,14 @@ export class ChargeRepository extends PayzenoRepository<ChargeEntity> {
    * `settlement.completed` chunk lost to the DLQ strands charges `captured` forever, and until
    * that job existed the partial index had no reader at all.
    */
+  /** Rides `ix_charge_authorization_expires`. `ChargeExpiryJob` drives `authorized → expired`. */
+  findExpiredAuthorizations(now: Date, limit: number): Promise<ChargeEntity[]> {
+    return this.createQueryBuilder('charge')
+      .where('charge.status = :status', { status: 'authorized' })
+      .andWhere('charge.authorization_expires_at < :now', { now })
+      .orderBy('charge.authorization_expires_at', 'ASC')
+      .limit(limit)
+      .getMany();
+  }
+
 }
