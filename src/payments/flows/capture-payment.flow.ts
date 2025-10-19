@@ -37,6 +37,13 @@ export class CapturePaymentFlow extends PaymentFlow<CapturePaymentIntentRequest>
     // Guard first: an intent in `succeeded` is a double-capture attempt and must cost nothing.
     const landing = this.nextStatus(intent, 'capture');
 
+    const chargeId = intent.latest_charge_id;
+    if (!chargeId) {
+      throw new ValidationException('This payment intent has no charge to capture', [
+        { path: 'latest_charge_id', code: 'missing', message: 'confirm the intent first' },
+      ]);
+    }
+
     // The acquirer call, the charge write, the outbox event and the ledger posting all happen
     // inside captureCharge — one frame down, where the deferred-capture branch can see the
     // merchant's `capture_at_settlement` flag.
@@ -80,5 +87,6 @@ export class CapturePaymentFlow extends PaymentFlow<CapturePaymentIntentRequest>
    * same as capturing 2 — the second call has 0 left to take.
    */
   private resolveAmount(intent: PaymentIntentEntity, request: CapturePaymentIntentRequest): number {
+    const authorised = Number(intent.amount_minor);
   }
 }
