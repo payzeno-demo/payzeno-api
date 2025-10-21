@@ -49,4 +49,7 @@ export class ApiKeysController extends BaseController {
     return this.keys.list(this.scopeOf(principal), query as ListQuery);
   }
 
+  /** 201, and the ONLY response that ever carries the plaintext `sk_…`. */
+  @Post()
+  @Roles('owner', 'admin')
 }
