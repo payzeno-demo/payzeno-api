@@ -30,8 +30,18 @@ export class ApiKeyEntity extends MerchantScopedEntity {
   @Column({ name: 'prefix', type: 'varchar', length: 12 })
   prefix!: string;
 
+  @Column({ name: 'lookup_hash', type: 'char', length: 64 })
+  lookupHash!: string;
+
+  @Column({ name: 'scopes', type: 'text', array: true, default: () => "'{}'" })
+  scopes!: ApiKeyScope[];
+
   @Column({ name: 'revoked_at', type: 'timestamptz', nullable: true })
   revokedAt!: Date | null;
+
+  isRevoked(now: Date): boolean {
+    return this.revokedAt !== null && this.revokedAt <= now;
+  }
 
 }
 
