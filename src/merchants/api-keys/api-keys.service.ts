@@ -72,6 +72,16 @@ export class ApiKeyRepository extends PayzenoRepository<ApiKeyEntity> {
 @Injectable()
 export class ApiKeysService extends BaseService<ApiKeyEntity> {
   constructor(
+    @Inject(PAYZENO_LOGGER) logger: PayzenoLogger,
+  ) {
+    super(keys, logger);
+  }
+
+  get entityName(): string {
+    return 'api_key';
+  }
+
+  async list(scope: MerchantScope, query: ListQuery): Promise<Paginated<ApiKey>> {
     const now = this.clock.now();
   }
 }
