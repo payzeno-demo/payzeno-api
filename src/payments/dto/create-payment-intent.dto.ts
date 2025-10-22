@@ -44,9 +44,13 @@ const MAX_AMOUNT_MINOR = 99_999_999;
 @Redact('payment_method_token')
 export class CreatePaymentIntentDto implements CreatePaymentIntentRequest {
   @Money()
+  @IsInt()
+  @IsOptional()
+  @IsOptional()
   @MaxLength(128)
   customer_reference?: string;
 
+  @IsOptional()
   @IsString()
   @MaxLength(1_000)
   description?: string;
