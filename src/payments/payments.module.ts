@@ -35,3 +35,40 @@ import { RefundsModule } from '../refunds/refunds.module';
 import { ChargeAuthorizationService } from './charge-authorization.service';
 import { ChargeCaptureService } from './charge-capture.service';
 import { ChargeExpiryPolicy } from './charge-expiry.policy';
+import { ChargeEntity } from './charge.entity';
+import { ChargeRepository } from './charge.repository';
+import { ChargesController } from './charges.controller';
+import { ChargesService } from './charges.service';
+import { CancelPaymentFlow } from './flows/cancel-payment.flow';
+import { CapturePaymentFlow } from './flows/capture-payment.flow';
+import { ConfirmPaymentFlow } from './flows/confirm-payment.flow';
+import { PaymentIntentEntity } from './payment-intent.entity';
+import { PaymentIntentRepository } from './payment-intent.repository';
+import { PaymentIntentsController } from './payment-intents.controller';
+import { PaymentIntentsService } from './payment-intents.service';
+import { ProcessorWebhookController } from './processor-webhook.controller';
+import { ProcessorWebhookService } from './processor-webhook.service';
+import { AcquirerHttpClient } from './processor/acquirer-http.client';
+import { NordpayAdapter } from './processor/nordpay.adapter';
+import { PROCESSOR_ADAPTERS, type ProcessorAdapter } from './processor/processor.adapter';
+import { ProcessorRouter } from './processor/processor.router';
+import { ProcessorSignatureVerifier } from './processor/processor-signature.verifier';
+import { SandboxProcessorAdapter } from './processor/sandbox.adapter';
+import { WorldflowAdapter } from './processor/worldflow.adapter';
+import { ChargeStateMachine } from './state/charge.state-machine';
+import { PaymentIntentStateMachine } from './state/payment-intent.state-machine';
+import { VaultClient } from './vault/vault.client';
+
+/** Per-acquirer client token. Two instances, two base URLs, one class. */
+const WORLDFLOW_HTTP = Symbol('WORLDFLOW_HTTP');
+const NORDPAY_HTTP = Symbol('NORDPAY_HTTP');
+
+@Module({
+  imports: [
+    CommonModule,
+    ApiModule,
+    MerchantsModule,
+    LedgerModule,
+    EventsModule,
+    AuditModule,
+    forwardRef(() => RefundsModule),
