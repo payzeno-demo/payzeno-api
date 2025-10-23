@@ -45,6 +45,9 @@ const MAX_AMOUNT_MINOR = 99_999_999;
 export class CreatePaymentIntentDto implements CreatePaymentIntentRequest {
   @Money()
   @IsInt()
+  @IsIn(CURRENCIES)
+  currency: CurrencyCode;
+
   @IsOptional()
   @IsOptional()
   @MaxLength(128)
@@ -55,4 +58,8 @@ export class CreatePaymentIntentDto implements CreatePaymentIntentRequest {
   @MaxLength(1_000)
   description?: string;
 
+  /** 22 chars, scheme-restricted character set — the validator knows the rules. */
+  @IsOptional()
+  /** Confirm in the same call. Ignored without a payment method, per the contract. */
+  @IsOptional()
 }
