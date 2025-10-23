@@ -8,3 +8,8 @@
  * `return_url` is validated as an https URL because it is where we send a cardholder mid-3DS.
  * An http return url downgrades the challenge and some issuers refuse the authentication
  * outright; a relative one sends them to our own domain, which is worse.
+ */
+
+import { IsOptional, IsUrl, MaxLength } from 'class-validator';
+
+import type { ConfirmPaymentIntentRequest, PaymentMethodToken } from '@payzeno/contracts';
