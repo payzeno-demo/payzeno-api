@@ -72,3 +72,41 @@ const NORDPAY_HTTP = Symbol('NORDPAY_HTTP');
     EventsModule,
     AuditModule,
     forwardRef(() => RefundsModule),
+    forwardRef(() => DisputesModule),
+    TypeOrmModule.forFeature([PaymentIntentEntity, ChargeEntity]),
+  ],
+  controllers: [PaymentIntentsController, ChargesController, ProcessorWebhookController],
+  providers: [
+    PaymentIntentsService,
+    PaymentIntentRepository,
+    ChargesService,
+    ChargeRepository,
+    ChargeAuthorizationService,
+    ChargeCaptureService,
+    ChargeExpiryPolicy,
+    ConfirmPaymentFlow,
+    CapturePaymentFlow,
+    CancelPaymentFlow,
+    PaymentIntentStateMachine,
+    ChargeStateMachine,
+    ProcessorWebhookService,
+
+    {
+      // Production code, reached only by `sk_test_` principals — the router hands it every
+      // request whose principal is not livemode. It takes the Clock explicitly so its
+      // deterministic "settles in 2 days" responses move with a FixedClock in the e2e suite.
+      provide: SandboxProcessorAdapter,
+      inject: [CLOCK],
+      useFactory: (clock: Clock): SandboxProcessorAdapter => new SandboxProcessorAdapter(clock),
+    },
+
+    {
+      provide: ProcessorSignatureVerifier,
+      inject: [ApiConfig, CLOCK],
+      useFactory: (config: ApiConfig, clock: Clock): ProcessorSignatureVerifier =>
+        new ProcessorSignatureVerifier(
+          {
+            worldflow: config.acquirers.worldflowApiKey,
+            nordpay: config.acquirers.nordpayApiKey,
+          },
+          clock,
