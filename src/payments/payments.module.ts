@@ -35,3 +35,78 @@ import { RefundsModule } from '../refunds/refunds.module';
 import { ChargeAuthorizationService } from './charge-authorization.service';
 import { ChargeCaptureService } from './charge-capture.service';
 import { ChargeExpiryPolicy } from './charge-expiry.policy';
+import { ChargeEntity } from './charge.entity';
+import { ChargeRepository } from './charge.repository';
+import { ChargesController } from './charges.controller';
+import { ChargesService } from './charges.service';
+import { CancelPaymentFlow } from './flows/cancel-payment.flow';
+import { CapturePaymentFlow } from './flows/capture-payment.flow';
+import { ConfirmPaymentFlow } from './flows/confirm-payment.flow';
+import { PaymentIntentEntity } from './payment-intent.entity';
+import { PaymentIntentRepository } from './payment-intent.repository';
+import { PaymentIntentsController } from './payment-intents.controller';
+import { PaymentIntentsService } from './payment-intents.service';
+import { ProcessorWebhookController } from './processor-webhook.controller';
+import { ProcessorWebhookService } from './processor-webhook.service';
+import { AcquirerHttpClient } from './processor/acquirer-http.client';
+import { NordpayAdapter } from './processor/nordpay.adapter';
+import { PROCESSOR_ADAPTERS, type ProcessorAdapter } from './processor/processor.adapter';
+import { ProcessorRouter } from './processor/processor.router';
+import { ProcessorSignatureVerifier } from './processor/processor-signature.verifier';
+import { SandboxProcessorAdapter } from './processor/sandbox.adapter';
+import { WorldflowAdapter } from './processor/worldflow.adapter';
+import { ChargeStateMachine } from './state/charge.state-machine';
+import { PaymentIntentStateMachine } from './state/payment-intent.state-machine';
+import { VaultClient } from './vault/vault.client';
+
+/** Per-acquirer client token. Two instances, two base URLs, one class. */
+const WORLDFLOW_HTTP = Symbol('WORLDFLOW_HTTP');
+const NORDPAY_HTTP = Symbol('NORDPAY_HTTP');
+
+@Module({
+  imports: [
+    CommonModule,
+    ApiModule,
+    MerchantsModule,
+    LedgerModule,
+    EventsModule,
+    AuditModule,
+    forwardRef(() => RefundsModule),
+    forwardRef(() => DisputesModule),
+    TypeOrmModule.forFeature([PaymentIntentEntity, ChargeEntity]),
+  ],
+  controllers: [PaymentIntentsController, ChargesController, ProcessorWebhookController],
+  providers: [
+    PaymentIntentsService,
+    PaymentIntentRepository,
+    ChargesService,
+    ChargeRepository,
+    ChargeAuthorizationService,
+    ChargeCaptureService,
+    ChargeExpiryPolicy,
+    ConfirmPaymentFlow,
+    CapturePaymentFlow,
+    CancelPaymentFlow,
+    PaymentIntentStateMachine,
+    ChargeStateMachine,
+    ProcessorWebhookService,
+
+    {
+      // Production code, reached only by `sk_test_` principals — the router hands it every
+      // request whose principal is not livemode. It takes the Clock explicitly so its
+      // deterministic "settles in 2 days" responses move with a FixedClock in the e2e suite.
+      provide: SandboxProcessorAdapter,
+      inject: [CLOCK],
+      useFactory: (clock: Clock): SandboxProcessorAdapter => new SandboxProcessorAdapter(clock),
+    },
+
+    {
+      provide: ProcessorSignatureVerifier,
+      inject: [ApiConfig, CLOCK],
+      useFactory: (config: ApiConfig, clock: Clock): ProcessorSignatureVerifier =>
+        new ProcessorSignatureVerifier(
+          {
+            worldflow: config.acquirers.worldflowApiKey,
+            nordpay: config.acquirers.nordpayApiKey,
+          },
+          clock,
