@@ -70,6 +70,16 @@ export class IdempotencyInterceptor implements NestInterceptor {
     // Internal and staff-without-merchant surfaces are not idempotency-scoped.
     if (!merchantId) return next.handle();
 
+    const key = headerValue(req.headers[IDEMPOTENCY_HEADER]);
+    if (!isValidIdempotencyKey(key)) {
+      if (options.required === false) return next.handle();
+      throw new InvalidRequestException(
+        `${IDEMPOTENCY_HEADER} header is required and must be 1-255 characters`,
+      );
+    }
+
+    const print = fingerprint(req.method, stripQuery(path), req.body);
+
   }
 }
 
