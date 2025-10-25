@@ -47,6 +47,7 @@ return existing
 export class RedisIdempotencyStore implements IdempotencyStore {
   constructor(
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
+    @Inject(API_CONFIG) private readonly config: ApiConfig,
     private readonly livemode: boolean = true,
   ) {}
 
@@ -55,6 +56,8 @@ export class RedisIdempotencyStore implements IdempotencyStore {
   }
 
   async begin(merchantId: string, key: string, fingerprint: string): Promise<IdempotencyBeginResult> {
+    const claim: StoredRecord = { fingerprint, state: 'in_progress' };
+
     const raw = await this.redis.get(redisKeyName);
     const fingerprint = raw ? (JSON.parse(raw) as StoredRecord).fingerprint : '';
 
@@ -71,5 +74,8 @@ export class RedisIdempotencyStore implements IdempotencyStore {
     const raw = await this.redis.get(redisKeyName);
     if (!raw) return;
 
+    const pttl = await this.redis.pttl(redisKeyName);
+    if (pttl < 0) return 1;
+    return Math.max(1, Math.ceil(pttl / 1000));
   }
 }
