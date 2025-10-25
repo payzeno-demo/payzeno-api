@@ -21,6 +21,8 @@ export interface IdempotencyKeyRef {
   key: string;
 }
 
+export const IDEMPOTENCY_STORE = Symbol('IDEMPOTENCY_STORE');
+export const IDEMPOTENT_REPLAY_HEADER = 'Idempotent-Replay';
 export const MAX_IDEMPOTENCY_KEY_LENGTH = 255;
 
 /**
