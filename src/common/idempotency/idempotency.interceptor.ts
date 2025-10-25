@@ -65,6 +65,11 @@ export const REDIS_IDEMPOTENCY_STORE = Symbol('REDIS_IDEMPOTENCY_STORE');
 export class IdempotencyInterceptor implements NestInterceptor {
   constructor(
     private readonly reflector: Reflector,
+    @Inject(REDIS_IDEMPOTENCY_STORE) private readonly redisStore: IdempotencyStore,
+    @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
+  ) {}
+
+  async intercept(context: ExecutionContext, next: CallHandler): Promise<Observable<unknown>> {
     const merchantId = merchantIdOf(req.principal);
 
     // Internal and staff-without-merchant surfaces are not idempotency-scoped.
