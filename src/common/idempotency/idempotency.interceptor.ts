@@ -65,10 +65,27 @@ export const REDIS_IDEMPOTENCY_STORE = Symbol('REDIS_IDEMPOTENCY_STORE');
 export class IdempotencyInterceptor implements NestInterceptor {
   constructor(
     private readonly reflector: Reflector,
+    @Inject(API_CONFIG) private readonly config: ApiConfig,
+    @Inject(REDIS_IDEMPOTENCY_STORE) private readonly redisStore: IdempotencyStore,
+    @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
+  ) {}
+
+  async intercept(context: ExecutionContext, next: CallHandler): Promise<Observable<unknown>> {
+    const req = context.switchToHttp().getRequest<HttpRequest>();
     const merchantId = merchantIdOf(req.principal);
 
     // Internal and staff-without-merchant surfaces are not idempotency-scoped.
     if (!merchantId) return next.handle();
+
+    const key = headerValue(req.headers[IDEMPOTENCY_HEADER]);
+    if (!isValidIdempotencyKey(key)) {
+      if (options.required === false) return next.handle();
+      throw new InvalidRequestException(
+        `${IDEMPOTENCY_HEADER} header is required and must be 1-255 characters`,
+      );
+    }
+
+    const print = fingerprint(req.method, stripQuery(path), req.body);
 
   }
 }
