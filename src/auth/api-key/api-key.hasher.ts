@@ -44,8 +44,31 @@ export interface MintedApiKeySecret {
 export class ApiKeyHasher {
   private readonly pepper: string;
 
+  /** Generates a new secret and both of its hashes. Called once per `POST /v1/api-keys`. */
+  async mint(): Promise<MintedApiKeySecret> {
+    const secret = randomBytes(SECRET_BYTES).toString('base64url');
+    return {
+      secret,
+      lookupHash: this.lookupHash(secret),
+      secretHash: await this.hashSecret(secret),
+      lastFour: secret.slice(-4),
+    };
+  }
+
+  /**
+   * `sk_live_<key_id_suffix>_<secret>`. The id suffix is decoration for humans reading logs —
+   * the lookup keys on the secret's HMAC, never on the suffix, so a merchant who mangles the
+   * middle segment still authenticates and a merchant who mangles the secret does not.
+   */
   formatToken(mode: 'live' | 'test', apiKeyId: string, secret: string): string {
     return `sk_${mode}_${apiKeyId.slice(-8)}_${secret}`;
   }
 
+  /** Same-length comparison for the non-argon2 comparisons (CSRF, internal shared secret). */
+  static constantTimeEquals(a: string, b: string): boolean {
+    const left = Buffer.from(a);
+    const right = Buffer.from(b);
+    if (left.length !== right.length) return false;
+    return timingSafeEqual(left, right);
+  }
 }
