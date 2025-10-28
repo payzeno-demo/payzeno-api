@@ -16,3 +16,20 @@
  * reader. Before that job, this method was the only writer of `settled` and nobody noticed the
  * gap for six weeks.
  */
+
+import { Inject, Injectable } from '@nestjs/common';
+import type { EntityManager } from 'typeorm';
+import type {
+  Acquirer,
+  AuthPrincipal,
+  Charge,
+  ChargeId,
+  ChargeListQuery,
+  ChargeLedgerResponse,
+  IsoTimestamp,
+  Paginated,
+  SettlementBatchId,
+} from '@payzeno/contracts';
+
+import { livemodeOf, merchantIdOf } from '../auth/principal/principal.factory';
+import { BaseService } from '../common/base/base.service';
