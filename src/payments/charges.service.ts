@@ -33,3 +33,21 @@ import type {
 
 import { livemodeOf, merchantIdOf } from '../auth/principal/principal.factory';
 import { BaseService } from '../common/base/base.service';
+import type { MerchantScope } from '../common/base/merchant-scoped.entity';
+import { ChargeNotFoundException } from '../common/errors/not-found.exceptions';
+import { PAYZENO_LOGGER, type PayzenoLogger } from '../common/logging/logger';
+import { LedgerReadThroughService } from '../ledger/ledger-read-through.service';
+import { ChargeEntity } from './charge.entity';
+import { ChargeRepository } from './charge.repository';
+
+export interface SettlementMark {
+  settlementBatchId: SettlementBatchId;
+  settledAt: IsoTimestamp;
+}
+
+@Injectable()
+export class ChargesService extends BaseService<ChargeEntity> {
+  constructor(
+    private readonly charges: ChargeRepository,
+    private readonly ledger: LedgerReadThroughService,
+    @Inject(PAYZENO_LOGGER) logger: PayzenoLogger,
