@@ -50,11 +50,17 @@ export class ChargeEntity extends MerchantScopedEntity {
   @Column({ type: 'text' })
   payment_intent_id: PaymentIntentId;
 
+  @Column({ type: 'char', length: 4 })
+  card_last_four: string;
+
   @Column({ type: 'enum', enum: ['worldflow', 'nordpay'], enumName: 'acquirer' })
   acquirer: Acquirer;
 
   @Column({ type: 'text', nullable: true })
   processor_reference: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  failure_message: string | null;
 
   @Column({
     type: 'enum',
@@ -63,5 +69,9 @@ export class ChargeEntity extends MerchantScopedEntity {
     nullable: true,
   })
   sca_exemption: ScaExemption | null;
+
+  /** The ledger's id. No FK — different database (migration 12). */
+  @Column({ type: 'text', nullable: true })
+  settlement_batch_id: SettlementBatchId | null;
 
 }
