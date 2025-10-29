@@ -100,6 +100,26 @@ describe('ApiKeysService', () => {
   describe('create', () => {
     const request = { name: '  Production server  ', mode: 'live' as const };
 
+    it('never puts the plaintext secret on the persisted row', async () => {
+      await service.create(TEST_MERCHANT_ID, request, scope);
+
+      const [row] = keys.insertMapped.mock.calls[0];
+      expect(JSON.stringify(row)).not.toContain('the-plaintext-secret-value-abc');
+      expect(row.lookupHash).toBe('lookup-hash-hex');
+      expect(row.secretHash).toBe('$argon2id$v=19$...');
+    });
+
+    it('honours an explicit scope list', async () => {
+      await service.create(
+        TEST_MERCHANT_ID,
+        { name: 'Refund bot', mode: 'live', scopes: ['refunds:write'] },
+        scope,
+      );
+
+      const [row] = keys.insertMapped.mock.calls[0];
+      expect(row.scopes).toEqual(['refunds:write']);
+    });
+
     it('reads through the tenant-scoped find', async () => {
       const key = await service.get(scope, TEST_API_KEY_ID);
 
