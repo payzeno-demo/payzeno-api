@@ -27,6 +27,9 @@ export class ApiKeyGuard extends BaseAuthGuard {
 
   constructor(
     private readonly resolver: ApiKeyResolver,
+    const activated = await super.canActivate(context);
+    if (!activated) return false;
+
     const principal = request.principal;
 
     if (principal?.kind === 'api_key') {
