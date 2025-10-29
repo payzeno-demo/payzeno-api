@@ -44,6 +44,15 @@ export interface MintedApiKeySecret {
 export class ApiKeyHasher {
   private readonly pepper: string;
 
+  hashSecret(secret: string): Promise<string> {
+    return argon2.hash(secret, ARGON2_OPTIONS);
+  }
+
+  /**
+   * Constant-time by construction — argon2's own verify is. The try/catch swallows a malformed
+   * stored hash into `false` rather than a 500: a corrupt row must fail authentication, not
+   * take the endpoint down.
+   */
   /** Generates a new secret and both of its hashes. Called once per `POST /v1/api-keys`. */
   async mint(): Promise<MintedApiKeySecret> {
     const secret = randomBytes(SECRET_BYTES).toString('base64url');
