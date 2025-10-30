@@ -109,6 +109,25 @@ describe('ApiKeysService', () => {
       expect(row.secretHash).toBe('$argon2id$v=19$...');
     });
 
+    it('keeps mode and livemode in agreement — a test key must not read live rows', async () => {
+      await service.create(TEST_MERCHANT_ID, { name: 'Sandbox', mode: 'test' }, scope);
+
+      const [row] = keys.insertMapped.mock.calls[0];
+      expect(row.mode).toBe('test');
+      expect(row.livemode).toBe(false);
+      expect(row.prefix).toBe('sk_test_');
+    });
+
+    it('grants every read scope and no write scope when the request omits them', async () => {
+      await service.create(TEST_MERCHANT_ID, request, scope);
+
+      const [row] = keys.insertMapped.mock.calls[0];
+      expect(row.scopes).toEqual([...DEFAULT_SCOPES]);
+      for (const write of WRITE_SCOPES) {
+        expect(row.scopes).not.toContain(write);
+      }
+    });
+
     it('honours an explicit scope list', async () => {
       await service.create(
         TEST_MERCHANT_ID,
