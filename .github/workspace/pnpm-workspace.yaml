@@ -4,3 +4,5 @@
 # build time — that is what makes "@payzeno/contracts": "workspace:*" resolve without a
 # publish step. ci.yml checks both out side by side and copies this file to the parent
 # directory. Locally, `git clone` them as siblings and do the same; see README §Setup.
+packages:
+  - 'payzeno-contracts'
