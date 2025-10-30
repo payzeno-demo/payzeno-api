@@ -120,6 +120,20 @@ describe('ApiKeysService', () => {
       expect(row.scopes).toEqual(['refunds:write']);
     });
 
+    it('trims the name a human typed into the console', async () => {
+      await service.create(TEST_MERCHANT_ID, request, scope);
+
+      expect(keys.insertMapped.mock.calls[0][0].name).toBe('Production server');
+    });
+
+    it('mints a key_-prefixed id', async () => {
+      await service.create(TEST_MERCHANT_ID, request, scope);
+
+      expect(keys.insertMapped.mock.calls[0][0].id).toMatch(/^key_/);
+    });
+  });
+
+  describe('get', () => {
     it('reads through the tenant-scoped find', async () => {
       const key = await service.get(scope, TEST_API_KEY_ID);
 
