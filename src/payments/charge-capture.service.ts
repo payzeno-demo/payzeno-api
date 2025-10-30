@@ -11,3 +11,15 @@
  *
  * ### `capture_at_settlement` — read this before changing the branch below
  *
+ * For merchants with `merchant.capture_at_settlement = true` (eleven of them, all travel and
+ * lodging MCCs, PAY-1652) payzeno-api does **not** issue the physical capture. payzeno-ledger
+ * issues it during settlement posting, from `SettlementPoster.post_settlement`. This service
+ * marks the charge `captured` and emits `payment.captured`; the acquirer call happens later,
+ * elsewhere, on a different schedule.
+ *
+ * That is the branch that turned a duplicate ledger posting into 218 duplicate cardholder
+ * charges on the night of PAY-2041. It is correct, it is still here, and the postmortem's
+ * action items are on the ledger side. See docs/runbooks/payzeno-api.md §"duplicate settlement
+ * remediation" and payzeno-ledger/docs/postmortems/2041-duplicate-settlement.md.
+ */
+
