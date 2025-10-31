@@ -21,8 +21,21 @@ import { makeMerchant, makeDeferredCaptureMerchant } from 'test/factories/mercha
  */
 describe('ChargeCaptureService', () => {
   let service: ChargeCaptureService;
+  let repo: jest.Mocked<ChargeRepository>;
   let publisher: jest.Mocked<OutboxEventPublisher>;
   let txm: jest.Mocked<TransactionManager>;
+  let adapter: { acquirer: 'worldflow'; capture: jest.Mock };
+
+  const merchant = makeMerchant();
+
+  it('allows a partial capture', async () => {
+    repo.lockForUpdate.mockResolvedValue(makeCharge({ status: 'authorized', amount_minor: 4_500 }) as never);
+
+    await service.captureCharge(merchant, 'ch_1', 2_000);
+
+    expect(adapter.capture).toHaveBeenCalledWith(expect.objectContaining({ amountMinor: 2_000 }));
+  });
+
   it('uses a deterministic idempotency key derived from the charge, not a counter', async () => {
     const charge = makeCharge({ status: 'authorized' });
     repo.lockForUpdate.mockResolvedValue(charge as never);
