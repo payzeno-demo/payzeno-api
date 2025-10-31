@@ -100,6 +100,59 @@ describe('ApiKeysService', () => {
   describe('create', () => {
     const request = { name: '  Production server  ', mode: 'live' as const };
 
+    it('never puts the plaintext secret on the persisted row', async () => {
+      await service.create(TEST_MERCHANT_ID, request, scope);
+
+      const [row] = keys.insertMapped.mock.calls[0];
+      expect(JSON.stringify(row)).not.toContain('the-plaintext-secret-value-abc');
+      expect(row.lookupHash).toBe('lookup-hash-hex');
+      expect(row.secretHash).toBe('$argon2id$v=19$...');
+    });
+
+    it('keeps mode and livemode in agreement — a test key must not read live rows', async () => {
+      await service.create(TEST_MERCHANT_ID, { name: 'Sandbox', mode: 'test' }, scope);
+
+      const [row] = keys.insertMapped.mock.calls[0];
+      expect(row.mode).toBe('test');
+      expect(row.livemode).toBe(false);
+      expect(row.prefix).toBe('sk_test_');
+    });
+
+    it('grants every read scope and no write scope when the request omits them', async () => {
+      await service.create(TEST_MERCHANT_ID, request, scope);
+
+      const [row] = keys.insertMapped.mock.calls[0];
+      expect(row.scopes).toEqual([...DEFAULT_SCOPES]);
+      for (const write of WRITE_SCOPES) {
+        expect(row.scopes).not.toContain(write);
+      }
+    });
+
+    it('honours an explicit scope list', async () => {
+      await service.create(
+        TEST_MERCHANT_ID,
+        { name: 'Refund bot', mode: 'live', scopes: ['refunds:write'] },
+        scope,
+      );
+
+      const [row] = keys.insertMapped.mock.calls[0];
+      expect(row.scopes).toEqual(['refunds:write']);
+    });
+
+    it('trims the name a human typed into the console', async () => {
+      await service.create(TEST_MERCHANT_ID, request, scope);
+
+      expect(keys.insertMapped.mock.calls[0][0].name).toBe('Production server');
+    });
+
+    it('mints a key_-prefixed id', async () => {
+      await service.create(TEST_MERCHANT_ID, request, scope);
+
+      expect(keys.insertMapped.mock.calls[0][0].id).toMatch(/^key_/);
+    });
+  });
+
+  describe('get', () => {
     it('reads through the tenant-scoped find', async () => {
       const key = await service.get(scope, TEST_API_KEY_ID);
 

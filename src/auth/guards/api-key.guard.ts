@@ -27,6 +27,21 @@ export class ApiKeyGuard extends BaseAuthGuard {
 
   constructor(
     private readonly resolver: ApiKeyResolver,
+    private readonly reflector: Reflector,
+  ) {
+    super();
+  }
+
+  /**
+   * Overridden to run the scope check after the base has attached the principal. The base
+   * cannot do it: scopes are per-handler metadata and only this guard's kind of principal
+   * carries them.
+   */
+  override async canActivate(context: ExecutionContext): Promise<boolean> {
+    const activated = await super.canActivate(context);
+    if (!activated) return false;
+
+    const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const principal = request.principal;
 
     if (principal?.kind === 'api_key') {
