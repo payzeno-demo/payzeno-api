@@ -23,3 +23,16 @@
  * remediation" and payzeno-ledger/docs/postmortems/2041-duplicate-settlement.md.
  */
 
+import { Inject, Injectable } from '@nestjs/common';
+import type { Merchant } from '@payzeno/contracts';
+
+import { EVENT_PUBLISHER, type EventPublisher } from '../events/publisher';
+import { ChargeNotCapturableException } from '../common/errors/state.exceptions';
+import { CLOCK, type Clock } from '../common/time/clock';
+import { LOGGER, type PayzenoLogger } from '../common/logging/logger';
+import { TransactionManager } from '../common/persistence/transaction.manager';
+import { ChargeEntity } from './charge.entity';
+import { ChargeRepository } from './charge.repository';
+import { ChargeStateMachine } from './state/charge.state-machine';
+import { ProcessorRouter } from './processor/processor.router';
+import { LedgerReadThroughService } from '../ledger/ledger-read-through.service';
