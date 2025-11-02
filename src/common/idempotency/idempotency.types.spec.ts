@@ -35,6 +35,24 @@ describe('idempotency fingerprint', () => {
     );
   });
 
+  it('changes when the path changes', () => {
+    expect(fingerprint('POST', '/v1/payment_intents', BODY)).not.toBe(
+      fingerprint('POST', '/v1/refunds', BODY),
+    );
+  });
+
+  it('changes when the method changes', () => {
+    expect(fingerprint('POST', '/v1/payment_intents/pi_1', BODY)).not.toBe(
+      fingerprint('PATCH', '/v1/payment_intents/pi_1', BODY),
+    );
+  });
+
+  it('treats an undefined field as absent, matching what JSON.stringify sent on the wire', () => {
+    expect(fingerprint('POST', '/v1/refunds', { amount: 1, note: undefined })).toBe(
+      fingerprint('POST', '/v1/refunds', { amount: 1 }),
+    );
+  });
+
   it('handles an empty body — DELETE carries none', () => {
     expect(() => fingerprint('DELETE', '/v1/api-keys/key_1', undefined)).not.toThrow();
   });
@@ -45,8 +63,21 @@ describe('canonicalJson', () => {
     expect(canonicalJson({ b: 1, a: 2 })).toBe('{"a":2,"b":1}');
   });
 
+  it('handles scalars', () => {
+    expect(canonicalJson('x')).toBe('"x"');
+    expect(canonicalJson(42)).toBe('42');
+    expect(canonicalJson(true)).toBe('true');
+  });
+
   it('rejects one character over', () => {
     expect(isValidIdempotencyKey('k'.repeat(MAX_IDEMPOTENCY_KEY_LENGTH + 1))).toBe(false);
   });
 
+  it('rejects the empty string', () => {
+    expect(isValidIdempotencyKey('')).toBe(false);
+  });
+
+  it.each([[undefined], [null], [42], [{}], [[]]])('rejects %p', (value) => {
+    expect(isValidIdempotencyKey(value)).toBe(false);
+  });
 });

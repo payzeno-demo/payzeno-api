@@ -40,6 +40,15 @@ describe('PostgresIdempotencyStore', () => {
   });
 
   describe('lease reclaim', () => {
+    it('reclaims the key once the lease has lapsed', async () => {
+      await store.begin(TEST_MERCHANT_ID, 'k1', 'fp1');
+      harness.expireLease(TEST_MERCHANT_ID, 'k1');
+
+      await expect(store.begin(TEST_MERCHANT_ID, 'k1', 'fp1')).resolves.toEqual({
+        outcome: 'proceed',
+      });
+    });
+
     it('reports the seconds remaining on the holder’s lease', async () => {
       await store.begin(TEST_MERCHANT_ID, 'k1', 'fp1');
       harness.clock.advanceSeconds(10);
@@ -53,6 +62,21 @@ describe('PostgresIdempotencyStore', () => {
       }
     });
 
+    it('still refuses a different body after a failure', async () => {
+      await store.begin(TEST_MERCHANT_ID, 'k1', 'fp1');
+      await store.fail(TEST_MERCHANT_ID, 'k1');
+
+      await expect(store.begin(TEST_MERCHANT_ID, 'k1', 'fp-other')).resolves.toEqual({
+        outcome: 'fingerprint_mismatch',
+      });
+    });
+
+    it('is a no-op for a key that was never begun', async () => {
+      await expect(store.fail(TEST_MERCHANT_ID, 'never-seen')).resolves.toBeUndefined();
+    });
+  });
+
+  it('separates live and test keyspaces on the same key', async () => {
     const testStore = harness.forMode(false);
 
     await store.begin(TEST_MERCHANT_ID, 'shared', 'fp1');
