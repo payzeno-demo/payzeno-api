@@ -55,4 +55,20 @@ export abstract class BaseService<TEntity extends ObjectLiteral & CursorRow> {
     return found;
   }
 
+  protected async paginate(
+    query: ListQuery,
+    scope: MerchantScope,
+    extend?: (qb: SelectQueryBuilder<TEntity>) => SelectQueryBuilder<TEntity>,
+  ): Promise<Paginated<TEntity>> {
+    return this.repo.paginateCursor(scope, resolveListQuery(query), extend);
+  }
+
+  /** Convenience for feature predicates expressed as a plain where clause. */
+  protected async paginateWhere(
+    query: ListQuery,
+    scope: MerchantScope,
+    where: FindOptionsWhere<TEntity>,
+  ): Promise<Paginated<TEntity>> {
+    return this.paginate(query, scope, (qb) => qb.andWhere(where));
+  }
 }
