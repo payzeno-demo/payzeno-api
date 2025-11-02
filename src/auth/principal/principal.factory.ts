@@ -148,3 +148,27 @@ export function staffIdOf(principal: AuthPrincipal): string | null {
   return principal.kind === 'staff_session' ? principal.staff_id : null;
 }
 
+export function scopesOf(principal: AuthPrincipal): readonly ApiKeyScope[] {
+  return principal.kind === 'api_key' ? principal.scopes : [];
+}
+
+export function roleOf(principal: AuthPrincipal): UserRole | null {
+  return principal.kind === 'dashboard_session' ? principal.role : null;
+}
+
+/** One line, safe to log. Used by StructuredLoggerMiddleware and the audit interceptor. */
+export function describePrincipal(principal: AuthPrincipal | null): string {
+  if (!principal) return 'anonymous';
+  switch (principal.kind) {
+    case 'api_key':
+      return `api_key:${principal.api_key_id}`;
+    case 'dashboard_session':
+      return `user:${principal.user_id}`;
+    case 'staff_session':
+      return `staff:${principal.staff_id}`;
+    case 'internal_service':
+      return `service:${principal.service}`;
+    case 'client_secret':
+      return `client_secret:${principal.payment_intent_id}`;
+  }
+}

@@ -130,6 +130,14 @@ describe('AuthService', () => {
       expect(users.findLoginCandidates).toHaveBeenCalledWith('dana@example.com');
     });
 
+    it('records the login timestamp', async () => {
+      users.findLoginCandidates.mockResolvedValue([user()]);
+
+      await service.login('dana@example.com', 'correct-horse', null, origin);
+
+      expect(users.touchLastLogin).toHaveBeenCalledWith('usr_0001', NOW);
+    });
+
     it('rejects an unknown address', async () => {
       users.findLoginCandidates.mockResolvedValue([]);
 
@@ -210,6 +218,26 @@ describe('AuthService', () => {
       });
     });
 
+    it('raises MerchantNotFoundException when the tenant row has gone', async () => {
+      users.findLoginCandidates.mockResolvedValue([user()]);
+      merchants.findById.mockResolvedValue(null);
+
+      await expect(
+        service.login('dana@example.com', 'correct-horse', null, origin),
+      ).rejects.toBeInstanceOf(MerchantNotFoundException);
+    });
+  });
+
+  describe('loginStaff', () => {
+    it('delegates the credential check to StaffUsersService', async () => {
+      staff.authenticate.mockResolvedValue({ id: 'stf_0001', role: 'risk' } as never);
+
+      await service.loginStaff('ops@payzeno.com', 'hunter2', origin);
+
+      expect(staff.authenticate).toHaveBeenCalledWith('ops@payzeno.com', 'hunter2');
+      expect(sessions.issueStaff).toHaveBeenCalledWith('stf_0001', 'risk', origin);
+    });
+
     it('rejects when the operator does not authenticate', async () => {
       staff.authenticate.mockResolvedValue(null);
 
@@ -235,6 +263,17 @@ describe('AuthService', () => {
       merchantId: MERCHANT_A,
     };
 
+    it('returns the user, the merchant and the role permissions', async () => {
+      sessions.requireRecord.mockResolvedValue(record as never);
+      users.findByIdForMerchant.mockResolvedValue(user());
+
+      const described = await service.describeSession('sess_1');
+
+      expect(described.body.object).toBe('session');
+      expect(described.body.permissions).toContain('payouts:write');
+      expect(described.csrfToken).toBe('fresh-csrf');
+    });
+
     it('gives a viewer no permissions at all', async () => {
       sessions.requireRecord.mockResolvedValue(record as never);
       users.findByIdForMerchant.mockResolvedValue(user({ role: 'viewer' } as never));
@@ -244,6 +283,25 @@ describe('AuthService', () => {
       expect(described.body.permissions).toEqual([]);
     });
 
+    it('refuses a staff session — /v1/auth/me is the merchant console call', async () => {
+      sessions.requireRecord.mockResolvedValue({ id: 'sess_1', kind: 'staff' } as never);
+
+      await expect(service.describeSession('sess_1')).rejects.toBeInstanceOf(
+        AuthenticationRequiredException,
+      );
+    });
+
+    it('refuses when the subject row has been deleted under a live session', async () => {
+      sessions.requireRecord.mockResolvedValue(record as never);
+      users.findByIdForMerchant.mockResolvedValue(null);
+
+      await expect(service.describeSession('sess_1')).rejects.toBeInstanceOf(
+        AuthenticationRequiredException,
+      );
+    });
+  });
+
+  describe('requestPasswordReset', () => {
     it('revokes every live session for the address', async () => {
       users.findLoginCandidates.mockResolvedValue([
         user({ id: 'usr_a', merchantId: MERCHANT_A }),
@@ -257,6 +315,15 @@ describe('AuthService', () => {
       expect(sessions.destroyAllForUser).toHaveBeenCalledWith('usr_b');
     });
 
+    it('resolves quietly for an unknown address — the route is always 202', async () => {
+      users.findLoginCandidates.mockResolvedValue([]);
+
+      await expect(service.requestPasswordReset('nobody@example.com')).resolves.toBeUndefined();
+      expect(sessions.destroyAllForUser).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('logout', () => {
     it('destroys the session', async () => {
       await service.logout('sess_1');
 

@@ -104,6 +104,62 @@ export class SessionService {
     return this.issued(record);
   }
 
+  private newRecord(
+    origin: SessionOrigin,
+    subject: Pick<SessionRecord, 'kind' | 'userId' | 'merchantId' | 'role' | 'staffId' | 'staffRole'>,
+  ): SessionRecord {
+    return {
+      id: randomBytes(32).toString('base64url'),
+      ...subject,
+      csrfToken: this.csrf.mint(),
+      createdAtMs: this.clock.nowMs(),
+      lastSeenAtMs: this.clock.nowMs(),
+      userAgent: origin.userAgent ? origin.userAgent.slice(0, 200) : null,
+      ip: origin.ip,
+    };
+  }
+
+  private issued(record: SessionRecord): IssuedSession {
+    return {
+      record,
+      sessionCookie: { name: SESSION_COOKIE, value: record.id, options: this.sessionCookieOptions() },
+      csrfCookie: { name: this.csrf.name, value: record.csrfToken, options: this.csrf.cookieOptions() },
+    };
+  }
+
+  /**
+   * The guard path. Asserts CSRF *before* sliding the TTL, so a rejected request cannot keep
+   * a stolen session alive.
+   */
+  async resolve(sessionId: string | undefined, method: string, csrfHeader: string | undefined): Promise<AuthPrincipal> {
+    const record = await this.requireRecord(sessionId);
+
+    this.csrf.assert(method, csrfHeader, record.csrfToken);
+    await this.store.touch(record.id, this.ttlSec);
+
+    return this.toPrincipal(record, null);
+  }
+
+  /**
+   * StaffGuard's entry point. `actingMerchantId` comes off `?merchant_id=` and is null on the
+   * platform-wide routes; it is NOT read from the record, because a staff operator may act on
+   * a different merchant on every request of one session.
+   */
+  async resolveStaff(
+    sessionId: string | undefined,
+    method: string,
+    csrfHeader: string | undefined,
+    actingMerchantId: MerchantId | null,
+  ): Promise<AuthPrincipal | null> {
+    const record = await this.requireRecord(sessionId);
+    if (record.kind !== 'staff') return null;
+
+    this.csrf.assert(method, csrfHeader, record.csrfToken);
+    await this.store.touch(record.id, this.ttlSec);
+
+    return this.toPrincipal(record, actingMerchantId);
+  }
+
   /** The one place a record becomes a principal, so the two kinds cannot be confused. */
   private toPrincipal(record: SessionRecord, actingMerchantId: MerchantId | null): AuthPrincipal {
     if (record.kind === 'staff') {
@@ -140,8 +196,23 @@ export class SessionService {
     return record.csrfToken;
   }
 
+  async destroy(sessionId: string | undefined): Promise<void> {
+    if (!sessionId) return;
+    await this.store.destroy(sessionId);
+  }
+
+  /** The controller sets `pz_csrf` on login and on `/me`; the flags live with the service. */
+  get csrfCookieName(): string {
+    return this.csrf.name;
+  }
+
   csrfCookieOptions(): ReturnType<CsrfService['cookieOptions']> {
     return this.csrf.cookieOptions();
+  }
+
+  /** Password reset and role revocation both land here. */
+  async destroyAllForUser(userId: UserId): Promise<number> {
+    return this.store.destroyAllForUser(userId);
   }
 
   private sessionCookieOptions(): SessionCookieOptions {
