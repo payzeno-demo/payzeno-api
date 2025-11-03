@@ -43,8 +43,14 @@ export class MerchantEntity extends BaseEntity {
   @Column({ name: 'legal_name', type: 'text' })
   legalName!: string;
 
+  @Column({ name: 'status', type: 'text', default: 'pending_review' })
+  status!: MerchantStatus;
+
   @Column({ name: 'payout_schedule', type: 'text', default: 'daily' })
   payoutSchedule!: PayoutSchedule;
+
+  @Column({ name: 'platform_fee_fixed_minor', type: 'bigint', default: 30, transformer: requiredMinorUnitsTransformer })
+  platformFeeFixedMinor!: MinorUnits;
 
   /** Funds availability in banking days. T+2 standard, T+7 for `high` risk. */
   @Column({ name: 'payout_delay_days', type: 'integer', default: 2 })
@@ -52,5 +58,10 @@ export class MerchantEntity extends BaseEntity {
 
   @Column({ name: 'livemode', type: 'boolean', default: false })
   livemode!: boolean;
+
+  /** May this merchant take new payments? `restricted` still can — it just cannot pay out. */
+  canCharge(): boolean {
+    return this.status === 'active' || this.status === 'restricted' || this.status === 'pending_review';
+  }
 
 }
