@@ -23,12 +23,62 @@ describe('RedisIdempotencyStore', () => {
     });
   });
 
+  it('replays a completed response', async () => {
+    await store.begin(TEST_MERCHANT_ID, 'k1', 'fp1');
+    await store.complete(TEST_MERCHANT_ID, 'k1', 201, { id: 'pi_1' });
+
+    const replayed = await store.begin(TEST_MERCHANT_ID, 'k1', 'fp1');
+
+    expect(isReplay(replayed)).toBe(true);
+    if (isReplay(replayed)) {
+      expect(replayed.status).toBe(201);
+      expect(replayed.body).toEqual({ id: 'pi_1' });
+    }
+  });
+
   it('lets a failed attempt be re-claimed with the same fingerprint', async () => {
     await store.begin(TEST_MERCHANT_ID, 'k1', 'fp1');
     await store.fail(TEST_MERCHANT_ID, 'k1');
 
     await expect(store.begin(TEST_MERCHANT_ID, 'k1', 'fp1')).resolves.toEqual({
       outcome: 'proceed',
+    });
+  });
+
+  it('shortens the TTL on failure so a dead key does not sit for 24h', async () => {
+    await store.begin(TEST_MERCHANT_ID, 'k1', 'fp1');
+    await store.fail(TEST_MERCHANT_ID, 'k1');
+    harness.clock.advanceSeconds(120);
+
+    // The 60s failure TTL has lapsed; the key is simply gone.
+    await expect(store.begin(TEST_MERCHANT_ID, 'k1', 'fp-anything')).resolves.toEqual({
+      outcome: 'proceed',
+    });
+  });
+
+  describe('Retry-After', () => {
+    it('rounds the remaining PTTL UP to whole seconds', async () => {
+      await store.begin(TEST_MERCHANT_ID, 'k1', 'fp1');
+      harness.clock.advanceMs(10_500);
+
+      const result = await store.begin(TEST_MERCHANT_ID, 'k1', 'fp1');
+
+      expect(result.outcome).toBe('in_progress');
+      if (result.outcome === 'in_progress') {
+        // 19.5s left → 20. The Postgres store would answer 19 for the same instant.
+        expect(result.retryAfterSec).toBe(20);
+      }
+    });
+
+    it('floors at 1 rather than reporting 0', async () => {
+      await store.begin(TEST_MERCHANT_ID, 'k1', 'fp1');
+      harness.clock.advanceMs(29_999);
+
+      const result = await store.begin(TEST_MERCHANT_ID, 'k1', 'fp1');
+
+      if (result.outcome === 'in_progress') {
+        expect(result.retryAfterSec).toBeGreaterThanOrEqual(1);
+      }
     });
   });
 
