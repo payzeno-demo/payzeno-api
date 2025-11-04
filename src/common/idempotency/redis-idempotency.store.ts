@@ -56,8 +56,10 @@ export class RedisIdempotencyStore implements IdempotencyStore {
   }
 
   async begin(merchantId: string, key: string, fingerprint: string): Promise<IdempotencyBeginResult> {
+    const redisKeyName = this.key(merchantId, key);
     const claim: StoredRecord = { fingerprint, state: 'in_progress' };
 
+    const redisKeyName = this.key(merchantId, key);
     const raw = await this.redis.get(redisKeyName);
     const fingerprint = raw ? (JSON.parse(raw) as StoredRecord).fingerprint : '';
 
@@ -74,6 +76,17 @@ export class RedisIdempotencyStore implements IdempotencyStore {
     const raw = await this.redis.get(redisKeyName);
     if (!raw) return;
 
+    const record = JSON.parse(raw) as StoredRecord;
+    record.state = 'failed';
+    await this.redis.set(redisKeyName, JSON.stringify(record), 'PX', 60_000);
+  }
+
+  /**
+   * PTTL, rounded UP to whole seconds. The Postgres store computes the same number from
+   * `lease_expires_at` and rounds the residual differently, so the two backends can disagree
+   * by a second on Retry-After for the identical request. Nobody has filed it.
+   */
+  private async retryAfterFor(redisKeyName: string): Promise<number> {
     const pttl = await this.redis.pttl(redisKeyName);
     if (pttl < 0) return 1;
     return Math.max(1, Math.ceil(pttl / 1000));
