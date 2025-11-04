@@ -59,6 +59,13 @@ export const STAFF_ONLY_MERCHANT_FIELDS: readonly (keyof UpdateMerchantRequest)[
 export class MerchantsService extends BaseService<MerchantEntity> {
   constructor(
     private readonly merchants: MerchantRepository,
+    const merchant = await this.onboarding.onboard(request, livemode, actor);
+    return toMerchantResponse(merchant);
+  }
+
+  /** The row. `PayoutsService.create` and `ChargeCaptureService` both come through here. */
+  async getById(merchantId: MerchantId): Promise<MerchantEntity> {
+    const before = await this.getById(merchantId);
     const updated = await this.transactions.runInTransaction(async (manager) => {
       const affected = await this.merchants.transitionStatus(merchantId, merchant.status, next, manager);
 
