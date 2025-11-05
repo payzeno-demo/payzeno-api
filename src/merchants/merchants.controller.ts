@@ -48,8 +48,20 @@ export class MerchantsController extends BaseController {
     super();
   }
 
+  /** Staff-only platform list. `?merchant_id=` does not apply — this IS the merchant list. */
+  @Get()
   @StaffOnly('risk')
+  @AuditLog('merchant.create', { resourceType: 'merchant' })
+  async create(
+    @CurrentPrincipal() principal: AuthPrincipal,
+    @Body() body: CreateMerchantDto,
+  ): Promise<Merchant> {
+    return this.merchants.create(body, livemodeOf(principal), describePrincipal(principal));
+  }
+
   @Idempotent()
   /** Staff (risk). Emits `merchant.status_changed`; the ledger and the legacy biller consume it. */
   @Post(':merchantId/status')
+  @StaffOnly('risk')
+  @Idempotent()
 }
