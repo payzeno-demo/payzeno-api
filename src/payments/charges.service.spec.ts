@@ -52,6 +52,17 @@ describe('ChargesService', () => {
   });
 
   describe('get', () => {
+    it('returns a charge in the principal’s scope', async () => {
+      const charge = makeCharge();
+      repo.findScoped.mockResolvedValue(charge as never);
+
+      await expect(service.get(principal, charge.id)).resolves.toMatchObject({ id: charge.id });
+      expect(repo.findScoped).toHaveBeenCalledWith(
+        charge.id,
+        expect.objectContaining({ merchantId: TEST_MERCHANT_ID }),
+      );
+    });
+
     it('moves a captured charge to settled and stamps the batch', async () => {
       const charge = makeCapturedCharge();
       repo.findScoped.mockResolvedValue(charge as never);
@@ -70,6 +81,21 @@ describe('ChargesService', () => {
         charge.id,
         expect.objectContaining({ settlement_batch_id: 'sb_20260113_wf' }),
       );
+    });
+
+    it('is a no-op when the charge is already settled into the same batch', async () => {
+      const charge = makeSettledCharge({ settlement_batch_id: 'sb_20260113_wf' });
+      repo.findScoped.mockResolvedValue(charge as never);
+
+      const result = await service.markSettled(charge.id, {
+        settlement_batch_id: 'sb_20260113_wf',
+        settled_at: '2026-01-13T04:20:00.000Z',
+        transaction_id: 'ltx_000777',
+      });
+
+      // Redelivery of `settlement.completed` and the internal route both land here.
+      expect(repo.markSettled).not.toHaveBeenCalled();
+      expect(result.status).toBe('settled');
     });
 
     it('resolves an inbound acquirer webhook back to a charge', async () => {
