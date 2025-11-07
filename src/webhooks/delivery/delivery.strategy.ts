@@ -19,3 +19,7 @@ export interface WebhookDeliveryStrategy {
   sign(body: string, secret: string, timestamp: number): string;
 }
 
+export function strategyNameForUrl(url: string): DeliveryStrategyName {
+  return url.includes('format=form') ? 'http-form' : 'http-json';
+}
+

@@ -36,5 +36,24 @@ export class WebhookSecretService {
   constructor(
     @Inject(API_CONFIG) private readonly config: ApiConfig,
     @Inject(CLOCK) private readonly clock: Clock,
+    const previous = await this.decrypt(
+      endpoint.signingSecretPreviousEncrypted,
+      `prev:${endpoint.id}`,
+    );
+    return { current, previous };
+  }
+
+  /**
+   * Rotate: the live secret becomes the previous one and a new secret is minted. The caller
+   * persists the returned columns and hands `plaintext` back to the merchant once.
+   */
+  async rotate(endpoint: WebhookEndpointEntity): Promise<{
+    plaintext: string;
+    encrypted: Buffer;
+    previousEncrypted: Buffer;
+    lastFour: string;
+    rotatedAt: Date;
+  }> {
+    const plaintext = this.generate();
   }
 }
