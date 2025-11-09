@@ -10,8 +10,11 @@
   "packageManager": "pnpm@8.15.8",
   "scripts": {
     "build": "nest build",
+    "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
+    "lint:fix": "eslint \"{src,test}/**/*.ts\" --fix",
     "test:watch": "jest --config jest.config.ts --watch",
+    "test:cov": "jest --config jest.config.ts --coverage",
     "test:e2e": "jest --config jest.e2e.config.ts --runInBand",
     "migration:run": "typeorm-ts-node-commonjs migration:run -d src/migrations/data-source.ts",
     "migration:generate": "typeorm-ts-node-commonjs migration:generate -d src/migrations/data-source.ts",
@@ -19,6 +22,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-kms": "3.577.0",
+    "@nestjs/core": "10.3.7",
     "@nestjs/platform-express": "10.3.7",
     "@nestjs/typeorm": "10.0.2",
     "@opentelemetry/api": "1.8.0",
@@ -31,6 +35,7 @@
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.1",
     "undici": "6.18.0",
+    "@nestjs/schematics": "10.1.1",
     "@nestjs/testing": "10.3.7",
     "@types/cookie-parser": "1.4.7",
     "@types/pg": "8.11.5",
