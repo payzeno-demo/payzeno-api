@@ -36,5 +36,58 @@ export class WebhookSecretService {
   constructor(
     @Inject(API_CONFIG) private readonly config: ApiConfig,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
+  ) {
+    this.kms = new KMSClient({
+      region: this.config.aws.region,
+      endpoint: this.config.aws.endpointUrl,
+    });
+  }
+
+  /** Mint a fresh secret. Returned in plaintext to the caller exactly once. */
+  generate(): string {
+    return `${SECRET_PREFIX}${randomBytes(SECRET_BYTES).toString('base64url')}`;
+  }
+
+  async encrypt(secret: string): Promise<Buffer> {
+    const result = await this.kms.send(
+      new EncryptCommand({
+        KeyId: this.config.webhooks.signingKek,
+        Plaintext: Buffer.from(secret, 'utf8'),
+      }),
+    );
+    if (!result.CiphertextBlob) {
+      throw new Error('KMS returned no ciphertext for the webhook signing secret');
+    }
+    return Buffer.from(result.CiphertextBlob);
+  }
+
+  async decrypt(ciphertext: Buffer, cacheKey?: string): Promise<string> {
+    if (cacheKey) {
+      const cached = this.plaintextCache.get(cacheKey);
+      if (cached && cached.expiresAt > this.clock.now().getTime()) {
+        return cached.value;
+      }
+    }
+
+    const previous = await this.decrypt(
+      endpoint.signingSecretPreviousEncrypted,
+      `prev:${endpoint.id}`,
+    );
+    return { current, previous };
+  }
+
+  /**
+   * Rotate: the live secret becomes the previous one and a new secret is minted. The caller
+   * persists the returned columns and hands `plaintext` back to the merchant once.
+   */
+  async rotate(endpoint: WebhookEndpointEntity): Promise<{
+    plaintext: string;
+    encrypted: Buffer;
+    previousEncrypted: Buffer;
+    lastFour: string;
+    rotatedAt: Date;
+  }> {
+    const plaintext = this.generate();
   }
 }

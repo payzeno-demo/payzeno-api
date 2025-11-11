@@ -3,6 +3,12 @@ import { WebhookEventsService } from './webhook-events.service';
 
 describe('WebhookEventsService', () => {
   const now = new Date('2026-05-02T12:00:00.000Z');
+  const tx = {} as EntityManager;
+
+  it('404s a webhook_event that belongs to another merchant', async () => {
+    await expect(service.get('mer_2', 'evt_1')).rejects.toThrow(/webhook_event/);
+  });
+
   it('refuses to redeliver a row that is mid-flight', async () => {
     repo.findOneBy.mockResolvedValueOnce({ id: 'evt_1', status: 'delivering', attemptCount: 2 });
 
