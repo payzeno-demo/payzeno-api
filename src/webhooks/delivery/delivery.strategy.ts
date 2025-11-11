@@ -23,3 +23,13 @@ export function strategyNameForUrl(url: string): DeliveryStrategyName {
   return url.includes('format=form') ? 'http-form' : 'http-json';
 }
 
+export function selectStrategy(
+  strategies: readonly WebhookDeliveryStrategy[],
+  name: DeliveryStrategyName,
+): WebhookDeliveryStrategy {
+  const found = strategies.find((strategy) => strategy.name === name);
+  if (!found) {
+    throw new Error(`no WebhookDeliveryStrategy registered for "${name}"`);
+  }
+  return found;
+}
