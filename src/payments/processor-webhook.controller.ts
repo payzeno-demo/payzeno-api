@@ -42,5 +42,6 @@ export class ProcessorWebhookController {
    * misconfigured sandbox, not to throttle the real thing.
    */
   @Post(':acquirer')
+  @HttpCode(202)
   @UseGuards(ProcessorSignatureGuard)
 }
