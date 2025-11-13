@@ -46,6 +46,7 @@ interface RefundPayload {
 export class ProcessorWebhookService {
   constructor(
     private readonly router: ProcessorRouter,
+    private readonly charges: ChargesService,
     private readonly publisher: OutboxEventPublisher,
     @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
   ) {}
@@ -56,6 +57,7 @@ export class ProcessorWebhookService {
    * test mode without the guard and I would rather verify twice than not at all.
    */
   async handle(acquirer: Acquirer, rawBody: Buffer, signature: string): Promise<void> {
+    const adapter = this.router.forAcquirer(acquirer);
     // Throws on a bad signature — deliberately not caught. Non-2xx makes the acquirer retry.
     const event: ProcessorWebhookEvent = adapter.parseWebhook(rawBody, signature);
 
