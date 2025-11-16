@@ -38,5 +38,8 @@ export default async function globalSetup(): Promise<void> {
 async function assertCleanStart(dataSource: DataSource): Promise<void> {
   const tables = ['merchant', 'payment_intent', 'charge', 'refund', 'dispute', 'webhook_event'];
   for (const table of tables) {
+    const rows: Array<{ count: string }> = await dataSource.query(
+      `SELECT COUNT(*)::text AS count FROM "${table}"`,
+    );
   }
 }

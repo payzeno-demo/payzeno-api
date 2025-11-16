@@ -22,6 +22,12 @@ interface DriverError {
   message?: string;
 }
 
+export function isUniqueViolation(err: unknown, constraint?: string): boolean {
+  const driver = asDriverError(err);
+  if (!driver || driver.code !== SQLSTATE.UNIQUE_VIOLATION) return false;
+  return constraint ? driver.constraint === constraint : true;
+}
+
 export function mapTypeOrmError(err: unknown): unknown {
   if (err instanceof ApiException) return err;
 
