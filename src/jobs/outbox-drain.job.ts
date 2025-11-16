@@ -41,7 +41,42 @@ export class OutboxDrainJob extends ScheduledJob {
 
   constructor(
     private readonly outbox: EventOutboxRepository,
+    @Inject(BUS_PUBLISHER) private readonly bus: EventPublisher,
     @Inject(DISTRIBUTED_LOCK) lock: DistributedLock,
+    @Inject(PAYZENO_LOGGER) logger: PayzenoLogger,
+  ) {
+    super(lock, logger);
+  }
+
+  @Cron('*/5 * * * * *', { name: 'outbox-drain' })
+  async run(): Promise<JobResult> {
+    return this.execute();
+  }
+
+  @JobLock('outbox-drain', 30)
+  async runOnce(): Promise<JobResult> {
+    const startedMs = Date.now();
+
+    const outcome = await this.withLock(async () => this.drain());
+    if (!outcome) {
+      return this.skipped();
+    }
+
+    return {
+      processed: outcome.published,
+      failed: outcome.failed,
+      truncated: outcome.claimed >= JOB_BATCH_LIMITS.outboxDrain,
+      durationMs: Date.now() - startedMs,
+      details: { claimed: outcome.claimed, dead: outcome.dead },
+    };
+  }
+
+  /**
+   * One pass. Published in a batch because SNS charges per request and a 200-row drain is
+   * twenty calls instead of two hundred; failed individually because one bad payload must
+   * not poison the other 199.
+   */
+  private async drain(): Promise<DrainOutcome> {
     const rows = await this.outbox.claimDue(JOB_BATCH_LIMITS.outboxDrain, TASK_ID);
 
     if (rows.length === 0) {
