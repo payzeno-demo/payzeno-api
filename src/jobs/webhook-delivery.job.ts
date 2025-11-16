@@ -48,7 +48,11 @@ export class WebhookDeliveryJob extends ScheduledJob {
   constructor(
     private readonly events: WebhookEventRepository,
     private readonly endpoints: WebhookEndpointRepository,
+    private readonly endpointsService: WebhookEndpointsService,
+    @Inject(WEBHOOK_DELIVERY_STRATEGIES)
     private readonly strategies: WebhookDeliveryStrategy[],
+    @Inject(API_CONFIG) private readonly config: ApiConfig,
+    @Inject(CLOCK) private readonly clock: Clock,
     @Inject(DISTRIBUTED_LOCK) lock: DistributedLock,
     @Inject(PAYZENO_LOGGER) logger: PayzenoLogger,
   ) {
@@ -62,6 +66,8 @@ export class WebhookDeliveryJob extends ScheduledJob {
 
   @JobLock('webhook-delivery', 60)
   async runOnce(): Promise<JobResult> {
+    const startedMs = Date.now();
+
     const result = await this.withLock(async () => {
       const due = await this.events.claimDue(JOB_BATCH_LIMITS.webhookDelivery, this.clock.now());
 
@@ -96,6 +102,15 @@ export class WebhookDeliveryJob extends ScheduledJob {
    * dead-event count is what the console renders.
    */
   private async deliverOne(event: WebhookEventEntity): Promise<boolean> {
+    const endpoint = await this.endpoints.findOne({ where: { id: event.endpointId } } as never);
+
+    if (!endpoint) {
+      // The endpoint was deleted between fanout and delivery. Nothing to deliver to and
+      // nothing to retry; park the row so it stops being selected.
+      await this.events.markDead(event.id, event.attemptCount, null, 'endpoint_deleted');
+      return false;
+    }
+
     const strategy = selectStrategy(this.strategies, strategyNameForUrl(endpoint.url));
     const attempt = event.attemptCount + 1;
     const result = await strategy.deliver(event, endpoint);
@@ -126,7 +141,36 @@ export class WebhookDeliveryJob extends ScheduledJob {
     status: number | null,
     error: string | null,
   ): Promise<boolean> {
+    const permanent = isPermanentRejection(status);
+    const exhausted = attempt >= this.config.webhooks.maxAttempts;
+
+    if (permanent || exhausted) {
+      await this.events.markDead(event.id, attempt, status, error ?? reasonFor(permanent));
+
+      this.logger.warn('webhook.dead', {
+        webhook_event_id: event.id,
+        endpoint_id: endpoint.id,
+        merchant_id: event.merchantId,
+        attempt,
+        status,
+        reason: permanent ? 'gone' : 'attempts_exhausted',
+      });
+      return false;
+    }
+
     const delay = backoffMs(attempt, 1_000, this.config.webhooks.retryWindowHours * 3_600_000);
+    const nextAttemptAt = new Date(this.clock.nowMs() + delay);
+
+    await this.events.markRetrying(event.id, attempt, nextAttemptAt, status, error);
+
+    this.logger.info('webhook.retry_scheduled', {
+      webhook_event_id: event.id,
+      endpoint_id: endpoint.id,
+      attempt,
+      status,
+      next_attempt_at: nextAttemptAt.toISOString(),
+    });
+    return false;
   }
 }
 

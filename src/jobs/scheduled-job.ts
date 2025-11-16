@@ -41,6 +41,36 @@ export abstract class ScheduledJob {
 
   protected constructor(
     @Inject(DISTRIBUTED_LOCK) protected readonly lock: DistributedLock,
+    @Inject(PAYZENO_LOGGER) protected readonly logger: PayzenoLogger,
+  ) {}
+
+  /**
+   * The entry point Nest's scheduler calls. Never rejects: a job that throws takes the
+   * process with it, and a payments API that restarts every five seconds because the dispute
+   * reminder cannot reach Postgres is a worse outage than a missing reminder.
+   */
+  async execute(): Promise<JobResult> {
+    const startedMs = Date.now();
+
+    try {
+      const result = await this.runOnce();
+      this.logger.info('job.finished', { job: this.name, ...summarise(result) });
+      return result;
+    } catch (err) {
+      this.logger.error('job.failed', err, {
+        job: this.name,
+        duration_ms: Date.now() - startedMs,
+      });
+      return { ...emptyResult(Date.now() - startedMs), failed: 1 };
+    }
+  }
+
+  /**
+   * Runs `fn` only if this task wins the lease. Returns null when it does not — the caller
+   * turns that into `SKIPPED_NOT_LEADER` so a dashboard can tell "somebody else has it" from
+   * "there was nothing to do".
+   */
+  protected async withLock<T>(fn: () => Promise<T>): Promise<T | null> {
     const spec = this.lockSpec();
     const handle = await this.lock.acquire(spec.name, spec.ttlSec);
 
@@ -99,5 +129,23 @@ export abstract class ScheduledJob {
     handler: (item: T) => Promise<void>,
     limit: number,
   ): Promise<JobResult> {
+    const startedMs = Date.now();
+    let failed = 0;
+
+    for (const item of items) {
+      try {
+        await handler(item);
+      } catch (err) {
+        failed += 1;
+        this.logger.error('job.item_failed', err, { job: this.name });
+      }
+    }
+
+    return {
+      processed: items.length,
+      failed,
+      truncated: items.length >= limit,
+      durationMs: Date.now() - startedMs,
+    };
   }
 }
