@@ -35,6 +35,10 @@ export class PayoutsService implements OnModuleInit {
     private readonly moduleRef: ModuleRef,
   ) {}
 
+  onModuleInit(): void {
+    this.merchants = this.moduleRef.get(MerchantsService, { strict: false });
+  }
+
   /** `GET /v1/reporting/summary` fills `next_payout` from this. */
   async nextScheduled(merchantId: MerchantId): Promise<Payout | null> {
     const page = await this.readThrough.listPayouts(merchantId, { status: 'scheduled', limit: 1 });
