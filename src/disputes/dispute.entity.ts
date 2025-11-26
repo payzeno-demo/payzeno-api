@@ -36,6 +36,23 @@ export class DisputeEntity extends MerchantScopedEntity {
   @Column({ type: 'text' })
   charge_id: ChargeId;
 
+  @Column({ type: 'char', length: 3, transformer: currencyTransformer })
+  currency: CurrencyCode;
+
+  @Column({
+    type: 'enum',
+    enum: [
+      'needs_response',
+      'under_review',
+      'won',
+      'lost',
+      'warning_needs_response',
+      'warning_closed',
+    ],
+    enumName: 'dispute_status',
+  })
+  status: DisputeStatus;
+
   /** The raw scheme code (`10.4`, `13.1`, …). Kept verbatim; the enum above is our mapping. */
   @Column({ type: 'varchar', length: 8 })
   network_reason_code: string;
@@ -46,9 +63,19 @@ export class DisputeEntity extends MerchantScopedEntity {
   @Column({ type: 'boolean', default: false })
   is_charge_refundable: boolean;
 
+  /** Copied from `charge.three_d_secure.liability_shifted` at creation. */
+  @Column({ type: 'boolean', default: false })
+  liability_shifted: boolean;
+
   isOpen(): boolean {
     return this.status === 'needs_response' || this.status === 'under_review';
   }
+
+  @PrimaryColumn({ type: 'enum', enum: ['worldflow', 'nordpay'], enumName: 'acquirer' })
+  acquirer: Acquirer;
+
+  @PrimaryColumn({ type: 'char', length: 3, transformer: currencyTransformer })
+  currency: CurrencyCode;
 
   @PrimaryColumn({ type: 'date' })
   effective_from: IsoDate;
