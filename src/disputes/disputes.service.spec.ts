@@ -167,6 +167,34 @@ describe('DisputesService', () => {
       expect(days).toBe(EVIDENCE_WINDOW_DAYS);
     });
 
+    it('records the 3DS liability shift so the console can tell the merchant not to bother', async () => {
+      charges.findOne.mockResolvedValue(
+        chargeRow({ three_d_secure: { liability_shifted: true, authentication_flow: 'frictionless' } }) as never,
+      );
+
+      await service.openFromWebhook(openCommand());
+
+      expect(disputes.insertDispute).toHaveBeenCalledWith(
+        manager,
+        expect.objectContaining({ liabilityShifted: true }),
+      );
+    });
+
+    it('emits dispute.opened inside the same transaction as the insert', async () => {
+      await service.openFromWebhook(openCommand());
+
+      expect(events.publish).toHaveBeenCalledWith(
+        'dispute.opened',
+        expect.objectContaining({
+          dispute_id: DISPUTE_ID,
+          charge_id: TEST_CHARGE_ID,
+          network_reason_code: '10.4',
+          fee_minor: 1_500,
+        }),
+        expect.objectContaining({ correlationId: 'corr_dispute_1', livemode: true }),
+      );
+    });
+
     it('translates a 23505 on uq_dispute_charge_open into DuplicateDisputeException', async () => {
       // The acquirer redelivers its whole file after an outage. Insert-first means the unique
       // index — not a racy SELECT — is what tells us we already have this one.
@@ -195,6 +223,24 @@ describe('DisputesService', () => {
       });
     }
 
+    it('asks the evidence service whether the dispute can still take evidence', async () => {
+      await service.submitEvidence(principal, DISPUTE_ID, dto(), 'corr_2');
+
+      expect(evidence.assertSubmittable).toHaveBeenCalled();
+    });
+
+    it('moves the dispute to under_review and emits dispute.evidence_submitted', async () => {
+      const result = await service.submitEvidence(principal, DISPUTE_ID, dto(), 'corr_2');
+
+      expect(disputes.saveEvidence).toHaveBeenCalledWith(manager, DISPUTE_ID, expect.any(Object), clock.now());
+      expect(events.publish).toHaveBeenCalledWith(
+        'dispute.evidence_submitted',
+        expect.objectContaining({ dispute_id: DISPUTE_ID, evidence_field_count: 3 }),
+        expect.anything(),
+      );
+      expect(result.status).toBe('under_review');
+    });
+
     it('saves a draft without submitting or emitting', async () => {
       const result = await service.submitEvidence(principal, DISPUTE_ID, dto({ submit: false }), 'corr_2');
 
@@ -209,6 +255,35 @@ describe('DisputesService', () => {
       await expect(
         service.submitEvidence(principal, DISPUTE_ID, dto(), 'corr_2'),
       ).rejects.toBeInstanceOf(InvalidStateTransitionException);
+    });
+
+    it('throws a 404 when the deadline job closed it between our read and our write', async () => {
+      disputes.saveEvidence.mockResolvedValue(0 as never);
+
+      await expect(
+        service.submitEvidence(principal, DISPUTE_ID, dto(), 'corr_2'),
+      ).rejects.toBeInstanceOf(DisputeNotFoundException);
+    });
+  });
+
+  describe('accept', () => {
+    it('closes the dispute as lost and emits dispute.closed exactly once', async () => {
+      const result = await service.accept(principal, DISPUTE_ID, 'corr_3');
+
+      expect(disputes.transitionStatus).toHaveBeenCalledWith(
+        manager,
+        DISPUTE_ID,
+        'needs_response',
+        'lost',
+        clock.now(),
+      );
+      expect(events.publish).toHaveBeenCalledTimes(1);
+      expect(events.publish).toHaveBeenCalledWith(
+        'dispute.closed',
+        expect.objectContaining({ outcome: 'lost', dispute_id: DISPUTE_ID, reversal_transaction_id: null }),
+        expect.anything(),
+      );
+      expect(result).toMatchObject({ status: 'lost', resolved_at: clock.nowIso() });
     });
 
     it('throws a 404 when the compare-and-swap on status finds nothing', async () => {
@@ -226,6 +301,27 @@ describe('DisputesService', () => {
 
       await expect(service.closeFromWebhook(TEST_CHARGE_ID, 'won', 'corr_4')).resolves.toBeNull();
       expect(events.publish).not.toHaveBeenCalled();
+    });
+
+    it('rejects a `won` verdict for a dispute the merchant never responded to', async () => {
+      // It happens, and we want it in the logs rather than silently reversing a liability leg.
+      disputes.findOpenForCharge.mockResolvedValue(disputeRow({ status: 'needs_response' }) as never);
+
+      await expect(service.closeFromWebhook(TEST_CHARGE_ID, 'won', 'corr_4')).rejects.toBeInstanceOf(
+        InvalidStateTransitionException,
+      );
+    });
+  });
+
+  describe('reads', () => {
+    it('scopes get to the principal’s merchant and throws DisputeNotFoundException otherwise', async () => {
+      disputes.findScoped.mockResolvedValue(null as never);
+
+      await expect(service.get(principal, 'dp_foreign')).rejects.toBeInstanceOf(DisputeNotFoundException);
+      expect(disputes.findScoped).toHaveBeenCalledWith(
+        'dp_foreign',
+        expect.objectContaining({ merchantId: TEST_MERCHANT_ID }),
+      );
     });
 
   });

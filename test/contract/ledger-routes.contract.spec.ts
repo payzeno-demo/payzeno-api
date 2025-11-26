@@ -75,6 +75,19 @@ describe('LedgerHttpClient ↔ payzeno-ledger OpenAPI contract', () => {
       expect(typeof impl).toBe('function');
     });
 
+    const undescribed = LEDGER_ROUTES.filter((r) => !described.has(r.path)).map((r) => r.path);
+    expect(undescribed).toEqual([]);
+  });
+
+  it('the ledger still publishes the shared ApiError envelope', () => {
+    // LedgerRejectedException carries `code`/`httpStatus`/`details` verbatim out of this
+    // schema. If the ledger stops emitting it, every non-2xx collapses into
+    // LedgerUnavailableException and `settlement_locked` stops reaching the console.
+    expect(openapi.components?.schemas?.ApiError).toBeDefined();
+  });
+
+  it('every LedgerHttpClient public method is covered by the table', () => {
+    const declared = new Set<string>(LEDGER_ROUTES.map((r) => r.method as string));
     // Inherited BaseHttpClient members (`request`, `get`, `post`, …) are not ledger routes.
     const inherited = new Set(['request', 'get', 'post', 'patch', 'delete', 'buildUrl']);
     const uncovered = publicMethods.filter((m) => !declared.has(m) && !inherited.has(m));
