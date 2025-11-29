@@ -7,12 +7,15 @@ import { InternalService } from './internal.service';
 describe('InternalService', () => {
   const now = new Date('2026-06-11T02:40:00.000Z');
 
+  let merchants: { findInternal: jest.Mock };
   let charges: { findInternal: jest.Mock; markSettledFromBatch: jest.Mock };
   let bankAccounts: { findInternal: jest.Mock };
   let webhookEndpoints: { listForInternalCaller: jest.Mock };
   let supportTasks: { open: jest.Mock };
   let logger: Record<string, jest.Mock>;
   let service: InternalService;
+  const tx = { id: 'tx' } as unknown as EntityManager;
+
   beforeEach(() => {
     merchants = { findInternal: jest.fn(async () => ({ id: 'mch_1', capture_at_settlement: true })) };
     charges = {
@@ -44,6 +47,44 @@ describe('InternalService', () => {
     await expect(service.getMerchant('mch_missing', 'payzeno-ledger')).rejects.toBeInstanceOf(
       MerchantNotFoundException,
     );
+  });
+
+  describe('markChargeSettled', () => {
+    const input = {
+      settlement_batch_id: 'sb_1',
+      settled_at: '2026-06-11T02:39:00.000Z',
+      transaction_id: 'txn_1',
+    };
+
+    it('reuses the event branch write path and audits under internal_service', async () => {
+      await service.markChargeSettled('ch_1', input, 'payzeno-ledger');
+
+      expect(charges.markSettledFromBatch).toHaveBeenCalledWith(tx, ['ch_1'], {
+        settlementBatchId: 'sb_1',
+        settledAt: input.settled_at,
+      });
+      expect(audit.record).toHaveBeenCalledWith(
+        tx,
+        expect.objectContaining({
+          actorType: 'internal_service',
+          actorId: 'payzeno-ledger',
+          action: 'charge.settled.out_of_band',
+          resourceId: 'ch_1',
+        }),
+      );
+    });
+
+    it('warns but still audits when the update affected no rows', async () => {
+      charges.markSettledFromBatch.mockResolvedValueOnce(0);
+
+      await service.markChargeSettled('ch_1', input, 'payzeno-ledger');
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        'internal.charge_settle_noop',
+        expect.objectContaining({ charge_id: 'ch_1' }),
+      );
+      expect(audit.record).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('listWebhookEndpoints answers from the table, never from a projection', async () => {
