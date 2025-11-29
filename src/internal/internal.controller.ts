@@ -71,6 +71,21 @@ export class MarkChargeSettledDto implements MarkChargeSettledInput {
   settlement_batch_id!: string;
 
   @IsString()
+  @Post('charges/:chargeId/settled')
+  @InternalOnly('payzeno-ledger')
+  @InternalOnly('payzeno-ledger', 'payzeno-billing-legacy')
+  async listWebhookEndpoints(
+    @Query('merchant_id') merchantId: MerchantId,
+    @Query('status') status: 'enabled' | 'disabled' | undefined,
+    @CurrentPrincipal() principal: AuthPrincipal,
+  ): Promise<{ data: WebhookEndpoint[]; has_more: boolean }> {
+    return this.internal.listWebhookEndpoints(merchantId, status, callerOf(principal));
+  }
+
+  /**
+   * arc INC — the ledger's `settlement.duplicate_detected` branch, and the legacy biller's
+   * dunning escalations. `the-incident.md` §8.
+   */
   @HttpCode(201)
   /** Fallback for a stale `bank_account_projection`. Token only, never the number. */
   @Get('bank-accounts/:bankAccountId')

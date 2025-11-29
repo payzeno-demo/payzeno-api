@@ -39,6 +39,17 @@ describe('internal surface e2e', () => {
         capture_method: 'automatic',
         payment_method_token: 'pmt_visa_4242',
       });
+    it('401s an unknown service name even with the right secret', async () => {
+      const res = await request(ctx.app.getHttpServer())
+        .get(`/internal/v1/merchants/${seeded.merchant.id}`)
+        .set('X-Payzeno-Service', 'payzeno-console')
+        .set('X-Payzeno-Internal-Secret', INTERNAL_SECRET);
+
+      expect(res.status).toBe(401);
+    });
+  });
+
+  describe('the six routes, authenticated', () => {
     it('POST /internal/v1/charges/:chargeId/settled marks a single out-of-band settlement', async () => {
       const res = await request(ctx.app.getHttpServer())
         .post(`/internal/v1/charges/${chargeId}/settled`)
@@ -52,6 +63,30 @@ describe('internal surface e2e', () => {
       expect(res.status).toBe(200);
       expect(res.body.status).toBe('settled');
       expect(res.body.settlement_batch_id).toBe('sb_20260113_wf');
+    });
+
+    it('POST /internal/v1/charges/:chargeId/settled is idempotent', async () => {
+      const again = await request(ctx.app.getHttpServer())
+        .post(`/internal/v1/charges/${chargeId}/settled`)
+        .set(internalHeaders)
+        .send({
+          settlement_batch_id: 'sb_20260113_wf',
+          settled_at: '2026-01-13T04:20:00.000Z',
+          transaction_id: 'ltx_000777',
+        });
+
+      expect(again.status).toBe(200);
+      expect(again.body.status).toBe('settled');
+    });
+
+    it('GET /internal/v1/webhook_endpoints answers the fanout question', async () => {
+      const res = await request(ctx.app.getHttpServer())
+        .get(`/internal/v1/webhook_endpoints?merchant_id=${seeded.merchant.id}&status=enabled`)
+        .set(internalHeaders);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveProperty('data');
+      expect(res.body).toHaveProperty('has_more');
     });
 
     it('GET /internal/v1/bank-accounts/:id serves the stale-projection fallback', async () => {
