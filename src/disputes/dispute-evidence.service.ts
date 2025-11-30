@@ -53,7 +53,70 @@ const STRONG_FIELDS_BY_REASON: Readonly<Record<string, ReadonlyArray<EvidenceFie
 export class DisputeEvidenceService {
   constructor(
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
+  ) {}
+
+  /**
+   * Merges the submitted fields over whatever was staged before. Merging, not replacing: the
+   * console saves each section as the merchant fills it, and a PATCH-shaped body that replaced
+   * the blob would delete the sections they filled yesterday.
+   */
+  normalise(existing: DisputeEvidence, incoming: DisputeEvidence): DisputeEvidence {
+    const merged: DisputeEvidence = { ...existing };
+
+    for (const field of EVIDENCE_FIELDS) {
+      const value = incoming[field];
+      if (value === undefined) continue;
+
+      const trimmed = String(value).trim();
+      if (trimmed.length === 0) {
+        delete merged[field];
+        continue;
+      }
+      if (trimmed.length > MAX_FIELD_LENGTH) {
+        throw new ValidationException(`evidence.${field} exceeds ${MAX_FIELD_LENGTH} characters`, [
+          {
+            path: `evidence.${field}`,
+            code: 'too_long',
+            message: `must be at most ${MAX_FIELD_LENGTH} characters`,
+          },
+        ]);
+      }
+      merged[field] = trimmed;
+    }
+
+    return merged;
+  }
+
+  /**
+   * Refuses a submission the network will reject anyway. Throwing here rather than at the
+   * acquirer means the merchant gets a 422 with a due date instead of a 502 three days later.
+   */
+  assertSubmittable(dispute: DisputeEntity): void {
+    if (dispute.status !== 'needs_response') {
+      throw new DisputeWindowClosedException(
+        dispute.id,
+        dispute.evidence_due_by ? dispute.evidence_due_by.toISOString() : null,
+      );
+    }
+
+    if (dispute.evidence_due_by && dispute.evidence_due_by.getTime() < this.clock.nowMs()) {
+      // DisputeDeadlineReminderJob will move it to `lost` on its next pass; we do not do it
+      // here, because that transition emits `dispute.closed` and one emitter is enough.
+      this.logger.info('dispute_evidence_after_deadline', {
+        dispute_id: dispute.id,
+        evidence_due_by: dispute.evidence_due_by.toISOString(),
+      });
+      throw new DisputeWindowClosedException(dispute.id, dispute.evidence_due_by.toISOString());
+    }
+  }
+
+  /** 0-100. The console shows it as a progress bar; nothing branches on it. */
+  completeness(evidence: DisputeEvidence, reason: string): number {
     const strong = STRONG_FIELDS_BY_REASON[reason] ?? STRONG_FIELDS_BY_REASON.general;
+    const filled = EVIDENCE_FIELDS.filter((field) => hasValue(evidence[field]));
+    if (filled.length === 0) return 0;
+
     const strongFilled = strong.filter((field) => hasValue(evidence[field])).length;
     const base = (filled.length / EVIDENCE_FIELDS.length) * 60;
     const bonus = strong.length === 0 ? 40 : (strongFilled / strong.length) * 40;
@@ -67,6 +130,8 @@ export class DisputeEvidenceService {
 
   /** The fields worth chasing for this reason code, minus the ones already there. */
   missingStrongFields(evidence: DisputeEvidence, reason: string): EvidenceField[] {
+    const strong = STRONG_FIELDS_BY_REASON[reason] ?? STRONG_FIELDS_BY_REASON.general;
+    return strong.filter((field) => !hasValue(evidence[field]));
   }
 }
 

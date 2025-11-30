@@ -37,6 +37,7 @@ const FALLBACK_FEE_MINOR = 1_500;
 export class DisputeFeeService {
   constructor(
     private readonly dataSource: DataSource,
+    @Inject(CLOCK) private readonly clock: Clock,
     @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
   ) {}
 
@@ -46,6 +47,21 @@ export class DisputeFeeService {
    * retroactively reprice a dispute the merchant has already been billed for.
    */
   async feeFor(acquirer: Acquirer, currency: CurrencyCode): Promise<MinorUnits> {
+    const today = this.clock.now().toISOString().slice(0, 10);
+
+    const row = await this.dataSource.getRepository(DisputeFeeScheduleEntity).findOne({
+      where: { acquirer, currency, effective_from: LessThanOrEqual(today) },
+      order: { effective_from: 'DESC' },
+    });
+
+    if (row) {
+      return Number(row.fee_minor);
+    }
+
+    return this.fallbackFee(acquirer, currency);
+  }
+
+  private fallbackFee(acquirer: Acquirer, currency: CurrencyCode): MinorUnits {
     const fallback = DEFAULT_DISPUTE_FEE_BY_CURRENCY[currency];
 
     this.logger.warn('dispute_fee_schedule_miss', {
