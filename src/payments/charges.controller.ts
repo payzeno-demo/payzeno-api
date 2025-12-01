@@ -45,6 +45,7 @@ export class ChargesController extends BaseController {
   @RequiredScopes('charges:read')
   list(
     @CurrentPrincipal() principal: AuthPrincipal,
+    @Query() query: ListQueryDto,
     @Param('chargeId') chargeId: ChargeId,
   ): Promise<Charge> {
     return this.charges.get(principal, chargeId);
@@ -53,5 +54,8 @@ export class ChargesController extends BaseController {
   @Get(':chargeId/ledger')
   @UseGuards(SessionGuard)
   getLedger(
+    @Param('chargeId') chargeId: ChargeId,
+  ): Promise<ChargeLedgerResponse> {
+    return this.charges.getLedger(principal, chargeId);
   }
 }
