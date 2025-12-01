@@ -24,4 +24,11 @@ export class IdempotencyRecord {
   @Column({ type: 'timestamptz', name: 'lease_expires_at' })
   leaseExpiresAt!: Date;
 
+  @Column({ type: 'jsonb', name: 'response_body', nullable: true })
+  responseBody!: unknown;
+
+  isReplayable(): boolean {
+    return this.state === 'completed' && this.responseStatus !== null;
+  }
+
 }
