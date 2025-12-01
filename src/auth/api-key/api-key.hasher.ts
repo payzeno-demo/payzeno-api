@@ -44,6 +44,15 @@ export interface MintedApiKeySecret {
 export class ApiKeyHasher {
   private readonly pepper: string;
 
+  constructor(@Inject(API_CONFIG) config: ApiConfig) {
+    this.pepper = config.auth.apiKeyPepper;
+  }
+
+  /** Deterministic. The uniquely-indexed column. */
+  lookupHash(secret: string): string {
+    return createHmac('sha256', this.pepper).update(secret).digest('hex');
+  }
+
   hashSecret(secret: string): Promise<string> {
     return argon2.hash(secret, ARGON2_OPTIONS);
   }
