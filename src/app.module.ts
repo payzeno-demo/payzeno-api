@@ -97,3 +97,10 @@ const REQUEST_CHAIN = [
         transform: true,
         transformOptions: { enableImplicitConversion: false },
         exceptionFactory: validationExceptionFactory,
+      }),
+  },
+];
+
+@Module({
+  imports: [
+    CommonModule,
