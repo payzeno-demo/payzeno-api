@@ -54,9 +54,21 @@ export class LedgerReadThroughService {
 
   // -- balances ------------------------------------------------------------
 
+  getBalance(merchantId: MerchantId, currency?: CurrencyCode, livemode = true): Promise<Balance> {
+    return this.ledger.getBalance(merchantId, { currency, livemode });
+  }
+
   getBalanceHistory(merchantId: MerchantId, query: BalanceHistoryQuery): Promise<BalanceHistoryResponse> {
     return this.ledger.getBalanceHistory(merchantId, query);
   }
+
+  bootstrapAccounts(merchantId: MerchantId, currency: CurrencyCode, livemode: boolean): Promise<number> {
+    return this.ledger
+      .bootstrapAccounts(merchantId, currency, livemode)
+      .then((response) => response.created);
+  }
+
+  // -- charge ledger view --------------------------------------------------
 
   /** `GET /v1/charges/:chargeId/ledger` — every transaction that references this charge. */
   async getChargeLedger(merchantId: MerchantId, chargeId: ChargeId): Promise<ChargeLedgerResponse> {
@@ -77,6 +89,30 @@ export class LedgerReadThroughService {
    * charge double-counts both Payzeno's revenue and the merchant's payable deduction
    * (domain-model.md §7).
    */
+  recordCapture(command: CapturePostingCommand): Promise<LedgerTransaction> {
+    const feeMinor = platformFee(command.amountMinor, command.platformFeeBps, command.platformFeeFixedMinor);
+    const reserveMinor = Math.round((command.amountMinor * command.reserveBps) / 10_000);
+    const netMinor = command.amountMinor - feeMinor - reserveMinor;
+
+    return this.ledger.postTransaction({
+      idempotency_key: ledgerKey('capture', command.chargeId),
+      purpose: 'capture',
+      merchant_id: command.merchantId,
+      currency: command.currency,
+      livemode: command.livemode,
+      reference_type: 'charge',
+      reference_id: command.chargeId,
+      lines: [
+        { account_type: 'authorization_hold', direction: 'debit', amount_minor: command.amountMinor },
+        { account_type: 'merchant_payable', direction: 'credit', amount_minor: netMinor },
+        { account_type: 'platform_fee_revenue', direction: 'credit', amount_minor: feeMinor },
+        ...(reserveMinor > 0
+          ? [{ account_type: 'reserve' as const, direction: 'credit' as const, amount_minor: reserveMinor }]
+          : []),
+      ],
+    });
+  }
+
   recordRefund(command: RefundPostingCommand): Promise<LedgerTransaction> {
     return this.ledger.postTransaction({
       idempotency_key: ledgerKey('refund', command.chargeId, command.refundId),
@@ -97,6 +133,41 @@ export class LedgerReadThroughService {
    * Two legs, and they behave differently on `won` (domain-model.md §5): the disputed amount
    * is reversed, the chargeback fee is not — the network keeps it whichever way the case goes.
    */
+  recordDispute(command: DisputePostingCommand): Promise<LedgerTransaction> {
+    return this.ledger.postTransaction({
+      idempotency_key: ledgerKey('dispute', command.chargeId, command.disputeId),
+      purpose: 'dispute',
+      merchant_id: command.merchantId,
+      currency: command.currency,
+      livemode: command.livemode,
+      reference_type: 'dispute',
+      reference_id: command.disputeId,
+      lines: [
+        { account_type: 'merchant_payable', direction: 'debit', amount_minor: command.amountMinor },
+        { account_type: 'chargeback_liability', direction: 'credit', amount_minor: command.amountMinor },
+        { account_type: 'merchant_payable', direction: 'debit', amount_minor: command.feeMinor },
+        { account_type: 'platform_fee_revenue', direction: 'credit', amount_minor: command.feeMinor },
+      ],
+    });
+  }
+
+  /** `voided` and `expired` both post this. There is no purpose named `ReleaseHold`. */
+  releaseAuthorization(command: AuthReleaseCommand): Promise<LedgerTransaction> {
+    return this.ledger.postTransaction({
+      idempotency_key: ledgerKey('auth_release', command.chargeId),
+      purpose: 'auth_release',
+      merchant_id: command.merchantId,
+      currency: command.currency,
+      livemode: command.livemode,
+      reference_type: 'charge',
+      reference_id: command.chargeId,
+      lines: [
+        { account_type: 'authorization_hold', direction: 'debit', amount_minor: command.amountMinor },
+        { account_type: 'merchant_receivable', direction: 'credit', amount_minor: command.amountMinor },
+      ],
+    });
+  }
+
   reverseTransaction(transactionId: string, reason: string): Promise<LedgerTransaction> {
     return this.ledger.reverseTransaction(transactionId, {
       reason,
@@ -106,8 +177,37 @@ export class LedgerReadThroughService {
 
   // -- payouts -------------------------------------------------------------
 
+  listPayouts(merchantId: MerchantId, query: Omit<PayoutListQuery, 'merchant_id'>): Promise<Paginated<Payout>> {
+    return this.ledger.listPayouts({ ...query, merchant_id: merchantId });
+  }
+
+  async getPayout(merchantId: MerchantId, payoutId: PayoutId): Promise<Payout> {
+    const payout = await this.ledger.getPayout(payoutId);
+    if (payout.merchant_id !== merchantId) {
+      // Cross-tenant reads are 404, never 403 — we do not confirm existence across tenants.
+      throw new ResourceNotFoundException('payout', payoutId);
+    }
+    return payout;
+  }
+
   createPayout(body: CreatePayoutBody, idempotencyKey: string): Promise<Payout> {
     return this.ledger.createPayout(body, idempotencyKey);
+  }
+
+  async cancelPayout(merchantId: MerchantId, payoutId: PayoutId): Promise<Payout> {
+    await this.getPayout(merchantId, payoutId);
+    return this.ledger.cancelPayout(payoutId);
+  }
+
+  // -- settlements ---------------------------------------------------------
+
+  async listSettlementBatches(
+    merchantId: MerchantId,
+    query: Omit<SettlementBatchListQuery, 'merchant_id'>,
+  ): Promise<Paginated<MerchantSettlementBatch>> {
+    const page = await this.ledger.listSettlementBatches({ ...query, merchant_id: merchantId });
+    const scoped = await Promise.all(page.data.map((batch) => this.toMerchantView(merchantId, batch)));
+    return { data: scoped, next_cursor: page.next_cursor, has_more: page.has_more };
   }
 
   async getSettlementBatch(merchantId: MerchantId, batchId: SettlementBatchId): Promise<MerchantSettlementBatch> {

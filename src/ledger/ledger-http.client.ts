@@ -103,4 +103,8 @@ export class LedgerHttpClient extends BaseHttpClient {
    * `409 settlement_locked`, which `mapUpstreamFailure` turns into `LedgerRejectedException`
    * with the code intact. `SettlementsController` passes it straight to the console.
    */
+  getPayout(payoutId: PayoutId): Promise<Payout> {
+    return this.get<Payout>(`/internal/v1/payouts/${encodeURIComponent(payoutId)}`);
+  }
+
 }

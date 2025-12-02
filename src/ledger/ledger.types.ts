@@ -29,6 +29,22 @@ export interface BalanceQuery {
   livemode?: boolean;
 }
 
+export interface BalanceHistoryQuery {
+  currency: CurrencyCode;
+  from: IsoTimestamp;
+  to: IsoTimestamp;
+  interval: TimeseriesInterval;
+}
+
+export interface TransactionListQuery {
+  merchant_id?: MerchantId;
+  reference_type?: LedgerReferenceType;
+  reference_id?: string;
+  purpose?: LedgerPurpose;
+  cursor?: string;
+  limit?: number;
+}
+
 export interface SettlementBatchListQuery {
   merchant_id?: MerchantId;
   currency?: CurrencyCode;
@@ -47,6 +63,14 @@ export interface SettlementItemListQuery {
   limit?: number;
 }
 
+export interface PayoutListQuery {
+  merchant_id?: MerchantId;
+  status?: PayoutStatus;
+  currency?: CurrencyCode;
+  cursor?: string;
+  limit?: number;
+}
+
 export interface CreatePayoutBody {
   merchant_id: MerchantId;
   amount_minor?: MinorUnits;
@@ -61,6 +85,17 @@ export interface RetryItemBody {
   reason?: string;
 }
 
+export interface ReverseTransactionBody {
+  reason: string;
+  idempotency_key: string;
+}
+
+export interface BootstrapAccountsBody {
+  merchant_id: MerchantId;
+  currency: CurrencyCode;
+  livemode: boolean;
+}
+
 /** Convenience shape for the read-through service's capture posting. */
 export interface CapturePostingCommand {
   chargeId: ChargeId;
@@ -71,6 +106,25 @@ export interface CapturePostingCommand {
   platformFeeBps: number;
   platformFeeFixedMinor: MinorUnits;
   reserveBps: number;
+}
+
+export interface RefundPostingCommand {
+  refundId: string;
+  chargeId: ChargeId;
+  merchantId: MerchantId;
+  currency: CurrencyCode;
+  livemode: boolean;
+  amountMinor: MinorUnits;
+}
+
+export interface DisputePostingCommand {
+  disputeId: string;
+  chargeId: ChargeId;
+  merchantId: MerchantId;
+  currency: CurrencyCode;
+  livemode: boolean;
+  amountMinor: MinorUnits;
+  feeMinor: MinorUnits;
 }
 
 export interface AuthReleaseCommand {
@@ -92,6 +146,12 @@ export interface StagedInvoiceLinesResponse {
   lines: StagedInvoiceLine[];
 }
 
+export interface MerchantSettlementItemsPage {
+  data: unknown[];
+  next_cursor: string | null;
+  has_more: boolean;
+}
+
 export interface SettlementFundingBody {
   bank_reference: string;
   amount_minor: MinorUnits;
@@ -107,3 +167,6 @@ export interface SettlementFundingBody {
  * Do not "improve" this by appending an attempt number. The uniqueness of this key is the only
  * thing standing between Payzeno and a duplicate settlement.
  */
+export function ledgerKey(purpose: LedgerPurpose | 'capture' | 'auth', scopeId: string, subjectId = ''): string {
+  return `${purpose}:${scopeId}:${subjectId}`;
+}
