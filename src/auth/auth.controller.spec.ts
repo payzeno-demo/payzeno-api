@@ -81,6 +81,26 @@ describe('AuthController', () => {
   describe('login', () => {
     const body = { email: 'dana@example.com', password: 'correct-horse' } as LoginRequestDto;
 
+    it('passes the origin through so the session records where it came from', async () => {
+      await controller.login(body, undefined, request(), response);
+
+      expect(auth.login).toHaveBeenCalledWith('dana@example.com', 'correct-horse', null, {
+        userAgent: 'Mozilla/5.0',
+        ip: '203.0.113.7',
+      });
+    });
+
+    it('forwards the merchant chooser answer from the query string', async () => {
+      await controller.login(body, 'mch_01HQ8ZZZ000000000000000B', request(), response);
+
+      expect(auth.login).toHaveBeenCalledWith(
+        'dana@example.com',
+        'correct-horse',
+        'mch_01HQ8ZZZ000000000000000B',
+        expect.anything(),
+      );
+    });
+
     it('tolerates a request with no user agent', async () => {
       await controller.login(body, undefined, request({ headers: {} }), response);
 
@@ -94,6 +114,12 @@ describe('AuthController', () => {
   });
 
   describe('logout', () => {
+    it('accepts a well-formed login', async () => {
+      await expect(
+        errorsFor({ email: 'dana@example.com', password: 'correct-horse' }),
+      ).resolves.toEqual([]);
+    });
+
     it('rejects a malformed address', async () => {
       await expect(errorsFor({ email: 'dana', password: 'correct-horse' })).resolves.toContain('email');
     });

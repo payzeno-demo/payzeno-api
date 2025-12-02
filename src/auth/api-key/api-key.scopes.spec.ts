@@ -36,10 +36,25 @@ describe('api-key scopes', () => {
       expect(ALL_SCOPES).toEqual(API_KEY_SCOPES);
     });
 
+    it('recognises a real scope', () => {
+      expect(isApiKeyScope('payment_intents:write')).toBe(true);
+    });
+
+    it('rejects a plausible-looking scope that does not exist', () => {
+      expect(isApiKeyScope('balance:write')).toBe(false);
+      expect(isApiKeyScope('payments:write')).toBe(false);
+    });
+  });
+
+  describe('DEFAULT_SCOPES', () => {
     it('gives payment_intents:write the charge read as well', () => {
       // A key that can create an intent and cannot read the resulting charge is useless,
       // and every merchant integrating hit this in the first hour.
       expect(IMPLIED_SCOPES['payment_intents:write']).toContain('charges:read');
+    });
+
+    it('leaves a read-only grant untouched', () => {
+      expect(expandScopes(['balance:read'])).toEqual(['balance:read']);
     });
 
     it('passes known scopes through unchanged', () => {
@@ -56,9 +71,19 @@ describe('api-key scopes', () => {
       expect(coversRequired(['refunds:write'], ['refunds:read'])).toBe(true);
     });
 
+    it('is false when one of several required scopes is missing', () => {
+      expect(coversRequired(['refunds:write'], ['refunds:read', 'disputes:read'])).toBe(false);
+    });
+
     it('is false when something is required and nothing was granted', () => {
       expect(coversRequired([], ['merchants:read'])).toBe(false);
     });
 
+    it('does not let a read imply a write', () => {
+      expect(coversRequired(['payouts:read'], ['payouts:write'])).toBe(false);
+    });
+  });
+
+  describe('firstMissingScope', () => {
   });
 });
