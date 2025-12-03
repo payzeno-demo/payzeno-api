@@ -89,6 +89,50 @@ export class DisputeRepository extends PayzenoRepository<DisputeEntity> {
     return manager.save(DisputeEntity, entity);
   }
 
+  findOpenForCharge(chargeId: ChargeId): Promise<DisputeEntity | null> {
+    return this.createQueryBuilder('dispute')
+      .where('dispute.charge_id = :chargeId', { chargeId })
+      .andWhere("dispute.status in ('needs_response','under_review')")
+      .getOne();
+  }
+
+  /** Evidence is staged and submitted in one write so a crash cannot lose the merchant's text. */
+  async saveEvidence(
+    manager: EntityManager,
+    disputeId: DisputeId,
+    evidence: DisputeEvidence,
+    submittedAt: Date | null,
+  ): Promise<number> {
+    const result = await manager
+      .createQueryBuilder()
+      .update(DisputeEntity)
+      .set(submittedAt ? { evidence, submitted_at: submittedAt, status: 'under_review' } : { evidence })
+      .where('id = :id AND status = :expected', { id: disputeId, expected: 'needs_response' })
+      .execute();
+    return result.affected ?? 0;
+  }
+
+  async transitionStatus(
+    manager: EntityManager,
+    disputeId: DisputeId,
+    from: DisputeStatus,
+    to: DisputeStatus,
+    resolvedAt: Date | null = null,
+  ): Promise<number> {
+    const result = await manager
+      .createQueryBuilder()
+      .update(DisputeEntity)
+      .set(resolvedAt ? { status: to, resolved_at: resolvedAt } : { status: to })
+      .where('id = :id AND status = :from', { id: disputeId, from })
+      .execute();
+    return result.affected ?? 0;
+  }
+
+  /**
+   * Rides `pix_dispute_evidence_due`. `DisputeDeadlineReminderJob` reads it nightly and drives
+   * `needs_response → lost` past the deadline; without that job the liability leg never
+   * resolves and the merchant's balance stays understated forever (domain-model §5).
+   */
   findPastEvidenceDeadline(now: Date, limit: number): Promise<DisputeEntity[]> {
     return this.find({
       where: { status: 'needs_response', evidence_due_by: LessThan(now) },

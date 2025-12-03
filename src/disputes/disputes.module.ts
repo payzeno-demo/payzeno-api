@@ -20,3 +20,13 @@ import { DisputeFeeService } from './dispute-fee.service';
 import { DisputeRepository } from './dispute.repository';
 import { DisputesController } from './disputes.controller';
 import { DisputesService } from './disputes.service';
+import { DisputeStateMachine } from './state/dispute.state-machine';
+
+@Module({
+  imports: [
+    CommonModule,
+    PaymentsModule,
+    LedgerModule,
+    EventsModule,
+    TypeOrmModule.forFeature([DisputeEntity, DisputeFeeScheduleEntity]),
+  ],

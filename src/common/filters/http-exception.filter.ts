@@ -9,3 +9,13 @@
  * Two behaviours worth knowing before you change anything:
  *
  *   `LedgerRejectedException` passes the LEDGER'S status and code through verbatim. A
+ *   `409 settlement_locked` must arrive at the console as a 409 — after PAY-2043 that is the
+ *   normal outcome of racing a sweep, not an error, and the console shows "already settling"
+ *   and refetches. Collapsing it to a 502 turns a no-op into a page.
+ *
+ *   5xx is the only band that logs at error level. 402, 409 and 422 are business outcomes and
+ *   logging them as errors is what made the error budget meaningless in month 6.
+ */
+import {
+  Catch,
+  HttpException,
