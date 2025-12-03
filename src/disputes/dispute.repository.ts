@@ -64,4 +64,88 @@ export class DisputeRepository extends PayzenoRepository<DisputeEntity> {
    * Throws through `mapTypeOrmError`, so a 23505 on `uq_dispute_charge_open` arrives at the
    * service as a ConflictException carrying the constraint name.
    */
+  async insertDispute(manager: EntityManager, row: NewDisputeRow): Promise<DisputeEntity> {
+    const entity = manager.create(DisputeEntity, {
+      id: row.id,
+      merchantId: row.merchantId,
+      charge_id: row.chargeId,
+      amount_minor: row.amountMinor,
+      fee_minor: row.feeMinor,
+      currency: row.currency as DisputeEntity['currency'],
+      status: row.status,
+      reason: row.reason,
+      network_reason_code: row.networkReasonCode,
+      evidence_due_by: row.evidenceDueBy,
+      evidence: {},
+      is_charge_refundable: row.isChargeRefundable,
+      liability_shifted: row.liabilityShifted,
+      livemode: row.livemode,
+      submitted_at: null,
+      resolved_at: null,
+      createdAt: row.openedAt,
+      updatedAt: row.openedAt,
+    });
+
+    return manager.save(DisputeEntity, entity);
+  }
+
+  findOpenForCharge(chargeId: ChargeId): Promise<DisputeEntity | null> {
+    return this.createQueryBuilder('dispute')
+      .where('dispute.charge_id = :chargeId', { chargeId })
+      .andWhere("dispute.status in ('needs_response','under_review')")
+      .getOne();
+  }
+
+  /** Evidence is staged and submitted in one write so a crash cannot lose the merchant's text. */
+  async saveEvidence(
+    manager: EntityManager,
+    disputeId: DisputeId,
+    evidence: DisputeEvidence,
+    submittedAt: Date | null,
+  ): Promise<number> {
+    const result = await manager
+      .createQueryBuilder()
+      .update(DisputeEntity)
+      .set(submittedAt ? { evidence, submitted_at: submittedAt, status: 'under_review' } : { evidence })
+      .where('id = :id AND status = :expected', { id: disputeId, expected: 'needs_response' })
+      .execute();
+    return result.affected ?? 0;
+  }
+
+  async transitionStatus(
+    manager: EntityManager,
+    disputeId: DisputeId,
+    from: DisputeStatus,
+    to: DisputeStatus,
+    resolvedAt: Date | null = null,
+  ): Promise<number> {
+    const result = await manager
+      .createQueryBuilder()
+      .update(DisputeEntity)
+      .set(resolvedAt ? { status: to, resolved_at: resolvedAt } : { status: to })
+      .where('id = :id AND status = :from', { id: disputeId, from })
+      .execute();
+    return result.affected ?? 0;
+  }
+
+  /**
+   * Rides `pix_dispute_evidence_due`. `DisputeDeadlineReminderJob` reads it nightly and drives
+   * `needs_response → lost` past the deadline; without that job the liability leg never
+   * resolves and the merchant's balance stays understated forever (domain-model §5).
+   */
+  findPastEvidenceDeadline(now: Date, limit: number): Promise<DisputeEntity[]> {
+    return this.find({
+      where: { status: 'needs_response', evidence_due_by: LessThan(now) },
+      order: { evidence_due_by: 'ASC' },
+      take: limit,
+    });
+  }
+
+  /** Trailing-window dispute count — `DisputeRateCalculator` divides by charge volume. */
+  countOpenedSince(merchantId: string, since: Date): Promise<number> {
+    return this.createQueryBuilder('dispute')
+      .where('dispute.merchant_id = :merchantId', { merchantId })
+      .andWhere('dispute.created_at >= :since', { since })
+      .getCount();
+  }
 }

@@ -52,15 +52,42 @@ function NoPanValues(validationOptions?: ValidationOptions): PropertyDecorator {
 
 export class DisputeEvidenceDto implements DisputeEvidence {
   @IsOptional()
+  @MaxLength(FREE_TEXT_MAX)
   @NoPanValues()
   product_description?: string;
 
+  @IsOptional()
   @MaxLength(256)
   customer_name?: string;
 
   @IsOptional()
   @IsEmail()
+  @IsOptional()
+  @IsString()
+  @IsOptional()
+  @IsString()
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  service_documentation_file_id?: string;
+
+  /**
+   * The field merchants paste everything into, including — three times in month 4 — a full
+   * card number. `@NoPanValues()` runs the Luhn matcher over it and rejects with a 422 whose
+   * message does not echo the value back.
+   */
+  @IsOptional()
+  @IsString()
   @MaxLength(FREE_TEXT_MAX)
+  @NoPanValues()
+  uncategorized_text?: string;
+}
+
+@Redact('evidence.uncategorized_text', 'evidence.customer_email')
+export class SubmitDisputeEvidenceDto implements SubmitDisputeEvidenceRequest {
+  @ValidateNested()
   /** False stages the evidence without sending it — the console autosaves with `false`. */
   @IsOptional()
+  @IsBoolean()
+  submit?: boolean;
 }

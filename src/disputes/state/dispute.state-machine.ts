@@ -41,6 +41,13 @@ const TRANSITIONS: TransitionTable<DisputeStatus, DisputeEvent> = {
 @Injectable()
 export class DisputeStateMachine extends StateMachine<DisputeStatus, DisputeEvent> {
   readonly entity = 'dispute';
+  protected readonly transitions = TRANSITIONS;
+  readonly terminalStates: ReadonlySet<DisputeStatus> = new Set<DisputeStatus>([
+    'won',
+    'lost',
+    'warning_closed',
+  ]);
+
   /** Early-warning alerts: shown, counted, never posted to the ledger. */
   isWarning(status: DisputeStatus): boolean {
     return status === 'warning_needs_response' || status === 'warning_closed';
@@ -56,4 +63,14 @@ export class DisputeStateMachine extends StateMachine<DisputeStatus, DisputeEven
    * 3DS. The dispute is still recorded — the network sends it — but asking the merchant for
    * evidence is asking them to defend a case they cannot lose.
    */
+  isWorthDefending(status: DisputeStatus, liabilityShifted: boolean, reason: string): boolean {
+    if (status !== 'needs_response') return false;
+    return !(liabilityShifted && reason === 'fraudulent');
+  }
+
+  eventForOutcome(outcome: 'won' | 'lost' | 'warning_closed'): DisputeEvent {
+    if (outcome === 'won') return 'win';
+    if (outcome === 'lost') return 'lose';
+    return 'close';
+  }
 }

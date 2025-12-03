@@ -9,3 +9,24 @@
 
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+
+import { CommonModule } from '../common/common.module';
+import { EventsModule } from '../events/events.module';
+import { LedgerModule } from '../ledger/ledger.module';
+import { PaymentsModule } from '../payments/payments.module';
+import { DisputeEntity, DisputeFeeScheduleEntity } from './dispute.entity';
+import { DisputeEvidenceService } from './dispute-evidence.service';
+import { DisputeFeeService } from './dispute-fee.service';
+import { DisputeRepository } from './dispute.repository';
+import { DisputesController } from './disputes.controller';
+import { DisputesService } from './disputes.service';
+import { DisputeStateMachine } from './state/dispute.state-machine';
+
+@Module({
+  imports: [
+    CommonModule,
+    PaymentsModule,
+    LedgerModule,
+    EventsModule,
+    TypeOrmModule.forFeature([DisputeEntity, DisputeFeeScheduleEntity]),
+  ],
