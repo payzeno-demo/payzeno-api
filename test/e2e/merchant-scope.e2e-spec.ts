@@ -15,6 +15,15 @@ import type { SeededMerchant } from 'test/support/seed';
  */
 describe('merchant scope e2e', () => {
   let ctx: TestApp;
+  let own: SeededMerchant;
+  it('404s reading another merchant’s charge', async () => {
+    const res = await request(ctx.app.getHttpServer())
+      .get(`/v1/charges/${otherChargeId}`)
+      .set('Authorization', bearer(own));
+
+    expect(res.status).toBe(404);
+  });
+
   it('never leaks another merchant’s rows into a list', async () => {
     const res = await request(ctx.app.getHttpServer())
       .get('/v1/payment_intents?limit=100')
@@ -37,4 +46,12 @@ describe('merchant scope e2e', () => {
     expect(res.body.id).toBe(own.merchant.id);
   });
 
+  it('401s an api key that does not resolve', async () => {
+    const res = await request(ctx.app.getHttpServer())
+      .get('/v1/payment_intents?limit=1')
+      .set('Authorization', 'Bearer sk_live_deadbeef_notarealsecretvalue');
+
+    expect(res.status).toBe(401);
+    expect(res.body).toBeApiError('invalid_api_key');
+  });
 });
