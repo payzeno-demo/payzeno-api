@@ -41,6 +41,13 @@ const TRANSITIONS: TransitionTable<DisputeStatus, DisputeEvent> = {
 @Injectable()
 export class DisputeStateMachine extends StateMachine<DisputeStatus, DisputeEvent> {
   readonly entity = 'dispute';
+  protected readonly transitions = TRANSITIONS;
+  readonly terminalStates: ReadonlySet<DisputeStatus> = new Set<DisputeStatus>([
+    'won',
+    'lost',
+    'warning_closed',
+  ]);
+
   /** Early-warning alerts: shown, counted, never posted to the ledger. */
   isWarning(status: DisputeStatus): boolean {
     return status === 'warning_needs_response' || status === 'warning_closed';

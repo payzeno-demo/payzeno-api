@@ -64,4 +64,11 @@ export class DisputeRepository extends PayzenoRepository<DisputeEntity> {
    * Throws through `mapTypeOrmError`, so a 23505 on `uq_dispute_charge_open` arrives at the
    * service as a ConflictException carrying the constraint name.
    */
+  /** Trailing-window dispute count — `DisputeRateCalculator` divides by charge volume. */
+  countOpenedSince(merchantId: string, since: Date): Promise<number> {
+    return this.createQueryBuilder('dispute')
+      .where('dispute.merchant_id = :merchantId', { merchantId })
+      .andWhere('dispute.created_at >= :since', { since })
+      .getCount();
+  }
 }
