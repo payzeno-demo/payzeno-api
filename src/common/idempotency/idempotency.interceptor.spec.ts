@@ -31,12 +31,59 @@ describe('IdempotencyInterceptor', () => {
   let interceptor: IdempotencyInterceptor;
   let response: { statusCode: number; headers: Record<string, string>; status: jest.Mock; setHeader: jest.Mock };
 
+  function context(
+    request: Record<string, unknown>,
+    decorated: unknown = { required: true },
+  ): ExecutionContext {
+    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(decorated);
+    return {
+      getHandler: () => () => undefined,
+      getClass: () => class {},
+      switchToHttp: () => ({
+        getRequest: () => request,
+        getResponse: () => response,
+      }),
+    } as unknown as ExecutionContext;
+  }
+
+  it('passes through entirely when the handler is not decorated', async () => {
+    const observable = await interceptor.intercept(context(baseRequest, undefined), handler());
+
+    await expect(firstValueFrom(observable)).resolves.toEqual({ id: 'pi_1' });
+    expect(postgres.begin).not.toHaveBeenCalled();
+  });
+
   it('reads the decorator metadata off both the handler and the class', async () => {
     const spy = jest.spyOn(reflector, 'getAllAndOverride');
 
     await interceptor.intercept(context(baseRequest), handler());
 
     expect(spy).toHaveBeenCalledWith(IDEMPOTENT_KEY, expect.any(Array));
+  });
+
+  it('skips scoping for a principal with no merchant — the internal surface', async () => {
+    const req = { ...baseRequest, principal: makeInternalPrincipal() };
+
+    await interceptor.intercept(context(req), handler());
+
+    expect(postgres.begin).not.toHaveBeenCalled();
+  });
+
+  it('throws IdempotencyKeyReuseException on a fingerprint mismatch', async () => {
+    postgres.begin.mockResolvedValue({ outcome: 'fingerprint_mismatch' });
+
+    await expect(interceptor.intercept(context(baseRequest), handler())).rejects.toBeInstanceOf(
+      IdempotencyKeyReuseException,
+    );
+  });
+
+  it('throws IdempotencyInProgressException and sets Retry-After', async () => {
+    postgres.begin.mockResolvedValue({ outcome: 'in_progress', retryAfterSec: 12 });
+
+    await expect(interceptor.intercept(context(baseRequest), handler())).rejects.toBeInstanceOf(
+      IdempotencyInProgressException,
+    );
+    expect(response.headers['retry-after']).toBe('12');
   });
 
 });

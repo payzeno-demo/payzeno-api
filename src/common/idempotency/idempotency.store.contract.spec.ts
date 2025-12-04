@@ -42,5 +42,35 @@ describe('IdempotencyStore contract', () => {
       }
     });
 
+    it('reclaims a lapsed lease rather than deadlocking on a crashed caller', async () => {
+      await store.begin(TEST_MERCHANT_ID, 'k1', 'fp1');
+      harness.expireLease(TEST_MERCHANT_ID, 'k1');
+
+      await expect(store.begin(TEST_MERCHANT_ID, 'k1', 'fp1')).resolves.toEqual({
+        outcome: 'proceed',
+      });
+    });
+
+    it('replays a null body without confusing it for "no record"', async () => {
+      await store.begin(TEST_MERCHANT_ID, 'k204', 'fp204');
+      await store.complete(TEST_MERCHANT_ID, 'k204', 204, null);
+
+      const replayed = await store.begin(TEST_MERCHANT_ID, 'k204', 'fp204');
+
+      expect(isReplay(replayed)).toBe(true);
+      if (isReplay(replayed)) {
+        expect(replayed.status).toBe(204);
+      }
+    });
+
+    it('keeps live and test keyspaces apart', async () => {
+      const testModeStore = harness.forMode(false);
+
+      await store.begin(TEST_MERCHANT_ID, 'same-key', 'fp1');
+
+      await expect(testModeStore.begin(TEST_MERCHANT_ID, 'same-key', 'fp1')).resolves.toEqual({
+        outcome: 'proceed',
+      });
+    });
   });
 });
