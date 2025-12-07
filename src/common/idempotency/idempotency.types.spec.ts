@@ -23,6 +23,12 @@ import {
 describe('idempotency fingerprint', () => {
   const BODY = { amount: 4_599, currency: 'GBP', metadata: { order: 'A-1' } };
 
+  it('is stable for the same request', () => {
+    expect(fingerprint('POST', '/v1/payment_intents', BODY)).toBe(
+      fingerprint('POST', '/v1/payment_intents', BODY),
+    );
+  });
+
   it('ignores key order at depth', () => {
     expect(
       fingerprint('POST', '/v1/payment_intents', { metadata: { a: 1, b: 2 } }),
@@ -47,6 +53,18 @@ describe('idempotency fingerprint', () => {
     );
   });
 
+  it('is case-insensitive on the method — express and undici disagree on casing', () => {
+    expect(fingerprint('post', '/v1/refunds', BODY)).toBe(fingerprint('POST', '/v1/refunds', BODY));
+  });
+
+  it('distinguishes a missing field from an explicit null', () => {
+    // `{description: null}` clears the description; `{}` leaves it alone. Two different
+    // requests, and the store must not replay one for the other.
+    expect(fingerprint('POST', '/v1/refunds', { description: null })).not.toBe(
+      fingerprint('POST', '/v1/refunds', {}),
+    );
+  });
+
   it('treats an undefined field as absent, matching what JSON.stringify sent on the wire', () => {
     expect(fingerprint('POST', '/v1/refunds', { amount: 1, note: undefined })).toBe(
       fingerprint('POST', '/v1/refunds', { amount: 1 }),
@@ -63,10 +81,18 @@ describe('canonicalJson', () => {
     expect(canonicalJson({ b: 1, a: 2 })).toBe('{"a":2,"b":1}');
   });
 
+  it('drops undefined properties rather than emitting them', () => {
+    expect(canonicalJson({ a: 1, b: undefined })).toBe('{"a":1}');
+  });
+
   it('handles scalars', () => {
     expect(canonicalJson('x')).toBe('"x"');
     expect(canonicalJson(42)).toBe('42');
     expect(canonicalJson(true)).toBe('true');
+  });
+
+  it('accepts a key at exactly the maximum length', () => {
+    expect(isValidIdempotencyKey('k'.repeat(MAX_IDEMPOTENCY_KEY_LENGTH))).toBe(true);
   });
 
   it('rejects one character over', () => {

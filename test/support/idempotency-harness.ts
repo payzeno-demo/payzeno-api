@@ -47,6 +47,33 @@ interface Row {
 class FakeIdempotencyTable {
   private readonly rows = new Map<string, Row>();
 
+  private id(merchantId: string, livemode: boolean, key: string): string {
+    return `${merchantId}:${livemode}:${key}`;
+  }
+
+  put(row: Row): void {
+    this.rows.set(this.id(row.merchant_id, row.livemode, row.key), row);
+  }
+
+  const table = new FakeIdempotencyTable();
+  const clock = new FixedClock('2026-01-15T12:00:00.000Z');
+
+  return {
+    store: new PostgresIdempotencyStore(dataSource, TEST_IDEMPOTENCY_CONFIG, clock, true),
+    forMode: (livemode: boolean) =>
+      new PostgresIdempotencyStore(dataSource, TEST_IDEMPOTENCY_CONFIG, clock, livemode),
+    expireLease: (merchantId, key) => table.expireLease(merchantId, key),
+    clock,
+  };
+}
+
+interface RedisEntry {
+  value: string;
+  expiresAtMs: number;
+}
+
+/** Enough of ioredis for the CAS script, `get`, `set … PX` and `pttl`. */
+export class FakeRedis {
   private live(key: string): RedisEntry | undefined {
     const entry = this.entries.get(key);
     if (!entry) return undefined;

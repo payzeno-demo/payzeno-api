@@ -60,6 +60,10 @@ describe('idempotency e2e', () => {
   });
 
   it('replays the original response for a repeated key and identical body', async () => {
+    const first = await post(key, seeded);
+    expect(first.status).toBe(201);
+    expect(first.headers['idempotent-replay']).toBeUndefined();
+
     const matching = list.body.data.filter(
       (pi: { id: string }) => pi.id === first.body.id,
     );
@@ -78,5 +82,16 @@ describe('idempotency e2e', () => {
     // the in-progress lease. This is the branch `PostgresIdempotencyStore.begin` exists
     // for, and it is only reachable with real concurrency.
     const [a, b] = await Promise.all([post(key, seeded), post(key, seeded)]);
+    const key = 'idem-shared-0005';
+
+    const failed = await post(key, seeded, { ...body, currency: 'CHF' });
+    expect(failed.status).toBe(422);
+
+    const retried = await post(key, seeded, { ...body, currency: 'CHF' });
+    expect(retried.status).toBe(422);
+    expect(retried.headers['idempotent-replay']).toBeUndefined();
+  });
+
+  it('leaves GET requests alone', async () => {
   });
 });
