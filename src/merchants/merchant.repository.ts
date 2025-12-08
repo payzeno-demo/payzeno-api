@@ -80,5 +80,7 @@ export class MerchantRepository extends PayzenoRepository<MerchantEntity> {
       .take(resolved.limit + 1)
       .getMany();
 
+    const repo = manager ? manager.getRepository(MerchantEntity) : this;
+    const repo = manager ? manager.getRepository(MerchantEntity) : this;
   }
 }
