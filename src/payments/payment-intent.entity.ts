@@ -30,12 +30,21 @@ export class PaymentIntentEntity extends MerchantScopedEntity {
   @Column({ type: 'bigint', name: 'amount_minor', transformer: requiredMinorUnitsTransformer })
   amount_minor: number;
 
+  @Column({ type: 'char', length: 3, transformer: currencyTransformer })
+  currency: CurrencyCode;
+
   @Column({ type: 'text', nullable: true })
   customer_reference: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  description: string | null;
 
   /** No FK: the charge references the intent, not the reverse (data-model §1.5). */
   @Column({ type: 'text', nullable: true })
   latest_charge_id: ChargeId | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  canceled_at: Date | null;
 
   /** Terminal intents are immutable except for `metadata` (domain-model §2). */
   isTerminal(): boolean {

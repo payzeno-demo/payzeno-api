@@ -59,7 +59,12 @@ export class PaymentIntentsController extends BaseController {
     return this.intents.create(principal, dto);
   }
 
+  @Get()
   @Get(':paymentIntentId')
+  @Idempotent()
+  @RateLimit(300, 60)
+  @Idempotent()
+  @Post(':paymentIntentId/cancel')
   @RequiredScopes('payment_intents:write')
   @AuditLog('payment_intent.cancel', { resourceType: 'payment_intent', idParam: 'paymentIntentId' })
   cancel(
