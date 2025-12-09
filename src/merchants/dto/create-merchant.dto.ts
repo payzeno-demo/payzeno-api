@@ -31,5 +31,13 @@ import { IsPayzenoMetadata } from '../../common/validators/metadata.validator';
 export class CreateMerchantDto implements CreateMerchantRequest {
   @IsString()
   @MinLength(2)
+  @MaxLength(100)
+  display_name!: string;
+
+  @IsIn([...CURRENCIES])
+  default_currency!: CurrencyCode;
+
   @IsOptional()
+  @IsPayzenoMetadata()
+  metadata?: Metadata;
 }
