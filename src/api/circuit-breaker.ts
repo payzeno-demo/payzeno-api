@@ -22,6 +22,13 @@ export interface BreakerOptions {
   timeoutMs: number;
 }
 
+export const DEFAULT_BREAKER_OPTIONS: BreakerOptions = {
+  errorThresholdPercentage: 50,
+  volumeThreshold: 20,
+  resetTimeoutMs: 30_000,
+  timeoutMs: 15_000,
+};
+
 export interface BreakerSnapshot {
   name: string;
   state: 'closed' | 'open' | 'half-open';
@@ -30,6 +37,7 @@ export interface BreakerSnapshot {
   rejects: number;
 }
 
+@Injectable()
 function isBreakerOpenError(err: unknown): boolean {
   if (err instanceof Error) {
     return err.message === 'Breaker is open' || (err as { code?: string }).code === 'EOPENBREAKER';
