@@ -20,3 +20,26 @@ import { ProcessedEventRepository } from './processed-event.repository';
  */
 const WAIT_TIME_SECONDS = 20;
 const MAX_MESSAGES = 10;
+const VISIBILITY_TIMEOUT_SECONDS = 60;
+
+/**
+ * The base every payzeno-api queue consumer extends.
+ *
+ * Delivery is at-least-once and ordering is not guaranteed — both are stated in
+ * @payzeno/contracts/events and neither is negotiable. The consequences are baked in here so
+ * no individual consumer has to remember them:
+ *
+ *  - dedupe is an INSERT-FIRST claim on `processed_event`, in the SAME transaction as the
+ *    handler's side effects (ADR 0011);
+ *  - an unknown `(type, version)` goes to the DLQ rather than being guessed at;
+ *  - a handler that throws does NOT delete the message, so SQS redelivers it.
+ *
+ * See docs/adr/0009-event-consumer-wiring.md for why consumers resolve their collaborators
+ * through `ModuleRef` in `onModuleInit` instead of `EventsModule` importing feature modules.
+ */
+export abstract class BaseEventConsumer {
+  /** The SQS queue this consumer long-polls. Comes from `ApiConfig`, never from env. */
+  abstract readonly queueUrl: string;
+
+  /** Stable identity written into `processed_event.consumer`. Never the class instance. */
+  abstract readonly consumerName: string;
