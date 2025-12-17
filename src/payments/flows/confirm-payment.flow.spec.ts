@@ -22,6 +22,8 @@ import { makePaymentIntent } from 'test/factories/payment-intent.factory';
 describe('ConfirmPaymentFlow', () => {
   let flow: ConfirmPaymentFlow;
   let repo: jest.Mocked<PaymentIntentRepository>;
+  let merchants: jest.Mocked<MerchantsService>;
+
   beforeEach(async () => {
     auth = { authorize: jest.fn().mockResolvedValue(makeCharge({ status: 'captured' })) } as unknown as jest.Mocked<ChargeAuthorizationService>;
 
@@ -51,6 +53,12 @@ describe('ConfirmPaymentFlow', () => {
     }).compile();
 
     flow = moduleRef.get(ConfirmPaymentFlow);
+  });
+
+  it('ends in succeeded for an automatic-capture authorisation', async () => {
+    const result = await flow.execute(makePaymentIntent({ capture_method: 'automatic' }), {});
+
+    expect(result.status).toBe('succeeded');
   });
 
   it('ends in requires_capture for a manual-capture authorisation', async () => {
