@@ -44,3 +44,19 @@ export function makePaymentIntent(overrides: Partial<PaymentIntent> = {}): Payme
   };
 }
 
+/** SCA challenge branch — the `requires_action` shape `ConfirmPaymentFlow` produces. */
+export function makeChallengedPaymentIntent(
+  overrides: Partial<PaymentIntent> = {},
+): PaymentIntent {
+  const nextAction: NextAction = {
+    type: 'redirect_to_url',
+    url: 'https://acs.issuer.example/challenge/9f2c41ab',
+  };
+  return makePaymentIntent({
+    status: 'requires_action',
+    next_action: nextAction,
+    currency: 'EUR',
+    ...overrides,
+  });
+}
+
