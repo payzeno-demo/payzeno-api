@@ -81,6 +81,17 @@ export class LedgerHttpClient extends BaseHttpClient {
     return this.ledgerConfig.baseUrl;
   }
 
+  listAccounts(merchantId: MerchantId, currency?: CurrencyCode): Promise<{ data: Account[] }> {
+    return this.get<{ data: Account[] }>('/internal/v1/accounts', { merchant_id: merchantId, currency });
+  }
+
+  // -- transactions --------------------------------------------------------
+
+  /**
+   * Retried on the predicate above, and that retry is safe by contract: the request carries an
+   * `idempotency_key` and the ledger discriminates repeats on `request_fingerprint`
+   * (api-surface.md §10.2).
+   */
   getSettlementBatch(batchId: SettlementBatchId, merchantId?: MerchantId): Promise<SettlementBatch> {
     return this.get<SettlementBatch>(`/internal/v1/settlement-batches/${encodeURIComponent(batchId)}`, {
       merchant_id: merchantId,
