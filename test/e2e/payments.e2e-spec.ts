@@ -84,6 +84,45 @@ describe('payments e2e', () => {
   });
 
   it('refuses to capture more than was authorised', async () => {
+    const created = await createIntent({ capture_method: 'manual' });
+    await request(ctx.app.getHttpServer())
+      .post(`/v1/payment_intents/${created.body.id}/confirm`)
+      .set('Authorization', bearer(seeded))
+      .set('Idempotency-Key', idempotencyKey('confirm-over', seeded.merchant.id))
+      .send({});
+
+    const res = await request(ctx.app.getHttpServer())
+      .post('/v1/refunds')
+      .set('Authorization', bearer(seeded))
+      .set('Idempotency-Key', idempotencyKey('refund-void', seeded.merchant.id))
+      .send({ charge_id: confirmed.body.latest_charge_id });
+
+    // A void is not a refund. This is `POST /v1/payment_intents/:id/cancel`'s job.
+    expect(res.status).toBe(409);
+    expect(res.body).toBeApiError('invalid_state');
+  });
+
+  it('cancels an authorised intent and releases the hold', async () => {
+    const created = await createIntent({ capture_method: 'manual' });
+    await request(ctx.app.getHttpServer())
+      .post(`/v1/payment_intents/${created.body.id}/confirm`)
+      .set('Authorization', bearer(seeded))
+      .set('Idempotency-Key', idempotencyKey('confirm-cancel', seeded.merchant.id))
+      .send({});
+
+    const res = await request(ctx.app.getHttpServer())
+      .post(`/v1/payment_intents/${created.body.id}/cancel`)
+      .set('Authorization', bearer(seeded))
+      .set('Idempotency-Key', idempotencyKey('cancel', seeded.merchant.id))
+      .send({ cancellation_reason: 'requested_by_customer' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('canceled');
+    expect(res.body.cancellation_reason).toBe('requested_by_customer');
+    expect(res.body.canceled_at).toEqual(expect.any(String));
+  });
+
+  it('lists the merchant’s charges with a working cursor', async () => {
     const res = await request(ctx.app.getHttpServer())
       .get('/v1/charges?limit=2')
       .set('Authorization', bearer(seeded));
