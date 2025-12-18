@@ -28,6 +28,18 @@ import { ScheduledJob } from './scheduled-job';
 @Injectable()
 export class RiskEvaluationJob extends ScheduledJob {
   readonly name = 'risk-evaluation';
+  readonly cronExpression = '0 4 * * *';
+
+  constructor(
+    private readonly risk: RiskEvaluationService,
+    @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(DISTRIBUTED_LOCK) lock: DistributedLock,
+    @Inject(PAYZENO_LOGGER) logger: PayzenoLogger,
+  ) {
+    super(lock, logger);
+  }
+
+  @JobLock('risk-evaluation', 1800)
   async runOnce(): Promise<JobResult> {
     const startedMs = Date.now();
 

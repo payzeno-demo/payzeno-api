@@ -60,6 +60,27 @@ describe('LedgerHttpClient', () => {
   });
 
   describe('routes', () => {
+    it('bootstraps accounts at POST /internal/v1/accounts/bootstrap', async () => {
+      transport.on('POST', '/internal/v1/accounts/bootstrap', () => ({
+        status: 201,
+        body: { accounts: [], created: 3 },
+      }));
+
+      await expect(client.bootstrapAccounts(TEST_MERCHANT_ID, 'GBP')).resolves.toMatchObject({
+        created: 3,
+      });
+    });
+
+    it('url-encodes the merchant id into the balance path', async () => {
+      transport.on('GET', '/internal/v1/balances/:merchantId', () => ({ status: 200, body: {} }));
+
+      await client.getBalance(TEST_MERCHANT_ID);
+
+      expect(transport.callsTo('GET', '/internal/v1/balances/:merchantId')[0].path).toBe(
+        `/internal/v1/balances/${TEST_MERCHANT_ID}`,
+      );
+    });
+
     it('retries a settlement item at the reconciliation route', async () => {
       transport.on('POST', '/internal/v1/reconciliation/items/:itemId/retry', () => ({
         status: 202,
@@ -75,6 +96,25 @@ describe('LedgerHttpClient', () => {
   });
 
   describe('error translation', () => {
+    it('turns a 409 settlement_locked into LedgerRejectedException, code intact', async () => {
+      transport.on('POST', '/internal/v1/reconciliation/items/:itemId/retry', () => ({
+        status: 409,
+        body: apiError('settlement_locked', 'item already settled', {
+          settled_transaction_id: 'ltx_000777',
+        }),
+      }));
+
+      try {
+        await client.retryReconciliationItem('ri_000042', { reason: 'operator' } as never);
+        throw new Error('expected a rejection');
+      } catch (err) {
+        expect(err).toBeInstanceOf(LedgerRejectedException);
+        const rejected = err as LedgerRejectedException;
+        expect(rejected.code).toBe('settlement_locked');
+        expect(rejected.status).toBe(409);
+      }
+    });
+
     it('does not collapse a 422 into a 502', async () => {
       transport.on('POST', '/internal/v1/reconciliation/items/:itemId/retry', () => ({
         status: 422,
@@ -100,6 +140,21 @@ describe('LedgerHttpClient', () => {
       await expect(client.getBalance(TEST_MERCHANT_ID)).rejects.toMatchObject({ code });
     });
 
+    it('reports a socket failure as LedgerUnavailableException, never as rejected', async () => {
+      const noRetry = build(0);
+      transport.on('GET', '/internal/v1/balances/:merchantId', () => ({ status: 200, body: {} }));
+      transport.failOnce(
+        new TransportError('connect_timeout', 'http://ledger.test/x', 'connect timeout'),
+      );
+
+      const error = await noRetry.getBalance(TEST_MERCHANT_ID).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(LedgerUnavailableException);
+      expect(error).not.toBeInstanceOf(LedgerRejectedException);
+    });
+  });
+
+  describe('the retry predicate', () => {
     it('retries a 503 on a GET', async () => {
       let calls = 0;
       transport.on('GET', '/internal/v1/balances/:merchantId', () => {
@@ -121,6 +176,28 @@ describe('LedgerHttpClient', () => {
       transport.failOnce(new TransportError('read_timeout', 'http://ledger.test/x', 'read timeout'));
 
       await expect(client.getBalance(TEST_MERCHANT_ID)).resolves.toBeDefined();
+    });
+
+    it('retries postTransaction, because it carries an idempotency key', async () => {
+      let calls = 0;
+      transport.on('POST', '/internal/v1/transactions', () => {
+        calls += 1;
+        return calls < 2 ? { status: 504, body: {} } : { status: 201, body: { id: 'ltx_1' } };
+      });
+
+      await expect(
+        client.postTransaction({
+          idempotency_key: 'capture:ch_1',
+          purpose: 'capture',
+          merchant_id: TEST_MERCHANT_ID,
+          currency: 'GBP',
+          livemode: true,
+          reference_type: 'charge',
+          reference_id: 'ch_1',
+          lines: [],
+        }),
+      ).resolves.toMatchObject({ id: 'ltx_1' });
+      expect(calls).toBe(2);
     });
 
   });
