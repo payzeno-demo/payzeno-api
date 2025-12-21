@@ -73,6 +73,17 @@ function item(overrides: Partial<ReconciliationItem> = {}): ReconciliationItem {
  */
 describe('settlements e2e', () => {
   let ctx: TestApp;
+  let seeded: SeededMerchant;
+
+  beforeAll(async () => {
+    ctx = await createTestApp();
+    seeded = await seedMerchant(ctx);
+  });
+
+  afterAll(async () => {
+    await ctx.close();
+  });
+
   beforeEach(() => {
     ctx.ledger.reset();
     ctx.ledger.seedBatch(batch(seeded.merchant.id), [
@@ -89,6 +100,16 @@ describe('settlements e2e', () => {
     expect(res.body.data[0]).not.toHaveProperty('expected_total_minor');
     expect(res.body.data[0]).not.toHaveProperty('posted_total_minor');
     expect(res.body.data[0]).not.toHaveProperty('file_reference');
+  });
+
+  it('reads one batch and injects merchant_id on the ledger call', async () => {
+    const res = await request(ctx.app.getHttpServer())
+      .get(`/v1/settlements/${BATCH_ID}`)
+      .set('Authorization', bearer(seeded));
+
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe(BATCH_ID);
+    expect(ctx.ledger.callsTo('getSettlementBatch')).toHaveLength(1);
   });
 
 });
