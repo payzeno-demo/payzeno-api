@@ -40,12 +40,32 @@ describe('ApiKeyHasher', () => {
       expect(hasher.lookupHash('s3cr3t')).toBe(expected);
     });
 
+    it('verifies the secret it hashed', async () => {
+      const stored = await hasher.hashSecret('s3cr3t');
+
+      await expect(hasher.verifySecret(stored, 's3cr3t')).resolves.toBe(true);
+    });
+
+    it('rejects a wrong secret', async () => {
+      const stored = await hasher.hashSecret('s3cr3t');
+
+      await expect(hasher.verifySecret(stored, 'not-it')).resolves.toBe(false);
+    });
+
     it('never mints the same secret twice', async () => {
       const [a, b] = await Promise.all([hasher.mint(), hasher.mint()]);
 
       expect(a.secret).not.toBe(b.secret);
     });
 
+    it('produces a URL-safe secret — it travels in an Authorization header', async () => {
+      const minted = await hasher.mint();
+
+      expect(minted.secret).toMatch(/^[A-Za-z0-9_-]+$/);
+    });
+  });
+
+  describe('formatToken', () => {
     it('is sk_<mode>_<id suffix>_<secret>', () => {
       const token = hasher.formatToken('live', 'ak_01HQ8ZZZAB12CD34', 'the-secret-part');
 
