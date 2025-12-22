@@ -43,6 +43,31 @@ const TOKEN_PATTERN = /^sk_(live|test)_([A-Za-z0-9]{4,16})_([A-Za-z0-9_-]{16,})$
 export class ApiKeyResolver {
   constructor(
     @InjectRepository(ApiKeyEntity) private readonly keys: Repository<ApiKeyEntity>,
+    const match = TOKEN_PATTERN.exec(token.trim());
+    if (!match) return null;
+    return { mode: match[1] as 'live' | 'test', keyIdSuffix: match[2], secret: match[3] };
+  }
+
+  async resolve(token: string): Promise<AuthPrincipal> {
     const lookupHash = this.hasher.lookupHash(split.secret);
+    const verified = await this.hasher.verifySecret(candidate.secretHash, split.secret);
+    if (!verified) throw new InvalidApiKeyException();
+
+    if (candidate.revokedAt !== null && candidate.revokedAt <= this.clock.now()) {
+      throw new InvalidApiKeyException();
+    }
+
+    // A `sk_test_` token whose row is a live key (or the reverse) is a forged prefix.
+    if (candidate.mode !== split.mode) throw new InvalidApiKeyException();
+
+    return candidate;
+  }
+
+  /**
+   * The pre-auth rate-limit bucket. `RateLimitGuard` runs before this resolver and cannot
+   * afford an argon2 verify per request, so it keys on the credential's hash instead — which
+   * is stable per key without resolving it.
+   */
+  bucketKeyFor(token: string): string | null {
   }
 }
