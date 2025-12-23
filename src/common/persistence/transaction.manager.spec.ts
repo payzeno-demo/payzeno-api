@@ -13,6 +13,7 @@ import { SQLSTATE } from 'src/common/persistence/typeorm-error.mapper';
  */
 describe('TransactionManager', () => {
   let transaction: jest.Mock;
+  let dataSource: DataSource;
   it('opens a transaction and hands the callback its manager', async () => {
     const seen: unknown[] = [];
 
@@ -27,6 +28,37 @@ describe('TransactionManager', () => {
 
   it('returns the callback’s value', async () => {
     await expect(manager.runInTransaction(async () => 42)).resolves.toBe(42);
+  });
+
+  it('joins an active manager instead of nesting', async () => {
+    const existing = {
+      id: 'existing',
+      queryRunner: { isTransactionActive: true },
+    } as unknown as EntityManager;
+
+    let received: EntityManager | undefined;
+    await manager.runInTransaction(
+      async (m) => {
+        received = m;
+      },
+      existing,
+    );
+
+    expect(transaction).not.toHaveBeenCalled();
+    expect(received).toBe(existing);
+  });
+
+  describe('runInReadTransaction', () => {
+    it('marks the transaction read-only before running the callback', async () => {
+      const query = jest.fn().mockResolvedValue([]);
+      transaction.mockImplementation(async (fn: (m: EntityManager) => Promise<unknown>) =>
+        fn({ query } as unknown as EntityManager),
+      );
+
+      await manager.runInReadTransaction(async () => 'ok');
+
+      expect(query).toHaveBeenCalledWith('SET TRANSACTION READ ONLY');
+    });
   });
 
 });

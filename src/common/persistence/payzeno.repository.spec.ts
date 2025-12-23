@@ -114,6 +114,41 @@ describe('PayzenoRepository', () => {
       expect(builder.state.wheres[0][1]).toEqual({ merchantId: TEST_MERCHANT_ID });
     });
 
+    it('applies the livemode predicate too', () => {
+      repo.scopedQuery(scope);
+
+      expect(builder.state.wheres[1][0]).toContain('charge.livemode = :livemode');
+      expect(builder.state.wheres[1][1]).toEqual({ livemode: true });
+    });
+
+    it('orders by created_at then id, descending', async () => {
+      await repo.paginateCursor(scope, { limit: 25, cursor: null } as never);
+
+      expect(builder.state.orders).toEqual([
+        ['charge.created_at', 'DESC'],
+        ['charge.id', 'DESC'],
+      ]);
+    });
+
+    it('applies created_after and created_before when supplied', async () => {
+      await repo.paginateCursor(scope, {
+        limit: 25,
+        cursor: null,
+        createdAfter: new Date('2026-01-01T00:00:00Z'),
+        createdBefore: new Date('2026-02-01T00:00:00Z'),
+      } as never);
+
+      const sql = builder.state.wheres.map(([s]) => s).join(' ');
+      expect(sql).toContain('charge.created_at > :createdAfter');
+      expect(sql).toContain('charge.created_at < :createdBefore');
+    });
+
+    function managerWithBuilder(): EntityManager {
+      return {
+        getRepository: () => ({ createQueryBuilder: () => builder.qb }),
+      } as unknown as EntityManager;
+    }
+
     it('returns the number of rows affected', async () => {
       await expect(
         repo.updateScoped(TEST_CHARGE_ID, scope, { status: 'captured' } as never, undefined, managerWithBuilder()),

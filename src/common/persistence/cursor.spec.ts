@@ -37,6 +37,25 @@ describe('cursor', () => {
       expect(qb.addOrderBy).toHaveBeenCalledWith('charge.id', 'DESC');
     });
 
+    it('adds no predicate on the first page', () => {
+      apply(null);
+
+      expect(qb.andWhere).not.toHaveBeenCalled();
+    });
+
+    it('never issues an OFFSET or a skip', () => {
+      apply(encodeCursor({ createdAt: '2026-01-15T12:00:00.000Z', id: TEST_CHARGE_ID }));
+
+      expect(qb.skip).not.toHaveBeenCalled();
+      expect(qb.offset).not.toHaveBeenCalled();
+    });
+
+    const rows = [
+      row(nextId('ch_'), '2026-01-15T12:00:03.000Z'),
+      row(nextId('ch_'), '2026-01-15T12:00:02.000Z'),
+      row(nextId('ch_'), '2026-01-15T12:00:01.000Z'),
+    ];
+
     it('mints the next cursor from the last row actually returned', () => {
       const page = toPage(rows, 2);
 
@@ -52,5 +71,14 @@ describe('cursor', () => {
       expect(page).toEqual({ data: [], has_more: false, next_cursor: null });
     });
 
+    it('round-trips: the next cursor points at the row after the last returned one', () => {
+      const first = toPage(rows, 2);
+      const cursor = decodeCursor(first.next_cursor!);
+
+      expect(new Date(cursor.createdAt).getTime()).toBeGreaterThan(rows[2].createdAt.getTime());
+    });
+  });
+
+  describe('mapPage', () => {
   });
 });
