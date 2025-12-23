@@ -55,6 +55,9 @@ export interface AuthorizationOutcome {
 export class ChargeAuthorizationService {
   constructor(
     private readonly charges: ChargeRepository,
+    @Inject(CLOCK) private readonly clock: Clock,
+    const chargeId = this.ids.generate(API_ID_PREFIXES.charge) as ChargeId;
+
     let result: AuthorizeResult;
     try {
       result = await adapter.authorize({

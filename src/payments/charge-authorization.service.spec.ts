@@ -28,8 +28,18 @@ import { makePaymentIntent } from 'test/factories/payment-intent.factory';
  */
 describe('ChargeAuthorizationService', () => {
   let service: ChargeAuthorizationService;
+  let router: jest.Mocked<ProcessorRouter>;
   let publisher: jest.Mocked<OutboxEventPublisher>;
   let adapter: { acquirer: 'worldflow'; authorize: jest.Mock };
+
+  const intent = makePaymentIntent();
+
+  it('resolves the payment method token at the vault exactly once', async () => {
+    await service.authorize(merchant, intent, { payment_method_token: 'pmt_visa_4242' });
+
+    expect(vault.resolve).toHaveBeenCalledTimes(1);
+    expect(vault.resolve).toHaveBeenCalledWith('pmt_visa_4242');
+  });
 
   it('persists the charge with the acquirer’s processor reference', async () => {
     await service.authorize(merchant, intent, { payment_method_token: 'pmt_visa_4242' });
