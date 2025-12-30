@@ -46,6 +46,29 @@ export class ChargesController extends BaseController {
   list(
     @CurrentPrincipal() principal: AuthPrincipal,
     @Query() query: ListQueryDto,
+    @Query('status') status?: ChargeStatus,
+    @Query('payment_intent_id') paymentIntentId?: PaymentIntentId,
+    @Query('settlement_batch_id') settlementBatchId?: SettlementBatchId,
+  ): Promise<Paginated<Charge>> {
+    return this.charges.list(principal, {
+      ...query,
+      limit: query.effectiveLimit(),
+      status,
+      payment_intent_id: paymentIntentId,
+      settlement_batch_id: settlementBatchId,
+    });
+  }
+
+  /**
+   * `@ApiVersion('2026-01-15')` — the version that moved the flat `card_*` fields into the
+   * nested `card` object. `ApiVersionInterceptor` reshapes the response for older callers;
+   * the two integrations still pinned to `2025-06-01` are why it still exists.
+   */
+  @Get(':chargeId')
+  @ApiVersion('2026-01-15')
+  @RequiredScopes('charges:read')
+  get(
+    @CurrentPrincipal() principal: AuthPrincipal,
     @Param('chargeId') chargeId: ChargeId,
   ): Promise<Charge> {
     return this.charges.get(principal, chargeId);
@@ -54,6 +77,7 @@ export class ChargesController extends BaseController {
   @Get(':chargeId/ledger')
   @UseGuards(SessionGuard)
   getLedger(
+    @CurrentPrincipal() principal: AuthPrincipal,
     @Param('chargeId') chargeId: ChargeId,
   ): Promise<ChargeLedgerResponse> {
     return this.charges.getLedger(principal, chargeId);

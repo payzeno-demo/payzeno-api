@@ -81,6 +81,10 @@ export class LedgerHttpClient extends BaseHttpClient {
     return this.ledgerConfig.baseUrl;
   }
 
+  getBalance(merchantId: MerchantId, query: BalanceQuery = {}): Promise<Balance> {
+    return this.get<Balance>(`/internal/v1/balances/${encodeURIComponent(merchantId)}`, { ...query });
+  }
+
   listAccounts(merchantId: MerchantId, currency?: CurrencyCode): Promise<{ data: Account[] }> {
     return this.get<{ data: Account[] }>('/internal/v1/accounts', { merchant_id: merchantId, currency });
   }
@@ -116,6 +120,15 @@ export class LedgerHttpClient extends BaseHttpClient {
    */
   getPayout(payoutId: PayoutId): Promise<Payout> {
     return this.get<Payout>(`/internal/v1/payouts/${encodeURIComponent(payoutId)}`);
+  }
+
+  createPayout(body: CreatePayoutBody, idempotencyKey: string): Promise<Payout> {
+    return this.request<Payout, CreatePayoutBody>({
+      method: 'POST',
+      path: '/internal/v1/payouts',
+      body,
+      idempotencyKey,
+    });
   }
 
 }
