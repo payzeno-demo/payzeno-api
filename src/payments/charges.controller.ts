@@ -46,6 +46,7 @@ export class ChargesController extends BaseController {
   list(
     @CurrentPrincipal() principal: AuthPrincipal,
     @Query() query: ListQueryDto,
+    @Query('status') status?: ChargeStatus,
     @Query('payment_intent_id') paymentIntentId?: PaymentIntentId,
     @Query('settlement_batch_id') settlementBatchId?: SettlementBatchId,
   ): Promise<Paginated<Charge>> {
