@@ -21,6 +21,7 @@ describe('ChargeExpiryPolicy', () => {
     });
 
     it('gives a deferred-capture MCC 30 days', () => {
+      const later = new FixedClock('2026-03-01T00:00:00.000Z');
       const shifted = new ChargeExpiryPolicy(later);
 
       expect(shifted.expiresAt(makeMerchant({ mcc: '5732' }))).toBe('2026-03-08T00:00:00.000Z');
@@ -47,6 +48,25 @@ describe('ChargeExpiryPolicy', () => {
     });
 
     it('only applies to authorized charges', () => {
+      const captured = makeCharge({
+        status: 'captured',
+        authorization_expires_at: '2026-01-10T12:00:00.000Z',
+      });
+
+      // A captured charge's hold is spent; the expiry column is history, not a deadline.
+      expect(policy.isExpired(captured)).toBe(false);
+    });
+  });
+
+  describe('dueForExpiry', () => {
+    it('selects only authorized charges past their window', () => {
+      const charges = [
+        makeCharge({ id: 'ch_a', status: 'authorized', authorization_expires_at: '2026-01-10T00:00:00.000Z' }),
+        makeCharge({ id: 'ch_b', status: 'authorized', authorization_expires_at: '2026-01-20T00:00:00.000Z' }),
+        makeCharge({ id: 'ch_c', status: 'captured', authorization_expires_at: '2026-01-10T00:00:00.000Z' }),
+      ];
+
+      expect(policy.dueForExpiry(charges).map((c) => c.id)).toEqual(['ch_a']);
     });
   });
 });
