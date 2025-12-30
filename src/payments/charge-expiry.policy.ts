@@ -28,6 +28,15 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 export class ChargeExpiryPolicy {
   constructor(@Inject(CLOCK) private readonly clock: Clock) {}
 
+  /** True when `mcc` is in the deferred-settlement set. */
+  isDeferredSettlementMcc(mcc: string): boolean {
+    if (DEFERRED_MCCS.has(mcc)) {
+      return true;
+    }
+    const numeric = Number.parseInt(mcc, 10);
+    return Number.isInteger(numeric) && numeric >= 3000 && numeric <= 3999;
+  }
+
   /** `authorized_at + window`. Written to `charge.authorization_expires_at` at authorisation. */
   expiresAt(mcc: string, authorizedAt: Date = this.clock.now()): Date {
     return new Date(authorizedAt.getTime() + this.windowDays(mcc) * MS_PER_DAY);

@@ -27,6 +27,20 @@ describe('ChargeExpiryPolicy', () => {
     });
 
     it('crosses a month boundary correctly', () => {
+      const leap = new ChargeExpiryPolicy(new FixedClock('2028-02-26T00:00:00.000Z'));
+
+      expect(leap.expiresAt(makeMerchant({ mcc: '5732' }))).toBe('2028-03-04T00:00:00.000Z');
+    });
+  });
+
+  describe('isExpired', () => {
+    it('is false for a hold in the future', () => {
+      const charge = makeCharge({ authorization_expires_at: '2026-01-10T12:00:00.000Z' });
+
+      expect(policy.isExpired(charge)).toBe(true);
+    });
+
+    it('is false at the exact boundary — expiry is exclusive', () => {
       const charge = makeCharge({ authorization_expires_at: null });
 
       expect(policy.isExpired(charge)).toBe(false);
