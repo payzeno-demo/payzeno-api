@@ -33,4 +33,30 @@ export class EventOutboxRepository extends PayzenoRepository<EventOutbox> {
    * task. The `next_attempt_at <= now()` predicate is what keeps a permanently failing row
    * from being re-selected every 5 seconds forever.
    */
+  async claimDue(limit: number, claimedBy: string): Promise<EventOutbox[]> {
+    return this.manager.transaction(async (tx) => {
+      const due: EventOutbox[] = await tx
+        .createQueryBuilder(EventOutbox, 'e')
+        .where('e.published_at is null')
+        .andWhere('e.dead_at is null')
+        .andWhere('e.next_attempt_at <= now()')
+        .orderBy('e.occurred_at', 'ASC')
+        .limit(limit)
+        .setLock('pessimistic_write')
+        .setOnLocked('skip_locked')
+        .getMany();
+
+      if (due.length === 0) {
+        return [];
+      }
+
+      await tx.update(
+        EventOutbox,
+        { id: In(due.map((row) => row.id)) },
+        { claimedAt: new Date(), claimedBy },
+      );
+      return due;
+    });
+  }
+
 }
