@@ -38,7 +38,23 @@ export class IdempotencyRetentionJob extends ScheduledJob {
 
   constructor(
     @InjectRepository(IdempotencyRecord) private readonly records: Repository<IdempotencyRecord>,
+    private readonly dataSource: DataSource,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(DISTRIBUTED_LOCK) lock: DistributedLock,
+    @Inject(PAYZENO_LOGGER) logger: PayzenoLogger,
+  ) {
+    super(lock, logger);
+  }
+
+  @Cron('0 * * * *', { name: 'idempotency-retention' })
+  async run(): Promise<JobResult> {
+    return this.execute();
+  }
+
+  @JobLock('idempotency-retention', 900)
+  async runOnce(): Promise<JobResult> {
+    const startedMs = Date.now();
+
     const result = await this.withLock(async () => {
       const now = this.clock.now();
       const reclaimed = await this.reclaimStaleLeases(now);
@@ -113,5 +129,12 @@ export class IdempotencyRetentionJob extends ScheduledJob {
       .andWhere('lease_expires_at < :now', { now })
       .execute();
 
+    const reclaimed = result.affected ?? 0;
+
+    if (reclaimed > 0) {
+      // Non-zero here means a task died mid-request. Correlate with the deploy log.
+      this.logger.warn('idempotency.stale_leases_reclaimed', { job: this.name, reclaimed });
+    }
+    return reclaimed;
   }
 }

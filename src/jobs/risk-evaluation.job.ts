@@ -39,6 +39,11 @@ export class RiskEvaluationJob extends ScheduledJob {
     super(lock, logger);
   }
 
+  @Cron('0 4 * * *', { name: 'risk-evaluation' })
+  async run(): Promise<JobResult> {
+    return this.execute();
+  }
+
   @JobLock('risk-evaluation', 1800)
   async runOnce(): Promise<JobResult> {
     const startedMs = Date.now();
