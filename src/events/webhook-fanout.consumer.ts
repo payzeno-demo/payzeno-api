@@ -30,6 +30,8 @@ import { ProcessedEventRepository } from './processed-event.repository';
 @Injectable()
 export class WebhookFanoutConsumer extends BaseEventConsumer implements OnModuleInit {
   readonly queueUrl: string;
+  readonly consumerName = 'webhook-fanout';
+
   onModuleInit(): void {
     this.endpoints = this.moduleRef.get(WebhookEndpointsService, { strict: false });
     this.events = this.moduleRef.get(WebhookEventsService, { strict: false });

@@ -25,6 +25,22 @@ export class ProcessedEventRepository extends PayzenoRepository<ProcessedEvent> 
    * is the exact shape of PAY-2041 — two workers both read "not processed", both settle,
    * and the merchant is charged twice. Do not add one back.
    */
+  async claim(tx: EntityManager, eventId: string, consumer: string): Promise<boolean> {
+    const inserted: Array<{ event_id: string }> = await tx.query(
+      `insert into processed_event (event_id, consumer)
+       values ($1, $2)
+       on conflict (event_id, consumer) do nothing
+       returning event_id`,
+      [eventId, consumer],
+    );
+    return inserted.length === 1;
+  }
+
+  /**
+   * Release a claim. Called only when the handler threw *after* the claim but the
+   * transaction could not be rolled back cleanly — in practice the rollback does this for
+   * us, and this exists for the DLQ redrive path where the claim is committed separately.
+   */
   async release(eventId: string, consumer: string): Promise<void> {
     await this.manager.delete(ProcessedEvent, { eventId, consumer });
   }
