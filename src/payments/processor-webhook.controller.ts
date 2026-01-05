@@ -44,4 +44,5 @@ export class ProcessorWebhookController {
   @Post(':acquirer')
   @HttpCode(202)
   @UseGuards(ProcessorSignatureGuard)
+  @RateLimit(600, 60)
 }
