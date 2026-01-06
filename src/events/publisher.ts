@@ -38,3 +38,10 @@ export interface EventPublisher {
  */
 export const EVENT_PUBLISHER = Symbol('EVENT_PUBLISHER');
 
+const TOPIC_OF_TYPE: ReadonlyMap<EventType, TopicName> = new Map(
+  (Object.keys(EVENT_TOPICS) as TopicName[]).flatMap((topic): Array<[EventType, TopicName]> => {
+    const types: readonly EventType[] = EVENT_TOPICS[topic];
+    return types.map((type) => [type, topic]);
+  }),
+);
+
