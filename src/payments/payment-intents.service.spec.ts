@@ -95,5 +95,39 @@ describe('PaymentIntentsService', () => {
       );
     });
 
+    it('stamps livemode from the principal, never from the request body', async () => {
+      repo.insertIntent.mockResolvedValue(makePaymentIntent() as never);
+
+      await service.create(makeApiKeyPrincipal({ mode: 'test' }), makeCreatePaymentIntentRequest());
+
+      expect(repo.insertIntent).toHaveBeenCalledWith(
+        expect.objectContaining({ livemode: false }),
+      );
+    });
+  });
+
+  describe('get', () => {
+    it('reads scoped to the principal’s merchant', async () => {
+      const intent = makePaymentIntent();
+      repo.findScoped.mockResolvedValue(intent as never);
+
+      await service.get(principal, intent.id);
+
+      expect(repo.findScoped).toHaveBeenCalledWith(
+        intent.id,
+        expect.objectContaining({ merchantId: TEST_MERCHANT_ID }),
+      );
+    });
+
+    it('throws PaymentIntentNotFoundException when the row is not in scope', async () => {
+      repo.findScoped.mockResolvedValue(null as never);
+
+      await expect(service.get(principal, 'pi_someone_elses')).rejects.toBeInstanceOf(
+        PaymentIntentNotFoundException,
+      );
+    });
+  });
+
+  describe('delegation to flows', () => {
   });
 });

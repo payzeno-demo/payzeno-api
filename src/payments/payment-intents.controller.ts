@@ -50,6 +50,9 @@ export class PaymentIntentsController extends BaseController {
   }
 
   @Post()
+  @Idempotent()
+  @RateLimit(300, 60)
+  @RequiredScopes('payment_intents:write')
   @AuditLog('payment_intent.create', { resourceType: 'payment_intent' })
   create(
     @CurrentPrincipal() principal: AuthPrincipal,
@@ -60,7 +63,35 @@ export class PaymentIntentsController extends BaseController {
   }
 
   @Get()
+  @RequiredScopes('payment_intents:read')
+  list(
+    @CurrentPrincipal() principal: AuthPrincipal,
+    @Query() query: ListQueryDto,
+    @Query('status') status?: PaymentIntentStatus,
+    @Query('customer_reference') customerReference?: string,
+  ): Promise<Paginated<PaymentIntent>> {
+    return this.intents.list(principal, {
+      ...query,
+      limit: query.effectiveLimit(),
+      status,
+      customer_reference: customerReference,
+    });
+  }
+
   @Get(':paymentIntentId')
+  @RequiredScopes('payment_intents:read')
+  get(
+    @CurrentPrincipal() principal: AuthPrincipal,
+    @Param('paymentIntentId') paymentIntentId: PaymentIntentId,
+  ): Promise<PaymentIntent> {
+    return this.intents.get(principal, paymentIntentId);
+  }
+
+  /**
+   * Also reachable with a `client_secret` bearer — that is how the merchant's checkout page
+   * confirms without ever holding an api key. `ClientSecretGuard` pins the principal to this
+   * one intent, so the id in the path is checked against the credential, not against a tenant.
+   */
   @Idempotent()
   @RateLimit(300, 60)
   @Idempotent()
