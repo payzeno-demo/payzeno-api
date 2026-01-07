@@ -42,6 +42,7 @@ import { PaymentIntentRepository } from './payment-intent.repository';
 export class PaymentIntentsService extends BaseService<PaymentIntentEntity> {
   constructor(
     private readonly intents: PaymentIntentRepository,
+    private readonly transactions: TransactionManager,
     @Inject(CLOCK) private readonly clock: Clock,
     const row = await this.intents.findByClientSecret(clientSecret);
     if (!row) {
