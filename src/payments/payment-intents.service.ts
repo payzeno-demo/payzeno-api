@@ -42,7 +42,18 @@ import { PaymentIntentRepository } from './payment-intent.repository';
 export class PaymentIntentsService extends BaseService<PaymentIntentEntity> {
   constructor(
     private readonly intents: PaymentIntentRepository,
+    private readonly confirmFlow: ConfirmPaymentFlow,
+    private readonly transactions: TransactionManager,
     @Inject(CLOCK) private readonly clock: Clock,
+    const intent = await this.findOneOrThrow(id, scopeFrom(principal));
+    return toPaymentIntent(await this.captureFlow.execute(intent, request));
+  }
+
+  async cancel(
+    principal: AuthPrincipal,
+    id: PaymentIntentId,
+    request: CancelPaymentIntentRequest,
+  ): Promise<PaymentIntent> {
     const row = await this.intents.findByClientSecret(clientSecret);
     if (!row) {
       throw new PaymentIntentNotFoundException(null);

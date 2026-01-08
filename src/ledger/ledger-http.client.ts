@@ -81,6 +81,15 @@ export class LedgerHttpClient extends BaseHttpClient {
     return this.ledgerConfig.baseUrl;
   }
 
+  protected defaultHeaders(): Record<string, string> {
+    return {
+      'x-payzeno-service': 'payzeno-api',
+      'x-payzeno-internal-secret': this.ledgerConfig.internalSecret,
+    };
+  }
+
+  // -- accounts & balances -------------------------------------------------
+
   getBalance(merchantId: MerchantId, query: BalanceQuery = {}): Promise<Balance> {
     return this.get<Balance>(`/internal/v1/balances/${encodeURIComponent(merchantId)}`, { ...query });
   }
