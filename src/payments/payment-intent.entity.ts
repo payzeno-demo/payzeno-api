@@ -33,6 +33,9 @@ export class PaymentIntentEntity extends MerchantScopedEntity {
   @Column({ type: 'char', length: 3, transformer: currencyTransformer })
   currency: CurrencyCode;
 
+  @Column({ type: 'enum', enum: ['automatic', 'manual'], enumName: 'capture_method', default: 'automatic' })
+  capture_method: CaptureMethod;
+
   @Column({ type: 'text', nullable: true })
   customer_reference: string | null;
 
@@ -43,8 +46,14 @@ export class PaymentIntentEntity extends MerchantScopedEntity {
   @Column({ type: 'text', nullable: true })
   latest_charge_id: ChargeId | null;
 
+  @Column({ type: 'jsonb', default: () => "'{}'::jsonb" })
+  metadata: Metadata;
+
   @Column({ type: 'timestamptz', nullable: true })
   canceled_at: Date | null;
+
+  @OneToMany(() => ChargeEntity, (charge) => charge.payment_intent)
+  charges?: ChargeEntity[];
 
   /** Terminal intents are immutable except for `metadata` (domain-model §2). */
   isTerminal(): boolean {

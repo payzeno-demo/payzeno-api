@@ -30,17 +30,39 @@ export class ConfigSchema {
   NODE_ENV!: string;
 
   @IsInt()
+  @Max(65535)
+  PORT!: number;
+
   @IsUrl(URL_OPTS)
   OTEL_EXPORTER_OTLP_ENDPOINT!: string;
 
   @Type(() => Number)
+  @IsNotEmpty()
+  BILLING_LEGACY_PASSWORD!: string;
+
+  @IsNotEmpty()
+  VAULT_API_KEY!: string;
+
   @Type(() => Number)
   @IsInt()
   @IsNotEmpty()
+  SQS_API_WEBHOOKS_URL!: string;
+
+  @IsString()
+  @IsNotEmpty()
   SQS_CONSOLE_NOTIFICATIONS_URL!: string;
 
+  @IsString()
   @IsInt()
+  @Min(5)
+  IDEMPOTENCY_LEASE_SECONDS!: number;
+
   @IsBooleanString()
   FLAG_LEDGER_OWNS_FEES!: string;
 
+  @IsBooleanString()
+  FLAG_REDACT_PAN_IN_LOGS!: string;
+}
+
+export class ConfigValidationError extends Error {
 }

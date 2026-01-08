@@ -129,5 +129,31 @@ describe('PaymentIntentsService', () => {
   });
 
   describe('delegation to flows', () => {
+    it('capture() runs CapturePaymentFlow', async () => {
+      const intent = makeCapturablePaymentIntent();
+      repo.findScoped.mockResolvedValue(intent as never);
+      captureFlow.execute.mockResolvedValue(intent as never);
+
+      await service.capture(principal, intent.id, { amount_minor: 4_500 });
+
+      expect(captureFlow.execute).toHaveBeenCalledTimes(1);
+    });
+
+    it('paginates with the merchant filter applied', async () => {
+      repo.paginateCursor.mockResolvedValue({
+        data: [],
+        next_cursor: null,
+        has_more: false,
+      } as never);
+
+      await service.list(principal, { limit: 25, status: 'succeeded' });
+
+      expect(repo.paginateCursor).toHaveBeenCalledWith(
+        expect.objectContaining({ limit: 25 }),
+        expect.objectContaining({ merchantId: TEST_MERCHANT_ID }),
+        expect.anything(),
+      );
+    });
+
   });
 });
