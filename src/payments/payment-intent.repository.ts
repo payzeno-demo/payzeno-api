@@ -62,4 +62,35 @@ export class PaymentIntentRepository extends PayzenoRepository<PaymentIntentEnti
     return this.findOne({ where: { client_secret: clientSecret } as FindOptionsWhere<PaymentIntentEntity> });
   }
 
+  /** `SELECT … FOR UPDATE` on the intent. Every flow takes this before it touches state. */
+  lockIntent(manager: EntityManager, id: PaymentIntentId): Promise<PaymentIntentEntity | null> {
+    return this.lockForUpdate(manager, id);
+  }
+
+  /**
+   * Conditional status write. The expected-status predicate is in the WHERE clause as well as
+   * in `PaymentIntentStateMachine.apply`, so a lost update is visible as `affected === 0`
+   * rather than as a silently wrong row.
+   */
+  async transitionStatus(
+    manager: EntityManager,
+    id: PaymentIntentId,
+    from: PaymentIntentStatus,
+    to: PaymentIntentStatus,
+    patch: Partial<{
+      latest_charge_id: ChargeId | null;
+      next_action: PaymentIntentEntity['next_action'];
+      canceled_at: Date | null;
+      cancellation_reason: CancellationReason | null;
+    }> = {},
+  ): Promise<number> {
+    const result = await manager
+      .createQueryBuilder()
+      .update(PaymentIntentEntity)
+      .set({ status: to, ...patch })
+      .where('id = :id AND status = :from', { id, from })
+      .execute();
+    return result.affected ?? 0;
+  }
+
 }
