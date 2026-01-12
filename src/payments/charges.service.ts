@@ -51,3 +51,20 @@ export class ChargesService extends BaseService<ChargeEntity> {
     private readonly charges: ChargeRepository,
     private readonly ledger: LedgerReadThroughService,
     @Inject(PAYZENO_LOGGER) logger: PayzenoLogger,
+  ) {
+    super(charges, logger);
+  }
+
+  get entityName(): string {
+    return 'charge';
+  }
+
+  protected override notFound(id: string): ChargeNotFoundException {
+    return new ChargeNotFoundException(id);
+  }
+
+  async get(principal: AuthPrincipal, chargeId: ChargeId): Promise<Charge> {
+    return toCharge(await this.findOneOrThrow(chargeId, scopeFrom(principal)));
+  }
+
+  async list(principal: AuthPrincipal, query: ChargeListQuery): Promise<Paginated<Charge>> {
