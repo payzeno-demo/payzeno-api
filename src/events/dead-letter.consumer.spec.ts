@@ -13,4 +13,7 @@ describe('DeadLetterConsumer', () => {
 
   const config = { SQS_DLQ_URL: 'http://localstack:4566/000000000000/payzeno-dlq-monitor' };
 
+  let sent: Array<Record<string, unknown>>;
+  let consumer: DeadLetterConsumer;
+
 });
