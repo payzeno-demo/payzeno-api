@@ -42,6 +42,24 @@ describe('IdempotencyStore contract', () => {
       }
     });
 
+    it('lets a failed attempt be retried with the same key', async () => {
+      await store.begin(TEST_MERCHANT_ID, 'k1', 'fp1');
+      await store.fail(TEST_MERCHANT_ID, 'k1');
+
+      // A 500 is not a business outcome; the merchant is entitled to retry.
+      await expect(store.begin(TEST_MERCHANT_ID, 'k1', 'fp1')).resolves.toEqual({
+        outcome: 'proceed',
+      });
+    });
+
+    it('scopes keys per merchant', async () => {
+      await store.begin(TEST_MERCHANT_ID, 'shared-key', 'fp1');
+
+      await expect(store.begin(TEST_OTHER_MERCHANT_ID, 'shared-key', 'fp2')).resolves.toEqual({
+        outcome: 'proceed',
+      });
+    });
+
     it('reclaims a lapsed lease rather than deadlocking on a crashed caller', async () => {
       await store.begin(TEST_MERCHANT_ID, 'k1', 'fp1');
       harness.expireLease(TEST_MERCHANT_ID, 'k1');

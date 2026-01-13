@@ -17,12 +17,26 @@ export class IdempotencyRecord {
   @PrimaryColumn({ type: 'text', name: 'merchant_id' })
   merchantId!: string;
 
+  @PrimaryColumn({ type: 'boolean', name: 'livemode' })
+  livemode!: boolean;
+
   /** sha256(method || path || canonical_json(body)). */
   @Column({ type: 'char', length: 64, name: 'fingerprint' })
   fingerprint!: string;
 
+  @Column({ type: 'enum', enum: ['in_progress', 'completed', 'failed'], name: 'state' })
+  state!: IdempotencyState;
+
+  /**
+   * Crash recovery. An `in_progress` row past its lease is reclaimable by the next request
+   * via a conditional UPDATE. Added by migration 23 (ytechdebt, month 8) — before it, a task
+   * OOM-killed mid-capture wedged that key for the whole 24h TTL.
+   */
   @Column({ type: 'timestamptz', name: 'lease_expires_at' })
   leaseExpiresAt!: Date;
+
+  @Column({ type: 'smallint', name: 'response_status', nullable: true })
+  responseStatus!: number | null;
 
   @Column({ type: 'jsonb', name: 'response_body', nullable: true })
   responseBody!: unknown;
