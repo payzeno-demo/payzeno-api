@@ -42,6 +42,36 @@ describe('IdempotencyStore contract', () => {
       }
     });
 
+    it('replays the completed response for the same key and fingerprint', async () => {
+      await store.begin(TEST_MERCHANT_ID, 'k1', 'fp1');
+      await store.complete(TEST_MERCHANT_ID, 'k1', 201, { id: 'pi_1' });
+
+      const replayed = await store.begin(TEST_MERCHANT_ID, 'k1', 'fp1');
+
+      expect(isReplay(replayed)).toBe(true);
+      if (isReplay(replayed)) {
+        expect(replayed.status).toBe(201);
+        expect(replayed.body).toEqual({ id: 'pi_1' });
+      }
+    });
+
+    it('reports fingerprint_mismatch when the same key carries a different body', async () => {
+      await store.begin(TEST_MERCHANT_ID, 'k1', 'fp1');
+      await store.complete(TEST_MERCHANT_ID, 'k1', 201, { id: 'pi_1' });
+
+      await expect(store.begin(TEST_MERCHANT_ID, 'k1', 'fp-different')).resolves.toEqual({
+        outcome: 'fingerprint_mismatch',
+      });
+    });
+
+    it('reports fingerprint_mismatch even while the original is still in flight', async () => {
+      await store.begin(TEST_MERCHANT_ID, 'k1', 'fp1');
+
+      await expect(store.begin(TEST_MERCHANT_ID, 'k1', 'fp-different')).resolves.toEqual({
+        outcome: 'fingerprint_mismatch',
+      });
+    });
+
     it('lets a failed attempt be retried with the same key', async () => {
       await store.begin(TEST_MERCHANT_ID, 'k1', 'fp1');
       await store.fail(TEST_MERCHANT_ID, 'k1');

@@ -19,3 +19,14 @@
 import {
   Catch,
   HttpException,
+  Inject,
+  type ArgumentsHost,
+  type ExceptionFilter,
+} from '@nestjs/common';
+
+import { CurrencyMismatchError, NotFoundError, PayzenoError, ValidationError } from '@payzeno/contracts/errors';
+import type { ApiError, ErrorCode } from '@payzeno/contracts';
+
+import { ApiException, ValidationException } from '../errors/api.exception';
+import { RateLimitedException } from '../errors/business.exceptions';
+import { IdempotencyInProgressException } from '../errors/idempotency.exceptions';

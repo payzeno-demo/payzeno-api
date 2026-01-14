@@ -31,6 +31,16 @@ describe('IdempotencyInterceptor', () => {
   let interceptor: IdempotencyInterceptor;
   let response: { statusCode: number; headers: Record<string, string>; status: jest.Mock; setHeader: jest.Mock };
 
+  const config = { idempotency: { backend: 'postgres' } } as unknown as ApiConfig;
+
+  function store(): jest.Mocked<IdempotencyStore> {
+    return {
+      begin: jest.fn().mockResolvedValue({ outcome: 'proceed' }),
+      complete: jest.fn().mockResolvedValue(undefined),
+      fail: jest.fn().mockResolvedValue(undefined),
+    } as unknown as jest.Mocked<IdempotencyStore>;
+  }
+
   function context(
     request: Record<string, unknown>,
     decorated: unknown = { required: true },
@@ -61,6 +71,22 @@ describe('IdempotencyInterceptor', () => {
     expect(spy).toHaveBeenCalledWith(IDEMPOTENT_KEY, expect.any(Array));
   });
 
+  it('rejects a missing Idempotency-Key with 400 invalid_request', async () => {
+    const req = { ...baseRequest, headers: {} };
+
+    await expect(interceptor.intercept(context(req), handler())).rejects.toBeInstanceOf(
+      InvalidRequestException,
+    );
+  });
+
+  it('rejects an over-long Idempotency-Key', async () => {
+    const req = { ...baseRequest, headers: { 'idempotency-key': 'x'.repeat(256) } };
+
+    await expect(interceptor.intercept(context(req), handler())).rejects.toBeInstanceOf(
+      InvalidRequestException,
+    );
+  });
+
   it('allows a missing key when the decorator marks it optional', async () => {
     const req = { ...baseRequest, headers: {} };
 
@@ -85,6 +111,20 @@ describe('IdempotencyInterceptor', () => {
     await interceptor.intercept(context(baseRequest), handler());
 
     expect(postgres.begin).toHaveBeenCalledWith(TEST_MERCHANT_ID, 'k-0001', expect.any(String));
+  });
+
+  it('fingerprints method, path and body — and strips the query string', async () => {
+    await interceptor.intercept(context(baseRequest), handler());
+    const firstPrint = postgres.begin.mock.calls[0][2];
+
+    postgres.begin.mockClear();
+    await interceptor.intercept(
+      context({ ...baseRequest, originalUrl: '/v1/payment_intents?expand=nothing' }),
+      handler(),
+    );
+
+    // Two GETs of the same resource with different `expand` are the same idempotent write.
+    expect(postgres.begin.mock.calls[0][2]).toBe(firstPrint);
   });
 
   it('produces a different fingerprint for a different body', async () => {
