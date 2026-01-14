@@ -51,10 +51,30 @@ class FakeIdempotencyTable {
     return `${merchantId}:${livemode}:${key}`;
   }
 
+  get(merchantId: string, livemode: boolean, key: string): Row | undefined {
+    return this.rows.get(this.id(merchantId, livemode, key));
+  }
+
   put(row: Row): void {
     this.rows.set(this.id(row.merchant_id, row.livemode, row.key), row);
   }
 
+  expireLease(merchantId: string, key: string): void {
+    for (const row of this.rows.values()) {
+      if (row.merchant_id === merchantId && row.key === key) {
+        row.lease_expires_at = new Date(0);
+      }
+    }
+  }
+}
+
+/**
+ * A `DataSource` whose `query()` recognises the four statements
+ * `PostgresIdempotencyStore` issues. It matches on the leading verb and the target table,
+ * not on whitespace, so reformatting the SQL does not break the double — but changing
+ * *which* statements the store runs does, which is the point.
+ */
+function fakeDataSource(table: FakeIdempotencyTable): DataSource {
   const query = async (sql: string, params: unknown[] = []): Promise<unknown[]> => {
     const normalised = sql.replace(/\s+/g, ' ').trim().toUpperCase();
 
@@ -161,6 +181,8 @@ interface RedisEntry {
 
 /** Enough of ioredis for the CAS script, `get`, `set … PX` and `pttl`. */
 export class FakeRedis {
+  private readonly entries = new Map<string, RedisEntry>();
+
   constructor(private readonly clock: FixedClock) {}
 
   private live(key: string): RedisEntry | undefined {

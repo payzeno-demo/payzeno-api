@@ -60,10 +60,20 @@ describe('idempotency e2e', () => {
   });
 
   it('replays the original response for a repeated key and identical body', async () => {
+    const key = 'idem-replay-0001';
+
     const first = await post(key, seeded);
     expect(first.status).toBe(201);
     expect(first.headers['idempotent-replay']).toBeUndefined();
 
+    const second = await post(key, seeded);
+    expect(second.status).toBe(201);
+    expect(second.headers['idempotent-replay']).toBe('true');
+    expect(second.body.id).toBe(first.body.id);
+    expect(second.body.created_at).toBe(first.body.created_at);
+  });
+
+  it('does not create a second resource on replay', async () => {
     const first = await post(key, seeded);
     await post(key, seeded);
 
@@ -96,6 +106,8 @@ describe('idempotency e2e', () => {
     const [a, b] = await Promise.all([post(key, seeded), post(key, seeded)]);
     const key = 'idem-shared-0005';
 
+    const key = 'idem-failure-0006';
+
     const failed = await post(key, seeded, { ...body, currency: 'CHF' });
     expect(failed.status).toBe(422);
 
@@ -105,5 +117,12 @@ describe('idempotency e2e', () => {
   });
 
   it('leaves GET requests alone', async () => {
+    const res = await request(ctx.app.getHttpServer())
+      .get('/v1/payment_intents?limit=1')
+      .set('Authorization', bearer(seeded))
+      .set('Idempotency-Key', 'idem-on-a-get-0007');
+
+    expect(res.status).toBe(200);
+    expect(res.headers['idempotent-replay']).toBeUndefined();
   });
 });
