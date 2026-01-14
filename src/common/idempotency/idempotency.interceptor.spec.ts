@@ -31,6 +31,16 @@ describe('IdempotencyInterceptor', () => {
   let interceptor: IdempotencyInterceptor;
   let response: { statusCode: number; headers: Record<string, string>; status: jest.Mock; setHeader: jest.Mock };
 
+  const config = { idempotency: { backend: 'postgres' } } as unknown as ApiConfig;
+
+  function store(): jest.Mocked<IdempotencyStore> {
+    return {
+      begin: jest.fn().mockResolvedValue({ outcome: 'proceed' }),
+      complete: jest.fn().mockResolvedValue(undefined),
+      fail: jest.fn().mockResolvedValue(undefined),
+    } as unknown as jest.Mocked<IdempotencyStore>;
+  }
+
   function context(
     request: Record<string, unknown>,
     decorated: unknown = { required: true },
@@ -61,12 +71,73 @@ describe('IdempotencyInterceptor', () => {
     expect(spy).toHaveBeenCalledWith(IDEMPOTENT_KEY, expect.any(Array));
   });
 
+  it('rejects a missing Idempotency-Key with 400 invalid_request', async () => {
+    const req = { ...baseRequest, headers: {} };
+
+    await expect(interceptor.intercept(context(req), handler())).rejects.toBeInstanceOf(
+      InvalidRequestException,
+    );
+  });
+
+  it('rejects an over-long Idempotency-Key', async () => {
+    const req = { ...baseRequest, headers: { 'idempotency-key': 'x'.repeat(256) } };
+
+    await expect(interceptor.intercept(context(req), handler())).rejects.toBeInstanceOf(
+      InvalidRequestException,
+    );
+  });
+
+  it('allows a missing key when the decorator marks it optional', async () => {
+    const req = { ...baseRequest, headers: {} };
+
+    const observable = await interceptor.intercept(
+      context(req, { required: false }),
+      handler(),
+    );
+
+    await expect(firstValueFrom(observable)).resolves.toEqual({ id: 'pi_1' });
+    expect(postgres.begin).not.toHaveBeenCalled();
+  });
+
   it('skips scoping for a principal with no merchant — the internal surface', async () => {
     const req = { ...baseRequest, principal: makeInternalPrincipal() };
 
     await interceptor.intercept(context(req), handler());
 
     expect(postgres.begin).not.toHaveBeenCalled();
+  });
+
+  it('scopes the key to the principal’s merchant', async () => {
+    await interceptor.intercept(context(baseRequest), handler());
+
+    expect(postgres.begin).toHaveBeenCalledWith(TEST_MERCHANT_ID, 'k-0001', expect.any(String));
+  });
+
+  it('fingerprints method, path and body — and strips the query string', async () => {
+    await interceptor.intercept(context(baseRequest), handler());
+    const firstPrint = postgres.begin.mock.calls[0][2];
+
+    postgres.begin.mockClear();
+    await interceptor.intercept(
+      context({ ...baseRequest, originalUrl: '/v1/payment_intents?expand=nothing' }),
+      handler(),
+    );
+
+    // Two GETs of the same resource with different `expand` are the same idempotent write.
+    expect(postgres.begin.mock.calls[0][2]).toBe(firstPrint);
+  });
+
+  it('produces a different fingerprint for a different body', async () => {
+    await interceptor.intercept(context(baseRequest), handler());
+    const firstPrint = postgres.begin.mock.calls[0][2];
+
+    postgres.begin.mockClear();
+    await interceptor.intercept(
+      context({ ...baseRequest, body: { amount_minor: 9_900, currency: 'GBP' } }),
+      handler(),
+    );
+
+    expect(postgres.begin.mock.calls[0][2]).not.toBe(firstPrint);
   });
 
   it('throws IdempotencyKeyReuseException on a fingerprint mismatch', async () => {
@@ -86,4 +157,47 @@ describe('IdempotencyInterceptor', () => {
     expect(response.headers['retry-after']).toBe('12');
   });
 
+  describe('completion', () => {
+    it('records the response on success', async () => {
+      response.statusCode = 201;
+      const observable = await interceptor.intercept(context(baseRequest), handler({ id: 'pi_1' }));
+      await firstValueFrom(observable);
+
+      expect(postgres.complete).toHaveBeenCalledWith(
+        TEST_MERCHANT_ID,
+        'k-0001',
+        201,
+        { id: 'pi_1' },
+      );
+    });
+
+    it('marks the key failed when the handler throws', async () => {
+      const failing: CallHandler = { handle: () => throwError(() => new Error('boom')) };
+
+      const observable = await interceptor.intercept(context(baseRequest), failing);
+      await expect(firstValueFrom(observable)).rejects.toThrow('boom');
+
+      expect(postgres.fail).toHaveBeenCalledWith(TEST_MERCHANT_ID, 'k-0001');
+      expect(postgres.complete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('backend selection', () => {
+    it('uses the Postgres store by default', async () => {
+      await interceptor.intercept(context(baseRequest), handler());
+
+      expect(postgres.begin).toHaveBeenCalled();
+      expect(redis.begin).not.toHaveBeenCalled();
+    });
+
+    it('uses the Redis store when the decorator asks for it', async () => {
+      await interceptor.intercept(
+        context(baseRequest, { required: true, backend: 'redis' }),
+        handler(),
+      );
+
+      expect(redis.begin).toHaveBeenCalled();
+      expect(postgres.begin).not.toHaveBeenCalled();
+    });
+  });
 });
