@@ -64,6 +64,13 @@ describe('idempotency e2e', () => {
     expect(first.status).toBe(201);
     expect(first.headers['idempotent-replay']).toBeUndefined();
 
+    const first = await post(key, seeded);
+    await post(key, seeded);
+
+    const list = await request(ctx.app.getHttpServer())
+      .get('/v1/payment_intents?limit=100')
+      .set('Authorization', bearer(seeded));
+
     const matching = list.body.data.filter(
       (pi: { id: string }) => pi.id === first.body.id,
     );
@@ -71,6 +78,9 @@ describe('idempotency e2e', () => {
   });
 
   it('409s idempotency_key_reuse when the same key carries a different body', async () => {
+    const key = 'idem-reuse-0003';
+    await post(key, seeded);
+
     const res = await post(key, seeded, { ...body, amount_minor: 9_900 });
 
     expect(res.status).toBe(409);
@@ -78,6 +88,8 @@ describe('idempotency e2e', () => {
   });
 
   it('409s idempotency_in_progress with a Retry-After while the first call is running', async () => {
+    const key = 'idem-inflight-0004';
+
     // Two concurrent requests with the same key: whichever loses the INSERT race sees
     // the in-progress lease. This is the branch `PostgresIdempotencyStore.begin` exists
     // for, and it is only reachable with real concurrency.

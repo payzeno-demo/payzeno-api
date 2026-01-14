@@ -74,6 +74,8 @@ interface RedisEntry {
 
 /** Enough of ioredis for the CAS script, `get`, `set … PX` and `pttl`. */
 export class FakeRedis {
+  constructor(private readonly clock: FixedClock) {}
+
   private live(key: string): RedisEntry | undefined {
     const entry = this.entries.get(key);
     if (!entry) return undefined;
@@ -82,6 +84,40 @@ export class FakeRedis {
       return undefined;
     }
     return entry;
+  }
+
+  async get(key: string): Promise<string | null> {
+    return this.live(key)?.value ?? null;
+  }
+
+  async pttl(key: string): Promise<number> {
+    const entry = this.live(key);
+    return entry ? entry.expiresAtMs - this.clock.nowMs() : -2;
+  }
+
+  /**
+   * Models the CAS script's semantics: claim when absent, re-claim a `failed` record with
+   * the same fingerprint, otherwise return the stored record for the caller to inspect.
+   */
+  async eval(
+    _script: string,
+    _numKeys: number,
+    key: string,
+    fingerprint: string,
+    claimJson: string,
+    ttlMs: string,
+  ): Promise<string> {
+    const existing = this.live(key);
+    if (!existing) {
+      await this.set(key, claimJson, 'PX', Number(ttlMs));
+      return 'claimed';
+    }
+    const decoded = JSON.parse(existing.value) as { state: string; fingerprint: string };
+    if (decoded.state === 'failed' && decoded.fingerprint === fingerprint) {
+      await this.set(key, claimJson, 'PX', Number(ttlMs));
+      return 'claimed';
+    }
+    return existing.value;
   }
 
   const clock = new FixedClock('2026-01-15T12:00:00.000Z');
