@@ -29,6 +29,13 @@ export interface PublishContext {
  * a set that no longer matched the infrastructure. `topics.ts` says "rename at your peril"
  * and it means it — the only safe way to name a topic here is to not name it here.
  */
+export type { TopicName } from '@payzeno/contracts/events';
+
+/**
+ * A row of `event_outbox` shaped for publication. `OutboxDrainJob` reads these and hands
+ * them to `SnsEventPublisher.publishBatch` — the drain never re-derives the envelope, it
+ * republishes exactly what the business transaction committed.
+ */
 export interface OutboxRecord {
   id: string;
   type: EventType;
