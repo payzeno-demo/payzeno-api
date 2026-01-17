@@ -12,6 +12,22 @@ import { TEST_CHARGE_ID, TEST_MERCHANT_ID } from './ids';
 
 let seq = 0;
 
+export interface EnvelopeOverrides {
+  id?: string;
+  occurred_at?: string;
+  source?: 'payzeno-api' | 'payzeno-ledger' | 'payzeno-billing-legacy';
+  correlation_id?: string;
+  causation_id?: string | null;
+  merchant_id?: MerchantId | null;
+  livemode?: boolean;
+}
+
+/**
+ * Builds a real `EventEnvelope` for `type`, stamping `version` from
+ * `EVENT_SCHEMA_VERSIONS` rather than hardcoding `1`. `settlement.completed` is
+ * version **2** and `LedgerEventsConsumer` branches on that, so a factory that always
+ * emitted `1` would make the v2 chunk-tracking branch unreachable from any test.
+ */
 /** The arc-INC event: the ledger telling us a settlement posting was already made. */
 export function makeDuplicateDetectedEvent(
   payload: Partial<SettlementDuplicateDetectedPayload> = {},
@@ -31,5 +47,30 @@ export function makeDuplicateDetectedEvent(
     ...payload,
   };
   return makeEnvelope('settlement.duplicate_detected', full, overrides);
+}
+
+/** `settlement.completed` v2 — chunked, which is what PAY-2052 added tracking for. */
+export function makeSettlementCompletedEvent(
+  payload: Partial<SettlementCompletedPayload> = {},
+  overrides: EnvelopeOverrides = {},
+): PayzenoEvent {
+  const full = {
+    batch_id: 'sb_20260113_wf',
+    acquirer: 'worldflow',
+    currency: 'GBP',
+    processing_date: '2026-01-13',
+    item_count: 3_140,
+    settled_count: 3_140,
+    failed_count: 0,
+    chunk_index: 0,
+    chunk_count: 1,
+    charge_ids: [TEST_CHARGE_ID],
+    completed_at: '2026-01-13T04:20:00.000Z',
+    ...payload,
+  } as unknown as SettlementCompletedPayload;
+  return makeEnvelope('settlement.completed', full, {
+    merchant_id: null,
+    ...overrides,
+  });
 }
 
