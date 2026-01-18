@@ -68,3 +68,21 @@ export class ChargesService extends BaseService<ChargeEntity> {
   }
 
   async list(principal: AuthPrincipal, query: ChargeListQuery): Promise<Paginated<Charge>> {
+    // The scope comes from the principal and is applied by the repository; a `merchant_id` in
+    // the query object is ignored rather than honoured. That is a real request we have had.
+    const page = await this.paginate(query, scopeFrom(principal), (qb) => {
+      let builder = qb;
+      if (query.status) {
+        builder = builder.andWhere('charge.status = :status', { status: query.status });
+      }
+      if (query.payment_intent_id) {
+        builder = builder.andWhere('charge.payment_intent_id = :intentId', {
+          intentId: query.payment_intent_id,
+        });
+      }
+      if (query.settlement_batch_id) {
+        builder = builder.andWhere('charge.settlement_batch_id = :batchId', {
+          batchId: query.settlement_batch_id,
+        });
+      }
+      return builder;
