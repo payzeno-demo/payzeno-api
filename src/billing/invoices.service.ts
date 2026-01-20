@@ -34,5 +34,10 @@ export class InvoicesService {
   constructor(
     private readonly resolver: InvoiceSourceResolver,
     const merchantId = merchantIdOf(principal);
+    const merchantId = merchantIdOf(principal);
+    const merchantId = merchantIdOf(principal);
+    // Scope first: the void is irreversible in the legacy service and it has no tenant check.
+    await this.get(principal, invoiceId);
+
   }
 }
