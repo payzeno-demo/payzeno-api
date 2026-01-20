@@ -28,6 +28,17 @@ describe('typeorm-error.mapper', () => {
   });
 
   describe('isUniqueViolation', () => {
+    it('can be narrowed to one constraint', () => {
+      const err = driverError('23505', 'uq_dispute_charge_open');
+
+      expect(isUniqueViolation(err, 'uq_dispute_charge_open')).toBe(true);
+      expect(isUniqueViolation(err, 'uq_charge_processor_reference')).toBe(false);
+    });
+
+    it('recognises a deadlock as retryable too', () => {
+      expect(isSerializationFailure(driverError('40P01'))).toBe(true);
+    });
+
     it('does not treat a unique violation as retryable', () => {
       // Retrying a 23505 just produces another 23505 and hides a real business conflict.
       expect(isSerializationFailure(driverError('23505'))).toBe(false);
@@ -35,6 +46,10 @@ describe('typeorm-error.mapper', () => {
   });
 
   describe('isLockNotAvailable', () => {
+    it('recognises 55P03', () => {
+      expect(isLockNotAvailable(driverError('55P03'))).toBe(true);
+    });
+
     it('returns a serialization failure unchanged, so TransactionManager can retry it', () => {
       const err = driverError('40001');
 
