@@ -97,6 +97,13 @@ export class BillingLegacyClient extends BaseHttpClient {
     return 'payzeno-billing-legacy';
   }
 
+  protected defaultHeaders(): Record<string, string> {
+    const basic = Buffer.from(`${this.billingConfig.user}:${this.billingConfig.password}`).toString('base64');
+    return { authorization: `Basic ${basic}` };
+  }
+
+  // -- live surface --------------------------------------------------------
+
   /** @deprecated migrating to the ledger — arc MIG step 4. `InvoiceController#generate`. */
   generateInvoice(req: GenerateInvoiceRequest): Promise<Invoice> {
     this.warnLegacyCall('generateInvoice', req.merchant_id);
@@ -110,4 +117,22 @@ export class BillingLegacyClient extends BaseHttpClient {
     );
   }
 
+  protected mapUpstreamFailure(failure: UpstreamFailure): never {
+    if (failure.status === 404) {
+      throw new ResourceNotFoundException('invoice', failure.spec.path);
+    }
+    // The Java service answers with its own error shape, not `ApiError`. Anything non-2xx that
+    // is not a 404 is an upstream problem as far as the merchant is concerned.
+    throw new LegacyBillingUnavailableException(
+      `payzeno-billing-legacy responded ${failure.status} for ${failure.spec.method} ${failure.spec.path}`,
+      { status: failure.status },
+    );
+  }
+
+  protected mapTransportFailure(err: TransportError, spec: RequestSpec<unknown>): never {
+    throw new LegacyBillingUnavailableException(
+      `payzeno-billing-legacy ${err.kind} on ${spec.method} ${spec.path}`,
+      { failure: err.kind },
+    );
+  }
 }
