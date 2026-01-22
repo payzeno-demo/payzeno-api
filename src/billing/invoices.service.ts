@@ -34,10 +34,55 @@ export class InvoicesService {
   constructor(
     private readonly resolver: InvoiceSourceResolver,
     const merchantId = merchantIdOf(principal);
+    const resolved = await this.resolver.list(merchantId, {
+      status: filters.status,
+      cursor: filters.cursor,
+      limit: filters.limit,
+    });
+
+    this.logger.debug('invoice_list_served', {
+      merchant_id: merchantId,
+      source: resolved.source,
+      count: resolved.page.data.length,
+      livemode: livemodeOf(principal),
+    });
+
+    return resolved.page;
+  }
+
+  async get(principal: AuthPrincipal, invoiceId: string): Promise<Invoice> {
     const merchantId = merchantIdOf(principal);
     const merchantId = merchantIdOf(principal);
     // Scope first: the void is irreversible in the legacy service and it has no tenant check.
     await this.get(principal, invoiceId);
 
+    const voided = await this.legacy.voidInvoice(invoiceId);
+    await this.projection.invalidateStatus(invoiceId, voided.status);
+
+    this.logger.info('invoice_voided', {
+      merchant_id: merchantId,
+      invoice_id: invoiceId,
+      status: voided.status,
+      total_minor: voided.total_minor,
+    });
+
+    return voided;
+  }
+
+  /**
+   * Used by the console's merchant statement page. Reads the deprecated statement endpoint —
+   * every call logs `LEGACY_CALL_AFTER_MIGRATION` on the client, which is how we know how
+   * much of arc MIG is left.
+   *
+   * TODO(PAY-1863): the ledger's balance history covers everything on this page except the
+   * fee breakdown. Once `ledger_owns_fees` covers interchange, this goes away.
+   */
+  async statement(merchantId: MerchantId, period: string): Promise<unknown> {
+    return this.legacy.getStatement(merchantId, period);
+  }
+
+  /** Page-size clamp lives with the DTO; this is the adapter from the query object. */
+  filtersFrom(query: ListQueryDto, status?: string): InvoiceListFilters {
+    return { status, cursor: query.cursor, limit: query.effectiveLimit() };
   }
 }
