@@ -32,6 +32,7 @@ import { InvoicesService } from './invoices.service';
 export class InvoicesController extends BaseController {
   constructor(
     private readonly invoices: InvoicesService,
+    @Query() query: ListQueryDto,
     @Param('invoiceId') invoiceId: string,
   ): Promise<Invoice> {
     return this.invoices.get(principal, invoiceId);
@@ -47,5 +48,6 @@ export class InvoicesController extends BaseController {
   @Idempotent()
   @AuditLog('invoice.void', { resourceType: 'invoice', idParam: 'invoiceId', captureBefore: true })
   voidInvoice(
+    @CurrentPrincipal() principal: AuthPrincipal,
   }
 }
