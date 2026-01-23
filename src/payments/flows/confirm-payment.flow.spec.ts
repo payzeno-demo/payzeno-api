@@ -55,6 +55,15 @@ describe('ConfirmPaymentFlow', () => {
     flow = moduleRef.get(ConfirmPaymentFlow);
   });
 
+  it('moves the intent to processing before calling the acquirer', async () => {
+    await flow.execute(makePaymentIntent(), {});
+
+    const statuses = repo.updateScoped.mock.calls.map(
+      ([, patch]) => (patch as { status?: string }).status,
+    );
+    expect(statuses[0]).toBe('processing');
+  });
+
   it('ends in succeeded for an automatic-capture authorisation', async () => {
     const result = await flow.execute(makePaymentIntent({ capture_method: 'automatic' }), {});
 
@@ -69,9 +78,42 @@ describe('ConfirmPaymentFlow', () => {
     expect(result.status).toBe('requires_capture');
   });
 
+  it('ends in requires_action when the issuer demands an SCA challenge', async () => {
+    auth.authorize.mockResolvedValue(
+      makeCharge({
+        status: 'pending',
+        three_d_secure: {
+          version: '2.2.0',
+          authentication_flow: 'challenge',
+          result: 'attempted',
+          eci: '06',
+          liability_shifted: false,
+        },
+      }) as never,
+    );
+
+    const result = await flow.execute(makePaymentIntent({ currency: 'EUR' }), {
+      return_url: 'https://aurora.example/3ds',
+    });
+
+    expect(result.status).toBe('requires_action');
+    expect(result.next_action).not.toBeNull();
+  });
+
   it('refuses to confirm an intent that is not confirmable', async () => {
     await expect(flow.execute(makePaymentIntent({ status: 'succeeded' }), {})).rejects.toThrow();
     expect(auth.authorize).not.toHaveBeenCalled();
+  });
+
+  it('marks the intent failed when the authorisation is declined', async () => {
+    auth.authorize.mockRejectedValue(Object.assign(new Error('declined'), { code: 'card_declined' }));
+
+    await expect(flow.execute(makePaymentIntent(), {})).rejects.toThrow();
+
+    const statuses = repo.updateScoped.mock.calls.map(
+      ([, patch]) => (patch as { status?: string }).status,
+    );
+    expect(statuses).toContain('failed');
   });
 
   it('uses the token on the request in preference to the one on the intent', async () => {

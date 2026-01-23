@@ -37,6 +37,7 @@ export class ConfirmPaymentFlow extends PaymentFlow<ConfirmPaymentIntentRequest>
     states: PaymentIntentStateMachine,
     transactions: TransactionManager,
     private readonly authorization: ChargeAuthorizationService,
+    private readonly merchants: MerchantsService,
     @Inject(PAYZENO_LOGGER) logger: PayzenoLogger,
   ) {
     super(intents, states, transactions, logger);
@@ -60,6 +61,10 @@ export class ConfirmPaymentFlow extends PaymentFlow<ConfirmPaymentIntentRequest>
         { path: 'payment_method_token', code: 'required', message: 'no payment method on the intent' },
       ]);
     }
+
+    // getById returns the entity; the services below take the contracts type, and the
+    // mapping lives in exactly one place (merchants.service.ts).
+    const merchant = toMerchantResponse(await this.merchants.getById(intent.merchantId));
 
     // Step 2 — the acquirer round trip. Outside any transaction, on purpose.
     let outcome: Awaited<ReturnType<ChargeAuthorizationService['authorize']>>;
@@ -88,6 +93,41 @@ export class ConfirmPaymentFlow extends PaymentFlow<ConfirmPaymentIntentRequest>
       return this.landOnAction(intent, request.return_url ?? null, outcome.charge.id);
     }
 
+    const landing = this.states.apply('processing', this.states.eventForAuthorization(intent.capture_method));
+
+    await this.transactions.runInTransaction(async (manager) => {
+      await this.intents.transitionStatus(manager, intent.id, 'processing', landing, {
+        latest_charge_id: outcome.charge.id,
+        next_action: null,
+      });
+    });
+
+    intent.status = landing;
+    intent.latest_charge_id = outcome.charge.id;
+    intent.next_action = null;
+
+    this.logger.info('payment_intent_confirmed', {
+      payment_intent_id: intent.id,
+      charge_id: outcome.charge.id,
+      status: landing,
+      capture_method: intent.capture_method,
+      acquirer: outcome.charge.acquirer,
+    });
+
+    return intent;
+  }
+
+  /**
+   * The SCA branch. `requires_action` carries a `next_action` the console and the merchant's
+   * checkout both read; without a `return_url` there is nowhere to send the cardholder back
+   * to, so the challenge is issued against the acquirer's hosted page instead.
+   */
+  private async landOnAction(
+    intent: PaymentIntentEntity,
+    returnUrl: string | null,
+    chargeId: string,
+  ): Promise<PaymentIntentEntity> {
+    const event: PaymentIntentEvent = retryable ? 'decline' : 'fail';
     const status = this.states.apply('processing', event);
 
     await this.transactions.runInTransaction(async (manager) => {
