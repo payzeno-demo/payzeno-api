@@ -104,6 +104,17 @@ export class BillingLegacyClient extends BaseHttpClient {
 
   // -- live surface --------------------------------------------------------
 
+  listInvoices(merchantId: MerchantId, filter: InvoiceListFilter = {}): Promise<InvoiceListResponse> {
+    return this.guarded(() =>
+      this.get<InvoiceListResponse>('/internal/v1/invoices', {
+        merchant_id: merchantId,
+        status: filter.status,
+        cursor: filter.cursor,
+        limit: filter.limit,
+      }),
+    );
+  }
+
   /** @deprecated migrating to the ledger — arc MIG step 4. `InvoiceController#generate`. */
   generateInvoice(req: GenerateInvoiceRequest): Promise<Invoice> {
     this.warnLegacyCall('generateInvoice', req.merchant_id);
@@ -115,6 +126,22 @@ export class BillingLegacyClient extends BaseHttpClient {
         idempotencyKey: `invoice_generate:${req.merchant_id}:${req.period_start}`,
       }),
     );
+  }
+
+  private get breakerOptions(): Partial<BreakerOptions> {
+    return {
+      errorThresholdPercentage: this.billingConfig.breakerErrorThresholdPercent,
+      volumeThreshold: this.billingConfig.breakerVolumeThreshold,
+      resetTimeoutMs: this.billingConfig.breakerResetTimeoutMs,
+    };
+  }
+
+  private warnLegacyCall(method: string, merchantId: MerchantId): void {
+    this.logger.warn('LEGACY_CALL_AFTER_MIGRATION', {
+      method,
+      merchant_id: merchantId,
+      upstream: this.upstream,
+    });
   }
 
   protected mapUpstreamFailure(failure: UpstreamFailure): never {
