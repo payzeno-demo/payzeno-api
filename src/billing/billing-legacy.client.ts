@@ -97,6 +97,24 @@ export class BillingLegacyClient extends BaseHttpClient {
     return 'payzeno-billing-legacy';
   }
 
+  protected defaultHeaders(): Record<string, string> {
+    const basic = Buffer.from(`${this.billingConfig.user}:${this.billingConfig.password}`).toString('base64');
+    return { authorization: `Basic ${basic}` };
+  }
+
+  // -- live surface --------------------------------------------------------
+
+  listInvoices(merchantId: MerchantId, filter: InvoiceListFilter = {}): Promise<InvoiceListResponse> {
+    return this.guarded(() =>
+      this.get<InvoiceListResponse>('/internal/v1/invoices', {
+        merchant_id: merchantId,
+        status: filter.status,
+        cursor: filter.cursor,
+        limit: filter.limit,
+      }),
+    );
+  }
+
   /** @deprecated migrating to the ledger — arc MIG step 4. `InvoiceController#generate`. */
   generateInvoice(req: GenerateInvoiceRequest): Promise<Invoice> {
     this.warnLegacyCall('generateInvoice', req.merchant_id);
@@ -110,4 +128,38 @@ export class BillingLegacyClient extends BaseHttpClient {
     );
   }
 
+  private get breakerOptions(): Partial<BreakerOptions> {
+    return {
+      errorThresholdPercentage: this.billingConfig.breakerErrorThresholdPercent,
+      volumeThreshold: this.billingConfig.breakerVolumeThreshold,
+      resetTimeoutMs: this.billingConfig.breakerResetTimeoutMs,
+    };
+  }
+
+  private warnLegacyCall(method: string, merchantId: MerchantId): void {
+    this.logger.warn('LEGACY_CALL_AFTER_MIGRATION', {
+      method,
+      merchant_id: merchantId,
+      upstream: this.upstream,
+    });
+  }
+
+  protected mapUpstreamFailure(failure: UpstreamFailure): never {
+    if (failure.status === 404) {
+      throw new ResourceNotFoundException('invoice', failure.spec.path);
+    }
+    // The Java service answers with its own error shape, not `ApiError`. Anything non-2xx that
+    // is not a 404 is an upstream problem as far as the merchant is concerned.
+    throw new LegacyBillingUnavailableException(
+      `payzeno-billing-legacy responded ${failure.status} for ${failure.spec.method} ${failure.spec.path}`,
+      { status: failure.status },
+    );
+  }
+
+  protected mapTransportFailure(err: TransportError, spec: RequestSpec<unknown>): never {
+    throw new LegacyBillingUnavailableException(
+      `payzeno-billing-legacy ${err.kind} on ${spec.method} ${spec.path}`,
+      { failure: err.kind },
+    );
+  }
 }

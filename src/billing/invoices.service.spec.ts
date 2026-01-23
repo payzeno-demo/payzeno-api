@@ -18,6 +18,8 @@ import { makeApiKeyPrincipal } from 'test/factories/principal.factory';
 describe('InvoicesService', () => {
   let service: InvoicesService;
   let legacy: jest.Mocked<BillingLegacyClient>;
+  let projection: jest.Mocked<InvoiceProjectionService>;
+
   function invoice(overrides: Record<string, unknown> = {}) {
     return {
       id: 'inv_1',
@@ -29,4 +31,29 @@ describe('InvoicesService', () => {
     } as never;
   }
 
+  describe('list', () => {
+    it('resolves through the source resolver, never the legacy client directly', async () => {
+      const page = await service.list(principal, { limit: 10 });
+
+      expect(resolver.list).toHaveBeenCalledWith('mch_test01', expect.objectContaining({ limit: 10 }));
+      expect(page.data).toHaveLength(1);
+    });
+
+    it('passes the status filter through', async () => {
+      await service.list(principal, { status: 'open' });
+
+      expect(resolver.list).toHaveBeenCalledWith(
+        'mch_test01',
+        expect.objectContaining({ status: 'open' }),
+      );
+    });
+  });
+
+  describe('statement', () => {
+    it('reads the deprecated statement endpoint (arc MIG, still live)', async () => {
+      await service.statement('mch_test01', '2026-01');
+
+      expect(legacy.getStatement).toHaveBeenCalledWith('mch_test01', '2026-01');
+    });
+  });
 });
