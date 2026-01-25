@@ -30,17 +30,54 @@ import { IsStatementDescriptor } from '../../common/validators/statement-descrip
 
 export class UpdateMerchantDto implements UpdateMerchantRequest {
   @IsOptional()
+  @IsString()
   @MaxLength(100)
   display_name?: string;
 
+  @IsOptional()
+  /** ≤ 22 chars, `[A-Za-z0-9 .,\-]` only. It is what the cardholder sees on their statement. */
+  @IsOptional()
+  @IsStatementDescriptor()
+  statement_descriptor?: string;
+
+  // ---- staff-only from here down. MerchantsController enforces it. -----------------
+
+  /** 10000 bps = 100%. A reserve above that would hold more than the merchant is owed. */
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
+  @Min(0)
+  @IsInt()
+  @Max(365)
+  reserve_hold_days?: number;
+
   /** T+0 to T+30. `high` risk merchants sit at 7. */
   @IsOptional()
+  @Type(() => Number)
+  @IsInt()
   @Min(0)
   @IsOptional()
+  @Type(() => Number)
+  @Type(() => Number)
+  @Money({ allowZero: true, skipCeiling: true })
   @Money({ allowZero: true, skipCeiling: true })
   @IsOptional()
+  @IsBoolean()
+  capture_at_settlement?: boolean;
+
+  @IsOptional()
+  @Type(() => Object)
+  @IsPayzenoMetadata()
+  metadata?: Metadata;
+}
+
+/** `POST /v1/merchants/:merchantId/status` body. Not a contracts type — the route's own shape. */
+export class ChangeMerchantStatusDto {
+  @IsIn(['pending_review', 'active', 'restricted', 'suspended', 'rejected', 'closed'])
+  status!: string;
+
+  /** Required, and it lands in `staff_audit_log.reason`. "because" is a valid answer; none is not. */
+  @IsString()
   @MaxLength(500)
   reason!: string;
 }

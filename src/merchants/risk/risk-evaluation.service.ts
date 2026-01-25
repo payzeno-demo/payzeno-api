@@ -45,6 +45,13 @@ export class RiskEvaluationService {
   constructor(
     private readonly merchants: MerchantRepository,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
+  ) {}
+
+  /** One merchant. `RiskEvaluationJob` maps this over the live, active population. */
+  async evaluate(merchant: MerchantEntity): Promise<RiskEvaluation> {
+    const since = this.calculator.windowStart(this.clock.now());
+
     const [capturedCharges, disputesOpened] = await Promise.all([
       this.charges.countCapturedSince(merchant.id, since),
       this.disputes.countOpenedSince(merchant.id, since),
