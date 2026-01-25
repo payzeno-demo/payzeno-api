@@ -47,6 +47,21 @@ export function makeMerchant(overrides: Partial<Merchant> = {}): Merchant {
   };
 }
 
+export function makeUser(overrides: Partial<User> = {}): User {
+  const merchantId = overrides.merchant_id ?? nextId('mch_');
+  return {
+    id: nextId('usr_'),
+    object: 'user',
+    merchant_id: merchantId,
+    email: 'owner@aurora.example',
+    full_name: 'Aurora Owner',
+    role: 'owner',
+    last_login_at: null,
+    created_at: '2025-11-01T09:00:00.000Z',
+    ...overrides,
+  };
+}
+
 export function makeBankAccount(overrides: Partial<BankAccount> = {}): BankAccount {
   return {
     id: nextId('ba_'),
