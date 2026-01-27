@@ -110,3 +110,40 @@ const NORDPAY_HTTP = Symbol('NORDPAY_HTTP');
             nordpay: config.acquirers.nordpayApiKey,
           },
           clock,
+        ),
+    },
+
+    {
+      provide: WORLDFLOW_HTTP,
+      inject: [ApiConfig, HTTP_TRANSPORT, PAYZENO_LOGGER, CircuitBreakerRegistry],
+      useFactory: (
+        config: ApiConfig,
+        transport: HttpTransport,
+        logger: PayzenoLogger,
+        breakers: CircuitBreakerRegistry,
+      ): AcquirerHttpClient =>
+        new AcquirerHttpClient(
+          {
+            acquirer: 'worldflow',
+            baseUrl: config.acquirers.worldflowBaseUrl,
+            apiKey: config.acquirers.worldflowApiKey,
+            acquirerAccountId: 'payzeno-platform',
+          },
+          transport,
+          { ...DEFAULT_CLIENT_OPTIONS, readTimeoutMs: 20_000, userAgent: 'payzeno-api/worldflow' },
+          // Authorisations carry an idempotency key, so a retry is safe by contract. That is
+          // the ONLY reason retries are on for an acquirer at all.
+          new IdempotentRetryPolicy(2),
+          logger,
+          breakers,
+        ),
+    },
+    {
+      provide: NORDPAY_HTTP,
+      inject: [ApiConfig, HTTP_TRANSPORT, PAYZENO_LOGGER, CircuitBreakerRegistry],
+      useFactory: (
+        config: ApiConfig,
+        transport: HttpTransport,
+        logger: PayzenoLogger,
+        breakers: CircuitBreakerRegistry,
+      ): AcquirerHttpClient =>
