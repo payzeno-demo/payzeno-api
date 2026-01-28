@@ -31,3 +31,20 @@ export type PaymentIntentEvent =
   | 'confirm'
   | 'require_action'
   | 'complete_action'
+  | 'authorize'
+  | 'capture'
+  | 'decline'
+  | 'fail'
+  | 'cancel';
+
+const TRANSITIONS: TransitionTable<PaymentIntentStatus, PaymentIntentEvent> = {
+  requires_payment_method: {
+    attach_payment_method: 'requires_confirmation',
+    cancel: 'canceled',
+    fail: 'failed',
+  },
+  requires_confirmation: {
+    confirm: 'processing',
+    attach_payment_method: 'requires_confirmation',
+    cancel: 'canceled',
+  },
