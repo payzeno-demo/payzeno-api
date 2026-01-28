@@ -14,3 +14,37 @@
  * ```
  *
  * `requires_action` is not optional: under PSD2 a EUR or GBP e-commerce authorisation without
+ * SCA or a documented exemption is declined by the issuer, and three of the five supported
+ * currencies are in scope.
+ *
+ * Cold file. Written in month 1, touched by migration 28 only (`requires_action` was added to
+ * the pg enum then, but the table below always had it).
+ */
+
+import { Injectable } from '@nestjs/common';
+import type { PaymentIntentStatus } from '@payzeno/contracts';
+
+import { StateMachine, type TransitionTable } from './state-machine';
+
+export type PaymentIntentEvent =
+  | 'attach_payment_method'
+  | 'confirm'
+  | 'require_action'
+  | 'complete_action'
+  | 'authorize'
+  | 'capture'
+  | 'decline'
+  | 'fail'
+  | 'cancel';
+
+const TRANSITIONS: TransitionTable<PaymentIntentStatus, PaymentIntentEvent> = {
+  requires_payment_method: {
+    attach_payment_method: 'requires_confirmation',
+    cancel: 'canceled',
+    fail: 'failed',
+  },
+  requires_confirmation: {
+    confirm: 'processing',
+    attach_payment_method: 'requires_confirmation',
+    cancel: 'canceled',
+  },

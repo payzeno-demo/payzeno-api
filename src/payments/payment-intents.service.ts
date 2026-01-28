@@ -45,6 +45,54 @@ export class PaymentIntentsService extends BaseService<PaymentIntentEntity> {
     private readonly confirmFlow: ConfirmPaymentFlow,
     private readonly transactions: TransactionManager,
     @Inject(CLOCK) private readonly clock: Clock,
+    const row = await this.transactions.runInTransaction((manager) =>
+      this.intents.insertIntent(manager, {
+        id,
+        merchantId: scope.merchantId,
+        amount_minor: dto.amount_minor,
+        currency: dto.currency,
+        status,
+        capture_method: dto.capture_method ?? 'automatic',
+        payment_method_token: dto.payment_method_token ?? null,
+        customer_reference: dto.customer_reference ?? null,
+        description: dto.description ?? null,
+        statement_descriptor: dto.statement_descriptor ?? null,
+        latest_charge_id: null,
+        client_secret: mintClientSecret(id),
+        next_action: null,
+        metadata: dto.metadata ?? {},
+        canceled_at: null,
+        cancellation_reason: null,
+        livemode: scope.livemode,
+        createdAt: now,
+        updatedAt: now,
+      }),
+    );
+
+    this.logger.info('payment_intent_created', {
+      payment_intent_id: row.id,
+      merchant_id: scope.merchantId,
+      amount_minor: dto.amount_minor,
+      currency: dto.currency,
+      status: row.status,
+      confirm_in_same_call: Boolean(dto.confirm),
+    });
+
+    if (dto.confirm && dto.payment_method_token) {
+      const confirmed = await this.confirmFlow.execute(row, {
+        payment_method_token: dto.payment_method_token,
+      });
+      return toPaymentIntent(confirmed);
+    }
+
+    return toPaymentIntent(row);
+  }
+
+  async get(principal: AuthPrincipal, id: PaymentIntentId): Promise<PaymentIntent> {
+    return toPaymentIntent(await this.findOneOrThrow(id, scopeFrom(principal)));
+  }
+
+  async list(principal: AuthPrincipal, query: PaymentIntentListQuery): Promise<Paginated<PaymentIntent>> {
     const intent = await this.findOneOrThrow(id, scopeFrom(principal));
     return toPaymentIntent(await this.captureFlow.execute(intent, request));
   }

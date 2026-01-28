@@ -36,3 +36,15 @@ import { ChargeRepository } from './charge.repository';
 import { ChargeStateMachine } from './state/charge.state-machine';
 import { ProcessorRouter } from './processor/processor.router';
 import { LedgerReadThroughService } from '../ledger/ledger-read-through.service';
+import { ledgerKey } from '../ledger/ledger.types';
+
+export interface CaptureChargeCommand {
+  charge: ChargeEntity;
+  merchant: Merchant;
+  /** Defaults to the full authorised amount. Must be ≤ authorised. */
+  amountMinor?: number;
+  correlationId: string;
+}
+
+export interface CaptureOutcome {
+  chargeId: string;
