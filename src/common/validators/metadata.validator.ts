@@ -21,6 +21,7 @@ import {
 import { containsPan } from '../redaction/pan.matcher';
 
 export const METADATA_MAX_KEYS = 20;
+export const METADATA_MAX_KEY_LENGTH = 40;
 export const METADATA_MAX_VALUE_LENGTH = 500;
 
 export type MetadataViolation =
@@ -49,3 +50,4 @@ export function findMetadataViolation(value: unknown): MetadataViolation | null 
   return null;
 }
 
+@ValidatorConstraint({ name: 'IsPayzenoMetadata', async: false })
