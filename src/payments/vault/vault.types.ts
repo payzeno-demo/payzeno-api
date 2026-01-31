@@ -41,3 +41,8 @@ export interface VaultDeleteResponse {
   deleted: boolean;
 }
 
+/** Vault error envelope — not `ApiError`; the vault is a third-party service. */
+export interface VaultErrorBody {
+  code?: 'token_not_found' | 'token_expired' | 'invalid_token' | string;
+  message?: string;
+}

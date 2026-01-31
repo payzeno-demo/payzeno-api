@@ -6,3 +6,10 @@
  * imported twice, Nest registers every cron twice in the same task and the Redis lease is the
  * only thing standing between you and double execution.
  *
+ * Import list mirrors what the jobs actually reach into: EventsModule (outbox drain),
+ * WebhooksModule (delivery), MerchantsModule (risk), PaymentsModule (sweep + expiry),
+ * DisputesModule (deadlines), LedgerModule (both the sweep's `listTransactions` and the
+ * expiry's `auth_release` posting).
+ *
+ * docs/runbooks/payzeno-api.md lists every job, its lease and what to do when it stops.
+ * — apager

@@ -51,3 +51,41 @@ export function findMetadataViolation(value: unknown): MetadataViolation | null 
 }
 
 @ValidatorConstraint({ name: 'IsPayzenoMetadata', async: false })
+export class MetadataConstraint implements ValidatorConstraintInterface {
+  validate(value: unknown): boolean {
+    return findMetadataViolation(value) === null;
+  }
+
+  defaultMessage(args: ValidationArguments): string {
+    const violation = findMetadataViolation(args.value);
+
+    switch (violation) {
+      case 'too_many_keys':
+        return `${args.property} accepts at most ${METADATA_MAX_KEYS} keys`;
+      case 'key_too_long':
+        return `${args.property} keys are limited to ${METADATA_MAX_KEY_LENGTH} characters`;
+      case 'value_not_a_string':
+        return `${args.property} values must be strings`;
+      case 'value_too_long':
+        return `${args.property} values are limited to ${METADATA_MAX_VALUE_LENGTH} characters`;
+      case 'value_looks_like_pan':
+        // Deliberately does not echo the value back.
+        return `${args.property} must not contain card numbers`;
+      default:
+        return `${args.property} must be a flat object of string values`;
+    }
+  }
+}
+
+export function IsPayzenoMetadata(validationOptions?: ValidationOptions): PropertyDecorator {
+  return (object, propertyName) => {
+    registerDecorator({
+      name: 'IsPayzenoMetadata',
+      target: object.constructor,
+      propertyName: propertyName as string,
+      constraints: [],
+      options: validationOptions,
+      validator: MetadataConstraint,
+    });
+  };
+}

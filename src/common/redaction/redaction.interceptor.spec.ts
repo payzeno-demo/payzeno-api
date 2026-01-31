@@ -101,6 +101,26 @@ describe('RedactionInterceptor', () => {
     });
 
     it('never matches on a value — only on the key', () => {
+      const scrubbed = interceptor.scrub({ description: 'my password is hunter2' }) as Record<
+        string,
+        unknown
+      >;
+
+      expect(scrubbed.description).toBe('my password is hunter2');
+    });
+  });
+
+  describe('the PAN scan', () => {
+    it('masks a PAN in a free-text field the denylist does not know about', () => {
+      const scrubbed = interceptor.scrub({ description: 'card 4242424242424242' }) as Record<
+        string,
+        unknown
+      >;
+
+      expect(scrubbed.description).toBe(`card ${REDACTED_PAN}`);
+    });
+
+    it('masks a space-separated PAN', () => {
       const scrubbed = interceptor.scrub({ note: '4242 4242 4242 4242' }) as Record<string, unknown>;
 
       expect(scrubbed.note).toBe(REDACTED_PAN);
@@ -123,6 +143,21 @@ describe('RedactionInterceptor', () => {
 
   describe('interception', () => {
     it('scrubs the request body in place, so later readers see the scrubbed value', async () => {
+      const req = {
+        method: 'POST',
+        originalUrl: '/v1/bank-accounts',
+        body: { account_number: '00012345', currency: 'GBP' },
+      };
+
+      await firstValueFrom(await Promise.resolve(interceptor.intercept(context(req), handler({}))));
+
+      expect((req.body as Record<string, unknown>).account_number).toBe(REDACTED);
+      expect((req.body as Record<string, unknown>).currency).toBe('GBP');
+    });
+
+    it('scrubs the response body', async () => {
+      const req = { method: 'GET', originalUrl: '/v1/bank-accounts', body: undefined };
+
       const result = await firstValueFrom(
         interceptor.intercept(context(req), handler({ iban: 'GB33BUKB20201555555555' })),
       );
@@ -131,6 +166,14 @@ describe('RedactionInterceptor', () => {
     });
 
     it('handles a request with no body', async () => {
+      const req = { method: 'GET', originalUrl: '/v1/charges', body: undefined };
+
+      await expect(
+        firstValueFrom(interceptor.intercept(context(req), handler({ ok: true }))),
+      ).resolves.toEqual({ ok: true });
+    });
+
+    it('bounds recursion rather than blowing the stack on a cyclic-looking body', () => {
       let deep: Record<string, unknown> = { cvv: '123' };
       for (let i = 0; i < 40; i += 1) {
         deep = { nested: deep };
@@ -141,6 +184,8 @@ describe('RedactionInterceptor', () => {
 
     it('passes straight through when the flag is off', async () => {
       const off = new RedactionInterceptor(config(false));
+      const req = { method: 'POST', originalUrl: '/v1/x', body: { cvv: '123' } };
+
       const result = await firstValueFrom(off.intercept(context(req), handler({ cvv: '123' })));
 
       expect((req.body as Record<string, unknown>).cvv).toBe('123');

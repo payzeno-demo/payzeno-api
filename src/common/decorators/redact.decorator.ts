@@ -18,3 +18,6 @@ export function Redact(...paths: string[]): ClassDecorator {
   };
 }
 
+export function redactedPathsOf(target: object): string[] {
+  return (Reflect.getMetadata(REDACT_KEY, target) as string[] | undefined) ?? [];
+}
