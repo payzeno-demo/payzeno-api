@@ -74,6 +74,67 @@ describe('RedactionInterceptor', () => {
     });
 
     it('redacts inside arrays and keeps the array length', () => {
+      const scrubbed = interceptor.scrub({
+        accounts: [{ iban: 'GB33BUKB20201555555555' }, { iban: 'DE89370400440532013000' }],
+      }) as { accounts: Array<Record<string, unknown>> };
+
+      // A merchant debugging a 422 still needs to know which element failed.
+      expect(scrubbed.accounts).toHaveLength(2);
+      expect(scrubbed.accounts[0].iban).toBe(REDACTED);
+      expect(scrubbed.accounts[1].iban).toBe(REDACTED);
+    });
+
+    it('leaves safe fields alone', () => {
+      const scrubbed = interceptor.scrub({
+        amount_minor: 4_500,
+        currency: 'GBP',
+        last_four: '4242',
+        description: 'Order 4471',
+      });
+
+      expect(scrubbed).toEqual({
+        amount_minor: 4_500,
+        currency: 'GBP',
+        last_four: '4242',
+        description: 'Order 4471',
+      });
+    });
+
+    it('never matches on a value — only on the key', () => {
+      const scrubbed = interceptor.scrub({ description: 'my password is hunter2' }) as Record<
+        string,
+        unknown
+      >;
+
+      expect(scrubbed.description).toBe('my password is hunter2');
+    });
+  });
+
+  describe('the PAN scan', () => {
+    it('masks a PAN in a free-text field the denylist does not know about', () => {
+      const scrubbed = interceptor.scrub({ description: 'card 4242424242424242' }) as Record<
+        string,
+        unknown
+      >;
+
+      expect(scrubbed.description).toBe(`card ${REDACTED_PAN}`);
+    });
+
+    it('masks a space-separated PAN', () => {
+      const scrubbed = interceptor.scrub({ note: '4242 4242 4242 4242' }) as Record<string, unknown>;
+
+      expect(scrubbed.note).toBe(REDACTED_PAN);
+    });
+
+    it('masks a PAN nested in metadata', () => {
+      const scrubbed = interceptor.scrub({
+        metadata: { customer_note: 'paid with 5555555555554444' },
+      }) as { metadata: Record<string, unknown> };
+
+      expect(scrubbed.metadata.customer_note).toContain(REDACTED_PAN);
+    });
+
+    it('leaves an order number alone', () => {
       const scrubbed = interceptor.scrub({ description: 'order 4471' }) as Record<string, unknown>;
 
       expect(scrubbed.description).toBe('order 4471');
@@ -82,7 +143,49 @@ describe('RedactionInterceptor', () => {
 
   describe('interception', () => {
     it('scrubs the request body in place, so later readers see the scrubbed value', async () => {
+      const req = {
+        method: 'POST',
+        originalUrl: '/v1/bank-accounts',
+        body: { account_number: '00012345', currency: 'GBP' },
+      };
+
+      await firstValueFrom(await Promise.resolve(interceptor.intercept(context(req), handler({}))));
+
+      expect((req.body as Record<string, unknown>).account_number).toBe(REDACTED);
+      expect((req.body as Record<string, unknown>).currency).toBe('GBP');
+    });
+
+    it('scrubs the response body', async () => {
+      const req = { method: 'GET', originalUrl: '/v1/bank-accounts', body: undefined };
+
+      const result = await firstValueFrom(
+        interceptor.intercept(context(req), handler({ iban: 'GB33BUKB20201555555555' })),
+      );
+
+      expect(result).toEqual({ iban: REDACTED });
+    });
+
+    it('handles a request with no body', async () => {
+      const req = { method: 'GET', originalUrl: '/v1/charges', body: undefined };
+
+      await expect(
+        firstValueFrom(interceptor.intercept(context(req), handler({ ok: true }))),
+      ).resolves.toEqual({ ok: true });
+    });
+
+    it('bounds recursion rather than blowing the stack on a cyclic-looking body', () => {
+      let deep: Record<string, unknown> = { cvv: '123' };
+      for (let i = 0; i < 40; i += 1) {
+        deep = { nested: deep };
+      }
+
+      expect(() => interceptor.scrub(deep)).not.toThrow();
+    });
+
+    it('passes straight through when the flag is off', async () => {
       const off = new RedactionInterceptor(config(false));
+      const req = { method: 'POST', originalUrl: '/v1/x', body: { cvv: '123' } };
+
       const result = await firstValueFrom(off.intercept(context(req), handler({ cvv: '123' })));
 
       expect((req.body as Record<string, unknown>).cvv).toBe('123');

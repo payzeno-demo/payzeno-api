@@ -21,5 +21,71 @@ import {
 import { containsPan } from '../redaction/pan.matcher';
 
 export const METADATA_MAX_KEYS = 20;
+export const METADATA_MAX_KEY_LENGTH = 40;
 export const METADATA_MAX_VALUE_LENGTH = 500;
 
+export type MetadataViolation =
+  | 'not_an_object'
+  | 'too_many_keys'
+  | 'key_too_long'
+  | 'value_not_a_string'
+  | 'value_too_long'
+  | 'value_looks_like_pan';
+
+/** Returns the first violation, or null. Exported so services can validate non-DTO metadata. */
+export function findMetadataViolation(value: unknown): MetadataViolation | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'object' || Array.isArray(value)) return 'not_an_object';
+
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.length > METADATA_MAX_KEYS) return 'too_many_keys';
+
+  for (const [key, item] of entries) {
+    if (key.length > METADATA_MAX_KEY_LENGTH) return 'key_too_long';
+    if (typeof item !== 'string') return 'value_not_a_string';
+    if (item.length > METADATA_MAX_VALUE_LENGTH) return 'value_too_long';
+    if (containsPan(item)) return 'value_looks_like_pan';
+  }
+
+  return null;
+}
+
+@ValidatorConstraint({ name: 'IsPayzenoMetadata', async: false })
+export class MetadataConstraint implements ValidatorConstraintInterface {
+  validate(value: unknown): boolean {
+    return findMetadataViolation(value) === null;
+  }
+
+  defaultMessage(args: ValidationArguments): string {
+    const violation = findMetadataViolation(args.value);
+
+    switch (violation) {
+      case 'too_many_keys':
+        return `${args.property} accepts at most ${METADATA_MAX_KEYS} keys`;
+      case 'key_too_long':
+        return `${args.property} keys are limited to ${METADATA_MAX_KEY_LENGTH} characters`;
+      case 'value_not_a_string':
+        return `${args.property} values must be strings`;
+      case 'value_too_long':
+        return `${args.property} values are limited to ${METADATA_MAX_VALUE_LENGTH} characters`;
+      case 'value_looks_like_pan':
+        // Deliberately does not echo the value back.
+        return `${args.property} must not contain card numbers`;
+      default:
+        return `${args.property} must be a flat object of string values`;
+    }
+  }
+}
+
+export function IsPayzenoMetadata(validationOptions?: ValidationOptions): PropertyDecorator {
+  return (object, propertyName) => {
+    registerDecorator({
+      name: 'IsPayzenoMetadata',
+      target: object.constructor,
+      propertyName: propertyName as string,
+      constraints: [],
+      options: validationOptions,
+      validator: MetadataConstraint,
+    });
+  };
+}

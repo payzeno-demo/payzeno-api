@@ -11,3 +11,13 @@ import 'reflect-metadata';
 
 export const REDACT_KEY = 'payzeno:redact';
 
+export function Redact(...paths: string[]): ClassDecorator {
+  return (target) => {
+    const existing = (Reflect.getMetadata(REDACT_KEY, target) as string[] | undefined) ?? [];
+    Reflect.defineMetadata(REDACT_KEY, [...new Set([...existing, ...paths])], target);
+  };
+}
+
+export function redactedPathsOf(target: object): string[] {
+  return (Reflect.getMetadata(REDACT_KEY, target) as string[] | undefined) ?? [];
+}

@@ -20,6 +20,15 @@ export interface TokenResolution {
  * The legacy server-side tokenisation body. Only `VaultClient.tokenise` builds it, only the
  * `@StaffOnly('support')` MOTO route reaches it, and arc PCI exists to delete it.
  */
+export interface TokeniseRequest {
+  /** PAN. This is the ONE type in payzeno-api that admits card digits, and it is on its way out. */
+  number: string;
+  exp_month: number;
+  exp_year: number;
+  cvv?: string;
+  cardholder_name?: string;
+}
+
 export interface TokeniseResponse {
   token: PaymentMethodToken;
   card: CardSummary;
@@ -27,3 +36,13 @@ export interface TokeniseResponse {
   created_at: string;
 }
 
+export interface VaultDeleteResponse {
+  token: PaymentMethodToken;
+  deleted: boolean;
+}
+
+/** Vault error envelope — not `ApiError`; the vault is a third-party service. */
+export interface VaultErrorBody {
+  code?: 'token_not_found' | 'token_expired' | 'invalid_token' | string;
+  message?: string;
+}
