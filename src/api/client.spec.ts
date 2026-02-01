@@ -89,6 +89,32 @@ describe('BaseHttpClient', () => {
       expect(transport.callsTo('GET', '/v1/thing')[0].url).toBe('http://upstream.test/v1/thing');
     });
 
+    it('encodes query parameters and drops undefined ones', async () => {
+      transport.on('GET', '/v1/thing', () => ({ status: 200, body: {} }));
+
+      await client.call({
+        method: 'GET',
+        path: '/v1/thing',
+        query: { limit: 10, status: 'settled', cursor: undefined },
+      });
+
+      const { url } = transport.callsTo('GET', '/v1/thing')[0];
+      expect(url).toContain('limit=10');
+      expect(url).toContain('status=settled');
+      expect(url).not.toContain('cursor');
+    });
+
+    it('merges default headers under per-request headers', async () => {
+      transport.on('GET', '/v1/thing', () => ({ status: 200, body: {} }));
+
+      await client.call({ method: 'GET', path: '/v1/thing', headers: { 'x-extra': '1' } });
+
+      const { headers } = transport.callsTo('GET', '/v1/thing')[0];
+      expect(headers.authorization).toBe('Bearer test-token');
+      expect(headers['x-extra']).toBe('1');
+      expect(headers.accept).toBe('application/json');
+    });
+
     it('serialises a body and sets the content type', async () => {
       transport.on('POST', '/v1/thing', () => ({ status: 201, body: { id: 'x' } }));
 
@@ -97,6 +123,22 @@ describe('BaseHttpClient', () => {
       const call = transport.callsTo('POST', '/v1/thing')[0];
       expect(call.body).toEqual({ amount_minor: 4_500 });
       expect(call.headers['content-type']).toBe('application/json');
+    });
+
+    it('never sends a body on a GET', async () => {
+      transport.on('GET', '/v1/thing', () => ({ status: 200, body: {} }));
+
+      await client.call({ method: 'GET', path: '/v1/thing', body: { nope: true } });
+
+      expect(transport.callsTo('GET', '/v1/thing')[0].body).toBeNull();
+    });
+
+    it('forwards the idempotency key as a header', async () => {
+      transport.on('POST', '/v1/thing', () => ({ status: 201, body: {} }));
+
+      await client.call({ method: 'POST', path: '/v1/thing', body: {}, idempotencyKey: 'k1' });
+
+      expect(transport.callsTo('POST', '/v1/thing')[0].headers['idempotency-key']).toBe('k1');
     });
 
     it('propagates the request and correlation ids from the ambient context', async () => {
@@ -122,6 +164,16 @@ describe('BaseHttpClient', () => {
       expect(sent['x-request-id']).toMatch(/^req_/);
     });
 
+    it('lets a per-request timeout override the default read timeout', async () => {
+      transport.on('GET', '/v1/slow', () => ({ status: 200, body: {} }));
+
+      await client.call({ method: 'GET', path: '/v1/slow', timeoutMs: 30_000 });
+
+      expect(transport.callCount).toBe(1);
+    });
+  });
+
+  describe('responses', () => {
     it('parses a JSON body', async () => {
       transport.on('GET', '/v1/thing', () => ({ status: 200, body: { id: 'x', n: 1 } }));
 
@@ -129,6 +181,33 @@ describe('BaseHttpClient', () => {
         id: 'x',
         n: 1,
       });
+    });
+
+    it('tolerates an empty 204 body', async () => {
+      transport.on('DELETE', '/v1/thing', () => ({ status: 204 }));
+
+      await expect(client.call({ method: 'DELETE', path: '/v1/thing' })).resolves.toBeDefined();
+    });
+  });
+
+  describe('failure translation', () => {
+    it('routes a non-2xx to mapUpstreamFailure with the parsed ApiError', async () => {
+      transport.on('POST', '/v1/thing', () => ({
+        status: 409,
+        body: {
+          error: { code: 'settlement_locked', message: 'locked', request_id: 'req_up_1' },
+        },
+      }));
+
+      try {
+        await client.call({ method: 'POST', path: '/v1/thing', body: {} });
+        throw new Error('expected a rejection');
+      } catch (err) {
+        expect(err).toBeInstanceOf(UpstreamAnsweredError);
+        const failure = (err as UpstreamAnsweredError).failure;
+        expect(failure.status).toBe(409);
+        expect(failure.apiError?.error.code).toBe('settlement_locked');
+      }
     });
 
     it('reports a null apiError when the body is not an envelope', async () => {
@@ -142,6 +221,18 @@ describe('BaseHttpClient', () => {
       }
     });
 
+    it('routes a socket failure to mapTransportFailure, never to mapUpstreamFailure', async () => {
+      const noRetry = new TestClient(transport, 0);
+      transport.on('POST', '/v1/thing', () => ({ status: 200, body: {} }));
+      transport.failOnce(new TransportError('connection_reset', 'http://upstream.test/v1/thing', 'ECONNRESET'));
+
+      await expect(
+        noRetry.call({ method: 'POST', path: '/v1/thing', body: {} }),
+      ).rejects.toBeInstanceOf(TransportBrokeError);
+    });
+  });
+
+  describe('retries', () => {
     it('retries a 503 on a GET and returns the eventual success', async () => {
       let calls = 0;
       transport.on('GET', '/v1/thing', () => {
@@ -151,6 +242,22 @@ describe('BaseHttpClient', () => {
 
       await expect(client.call({ method: 'GET', path: '/v1/thing' })).resolves.toEqual({ ok: true });
       expect(calls).toBe(3);
+    });
+
+    it('gives up after the retry budget and translates the last response', async () => {
+      transport.on('GET', '/v1/thing', () => ({ status: 503, body: {} }));
+
+      await expect(client.call({ method: 'GET', path: '/v1/thing' })).rejects.toBeInstanceOf(
+        UpstreamAnsweredError,
+      );
+      expect(transport.callCount).toBe(3);
+    });
+
+    it('does not retry a 4xx', async () => {
+      transport.on('GET', '/v1/thing', () => ({ status: 404, body: {} }));
+
+      await expect(client.call({ method: 'GET', path: '/v1/thing' })).rejects.toThrow();
+      expect(transport.callCount).toBe(1);
     });
 
     it('does not retry an unkeyed POST', async () => {

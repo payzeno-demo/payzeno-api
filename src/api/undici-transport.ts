@@ -33,6 +33,16 @@ export const DEFAULT_UNDICI_OPTIONS: UndiciTransportOptions = {
 export class UndiciTransport implements HttpTransport {
   readonly name = 'undici' as const;
 
+  private readonly agent: Agent;
+
+  constructor(options: UndiciTransportOptions = DEFAULT_UNDICI_OPTIONS) {
+    this.agent = new Agent({
+      connections: options.connections,
+      keepAliveTimeout: options.keepAliveTimeoutMs,
+      keepAliveMaxTimeout: options.keepAliveMaxTimeoutMs,
+    });
+  }
+
   async send(req: TransportRequest): Promise<TransportResponse> {
     const started = Date.now();
     try {
@@ -78,4 +88,12 @@ export class UndiciTransport implements HttpTransport {
 }
 
 function normaliseHeaders(raw: Record<string, string | string[] | undefined>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (value === undefined) {
+      continue;
+    }
+    out[key.toLowerCase()] = Array.isArray(value) ? value.join(', ') : value;
+  }
+  return out;
 }
