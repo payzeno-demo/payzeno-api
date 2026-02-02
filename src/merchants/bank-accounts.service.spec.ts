@@ -31,8 +31,74 @@ import { FixedClock } from 'test/support/fixed-clock';
  */
 describe('BankAccountsService', () => {
   const clock = new FixedClock('2026-04-10T09:00:00.000Z');
+  let transactions: TransactionManager;
+  beforeEach(() => {
+    accounts = {
+      insertMapped: jest.fn().mockResolvedValue(undefined),
+      clearDefault: jest.fn().mockResolvedValue(undefined),
+      markDefault: jest.fn().mockResolvedValue(undefined),
+      findScoped: jest.fn().mockResolvedValue(storedAccount()),
+      findOne: jest.fn().mockResolvedValue(storedAccount()),
+      paginateCursor: jest
+        .fn()
+        .mockResolvedValue({ data: [storedAccount()], has_more: false, next_cursor: null }),
+    };
+    events = { publish: jest.fn().mockResolvedValue(undefined) };
+    transactions = {
+      runInTransaction: jest.fn(async (cb: (m: EntityManager) => Promise<unknown>) =>
+        cb({} as EntityManager),
+      ),
+    } as unknown as TransactionManager;
+
+    service = new BankAccountsService(
+      accounts as unknown as BankAccountRepository,
+      transactions,
+      new IdFactory(),
+      events as unknown as EventPublisher,
+      clock,
+      new NoopLogger(),
+    );
+  });
+
   it('names the aggregate', () => {
     expect(service.entityName).toBe('bank_account');
+  });
+
+  describe('scheme ↔ currency', () => {
+    it.each([
+      ['aba', 'USD'],
+      ['iban', 'EUR'],
+      ['uk_sort_code', 'GBP'],
+    ] as const)('accepts a %s account settling %s', async (scheme, currency) => {
+      await expect(
+        service.create(scope, { ...request, scheme, currency }),
+      ).resolves.toMatchObject({ object: 'bank_account' });
+    });
+
+    it.each([
+      ['uk_sort_code', 'EUR'],
+      ['iban', 'GBP'],
+      ['aba', 'JPY'],
+      ['iban', 'USD'],
+    ] as const)('rejects a %s account settling %s before anything is written', async (scheme, currency) => {
+      await expect(service.create(scope, { ...request, scheme, currency })).rejects.toBeInstanceOf(
+        ValidationException,
+      );
+
+      expect(accounts.insertMapped).not.toHaveBeenCalled();
+      expect(events.publish).not.toHaveBeenCalled();
+    });
+
+    it('tells the merchant which currencies the rail actually settles', async () => {
+      try {
+        await service.create(scope, { ...request, scheme: 'iban', currency: 'GBP' });
+        throw new Error('expected a ValidationException');
+      } catch (err) {
+        const [fieldError] = (err as ValidationException).fieldErrors;
+        expect(fieldError).toMatchObject({ path: 'scheme', code: 'scheme_currency_mismatch' });
+        expect(fieldError.message).toContain('EUR');
+      }
+    });
   });
 
   describe('create', () => {

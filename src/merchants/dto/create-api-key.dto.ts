@@ -16,6 +16,9 @@ import type { ApiKeyMode, ApiKeyScope, CreateApiKeyRequest } from '@payzeno/cont
 export class CreateApiKeyDto implements CreateApiKeyRequest {
   /** Merchant-chosen label. It appears in the console key list and in the audit log. */
   @IsString()
+  @MaxLength(80)
+  name!: string;
+
   @ArrayUnique()
   @ArrayMaxSize(API_KEY_SCOPES.length)
 }
