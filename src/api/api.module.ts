@@ -23,3 +23,16 @@ import { UndiciTransport } from './undici-transport';
     {
       provide: HTTP_TRANSPORT,
       inject: [ApiConfig, UndiciTransport, InMemoryTransport],
+      useFactory: (config: ApiConfig, undici: UndiciTransport, memory: InMemoryTransport): HttpTransport =>
+        config.runtime.nodeEnv === 'test' ? memory : undici,
+    },
+  ],
+  exports: [HTTP_TRANSPORT, CircuitBreakerRegistry, InMemoryTransport],
+})
+export class ApiModule implements OnApplicationShutdown {
+  constructor(private readonly undici: UndiciTransport) {}
+
+  async onApplicationShutdown(): Promise<void> {
+    await this.undici.close();
+  }
+}

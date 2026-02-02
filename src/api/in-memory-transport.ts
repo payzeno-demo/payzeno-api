@@ -46,12 +46,28 @@ export class InMemoryTransport implements HttpTransport {
   readonly name = 'in-memory' as const;
 
   private readonly routes: Route[] = [];
+  private readonly calls: RecordedCall[] = [];
   private failNextWith: TransportError | null = null;
 
   /**
    * `pathPattern` is a path template — `/internal/v1/balances/:merchantId` — or a RegExp for
    * the cases a template cannot express.
    */
+  on(method: HttpMethod, pathPattern: string | RegExp, handler: StubHandler): this {
+    this.routes.push({
+      method,
+      pattern: pathPattern instanceof RegExp ? pathPattern : templateToRegExp(pathPattern),
+      handler,
+    });
+    return this;
+  }
+
+  /** Arms a one-shot socket failure, so retry behaviour can be asserted deterministically. */
+  failOnce(error: TransportError): this {
+    this.failNextWith = error;
+    return this;
+  }
+
   async send(req: TransportRequest): Promise<TransportResponse> {
     const started = Date.now();
     const path = pathOf(req.url);
@@ -86,11 +102,29 @@ export class InMemoryTransport implements HttpTransport {
     };
   }
 
+  callsTo(method: HttpMethod, pathPattern: string | RegExp): RecordedCall[] {
+    const pattern = pathPattern instanceof RegExp ? pathPattern : templateToRegExp(pathPattern);
+    return this.calls.filter((c) => c.method === method && pattern.test(c.path));
+  }
+
+  get callCount(): number {
+    return this.calls.length;
+  }
+
+  reset(): void {
+    this.routes.length = 0;
+    this.calls.length = 0;
+    this.failNextWith = null;
+  }
+}
+
+function templateToRegExp(template: string): RegExp {
   const escaped = template.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/:\w+/g, '[^/]+');
   return new RegExp(`^${escaped}$`);
 }
 
 function pathOf(url: string): string {
+  const withoutScheme = url.replace(/^[a-z]+:\/\/[^/]+/i, '');
   const queryAt = withoutScheme.indexOf('?');
   return queryAt === -1 ? withoutScheme : withoutScheme.slice(0, queryAt);
 }
