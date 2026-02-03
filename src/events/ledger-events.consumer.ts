@@ -36,3 +36,22 @@ import { SettlementCompletion } from './settlement-completion.entity';
  *                                 — those are the merchants who can actually be double-charged.
  *
  * Collaborators are resolved through `ModuleRef` in `onModuleInit`, not constructor-injected,
+ * because `EventsModule` must never import a feature module (it would close a cycle through
+ * `PaymentsModule -> EventsModule`). docs/adr/0009-event-consumer-wiring.md.
+ */
+@Injectable()
+export class LedgerEventsConsumer extends BaseEventConsumer implements OnModuleInit {
+  readonly queueUrl: string;
+  readonly consumerName = 'ledger-events';
+
+  readonly handledTypes = new Set<EventType>([
+    'settlement.completed',
+    'settlement.duplicate_detected',
+    'settlement.variance_detected',
+    'payout.paid',
+    'payout.failed',
+    'payout.returned',
+    'ledger.imbalance_detected',
+  ]);
+
+  private charges!: ChargesService;
