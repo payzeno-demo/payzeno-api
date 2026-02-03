@@ -35,6 +35,23 @@ describe('WebhookFanoutConsumer', () => {
     consumer.onModuleInit();
   });
 
+  it('never handles an internal-only ledger event', () => {
+    expect(consumer.handledTypes.has('settlement.duplicate_detected')).toBe(false);
+    expect(consumer.handledTypes.has('ledger.imbalance_detected')).toBe(false);
+    expect(consumer.handledTypes.has('settlement.batch_closed')).toBe(false);
+  });
+
+  it('reports dedupe when the insert conflicts on uq_webhook_event_source', async () => {
+    events.fanout.mockResolvedValueOnce(1);
+
+    await consumer.handle(busEvent(), tx);
+
+    expect(logger.info).toHaveBeenCalledWith(
+      'webhook.fanned_out',
+      expect.objectContaining({ inserted: 1, deduped: 1 }),
+    );
+  });
+
   it('does nothing when the merchant has no matching endpoint', async () => {
     endpoints.listEnabledFor.mockResolvedValueOnce([]);
 
