@@ -43,3 +43,25 @@ export abstract class BaseEventConsumer {
 
   /** Stable identity written into `processed_event.consumer`. Never the class instance. */
   abstract readonly consumerName: string;
+
+  /** Everything else on the queue is acknowledged and dropped. */
+  abstract readonly handledTypes: ReadonlySet<EventType>;
+
+  /** Runs inside the claim transaction. `tx` is the ONLY manager it may write through. */
+  abstract handle(event: PayzenoEvent, tx: EntityManager): Promise<void>;
+
+  protected constructor(
+    protected readonly sqs: SQSClient,
+    protected readonly transactions: TransactionManager,
+    protected readonly processedEvents: ProcessedEventRepository,
+    protected readonly logger: PayzenoLogger,
+  ) {}
+
+  /**
+   * The long-poll loop. Started by `EventsModule.onApplicationBootstrap` with an
+   * AbortSignal that Nest trips on shutdown, so an in-flight message finishes before the
+   * process exits.
+   */
+  async run(signal: AbortSignal): Promise<void> {
+    this.logger.info('consumer.started', {
+      consumer: this.consumerName,
