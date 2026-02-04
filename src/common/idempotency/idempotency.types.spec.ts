@@ -81,6 +81,26 @@ describe('canonicalJson', () => {
     expect(canonicalJson({ b: 1, a: 2 })).toBe('{"a":2,"b":1}');
   });
 
+  it('sorts nested object keys too', () => {
+    expect(canonicalJson({ z: { y: 1, x: 2 } })).toBe('{"z":{"x":2,"y":1}}');
+  });
+
+  it('leaves array order alone', () => {
+    expect(canonicalJson([3, 1, 2])).toBe('[3,1,2]');
+  });
+
+  /**
+   * `canonicalJson` is @payzeno/contracts', not ours, and it refuses `undefined` at the root:
+   * "the caller did not send a body" is not a value it is willing to invent bytes for.
+   * `fingerprint` is where this repo decides an absent body hashes as `null` — see the
+   * DELETE case above. The local copy that used to live here returned `'null'` here and
+   * `'null'` for `NaN` too, which is the silent-divergence the shared module exists to stop.
+   */
+  it('refuses undefined at the root, and renders null as null', () => {
+    expect(canonicalJson(null)).toBe('null');
+    expect(() => canonicalJson(undefined)).toThrow(TypeError);
+  });
+
   it('drops undefined properties rather than emitting them', () => {
     expect(canonicalJson({ a: 1, b: undefined })).toBe('{"a":1}');
   });
@@ -89,6 +109,16 @@ describe('canonicalJson', () => {
     expect(canonicalJson('x')).toBe('"x"');
     expect(canonicalJson(42)).toBe('42');
     expect(canonicalJson(true)).toBe('true');
+  });
+
+  it('handles an array of objects with divergent key order', () => {
+    expect(canonicalJson([{ b: 1, a: 2 }])).toBe('[{"a":2,"b":1}]');
+  });
+});
+
+describe('isValidIdempotencyKey', () => {
+  it('accepts an ordinary key', () => {
+    expect(isValidIdempotencyKey('order-4471-attempt-1')).toBe(true);
   });
 
   it('accepts a key at exactly the maximum length', () => {
