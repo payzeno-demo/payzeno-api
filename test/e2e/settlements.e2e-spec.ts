@@ -112,4 +112,40 @@ describe('settlements e2e', () => {
     expect(ctx.ledger.callsTo('getSettlementBatch')).toHaveLength(1);
   });
 
+  it('passes 409 settlement_locked through verbatim, with the ledger’s details', async () => {
+    ctx.ledger.rejectNext(
+      'retryReconciliationItem',
+      new LedgerRejectedException('settlement_locked', 409, 'item already settled', {
+        item_id: 'ri_000043',
+        settled_transaction_id: 'ltx_000777',
+      }),
+    );
+
+    const res = await request(ctx.app.getHttpServer())
+      .post(`/v1/settlements/${BATCH_ID}/items/ri_000043/retry`)
+      .set('X-Payzeno-Staff', 'finance')
+      .set('Idempotency-Key', 'settle-retry-locked')
+      .send({ reason: 'racing the sweep' });
+
+    expect(res.status).toBe(409);
+    expect(res.body).toBeApiError('settlement_locked');
+    expect(res.body.error.details).toMatchObject({ settled_transaction_id: 'ltx_000777' });
+  });
+
+  it('does not collapse a ledger rejection into a 502', async () => {
+    ctx.ledger.rejectNext(
+      'retryReconciliationItem',
+      new LedgerRejectedException('batch_not_reconcilable', 422, 'batch is still open'),
+    );
+
+    const res = await request(ctx.app.getHttpServer())
+      .post(`/v1/settlements/${BATCH_ID}/items/ri_000042/retry`)
+      .set('X-Payzeno-Staff', 'finance')
+      .set('Idempotency-Key', 'settle-retry-open-batch')
+      .send({});
+
+    expect(res.status).toBe(422);
+    expect(res.body).toBeApiError('batch_not_reconcilable');
+  });
+
 });
