@@ -12,3 +12,16 @@
  *   client_secret  → never. Nothing role-gated is reachable with a browser credential.
  *
  * Sites: POST/DELETE /v1/api-keys, POST /v1/bank-accounts, POST /v1/webhook_endpoints,
+ * POST /v1/payouts, POST /v1/merchants/:id/users.
+ */
+import { Injectable } from '@nestjs/common';
+import type { CanActivate, ExecutionContext } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+
+import type { UserRole } from '@payzeno/contracts';
+
+import { ROLES_KEY, satisfiesRole } from '../../common/decorators/roles.decorator';
+import { AuthenticationRequiredException, PermissionDeniedException } from '../../common/errors/auth.exceptions';
+
+import type { AuthenticatedRequest } from './base-auth.guard';
+

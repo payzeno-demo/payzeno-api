@@ -40,6 +40,23 @@ export interface CsrfCookieOptions {
 @Injectable()
 export class CsrfService {
   private readonly cookieName: string;
+  private readonly secureCookies: boolean;
+
+  /** Not HttpOnly. See the header comment before "fixing" it. */
+  cookieOptions(): CsrfCookieOptions {
+    return {
+      httpOnly: false,
+      secure: this.secureCookies,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: this.ttlSec * 1000,
+    };
+  }
+
+  /**
+   * The check `SessionGuard` runs first, before it even resolves the session. Constant-time
+   * compare: the token is a secret and a timing oracle on it defeats the scheme.
+   */
   assert(method: string, presented: string | undefined, expected: string): void {
     if (SAFE_METHODS.has(method.toUpperCase())) return;
 
