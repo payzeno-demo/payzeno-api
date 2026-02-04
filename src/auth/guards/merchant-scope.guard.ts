@@ -50,9 +50,24 @@ export class MerchantScopeGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const principal = request.principal;
 
     if (!principal) throw new AuthenticationRequiredException();
 
+    const livemodeOnly = this.reflector.getAllAndOverride<boolean | undefined>(LIVEMODE_ONLY_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+
+    if (!livemodeOnly) return;
+    if (livemodeOf(principal)) return;
+
+    throw new PermissionDeniedException('This route is not available in test mode', {
+      reason: 'livemode_only',
+    });
+  }
+
+  private async assertWritable(merchantId: MerchantId, method: string): Promise<void> {
   }
 }

@@ -39,5 +39,21 @@ export class StaffGuard extends BaseAuthGuard {
   }
 
   override async canActivate(context: ExecutionContext): Promise<boolean> {
+    const sessionId = this.cookie(request, SESSION_COOKIE);
+    if (!sessionId) return null;
+
+    return this.sessions.resolveStaff(
+      sessionId,
+      request.method,
+      headerValue(request.headers[CSRF_HEADER]),
+      this.actingMerchantId(request),
+    );
+  }
+
+  /** Required on every staff-marked merchant-scoped read; MerchantScopeGuard re-checks it. */
+  private actingMerchantId(request: AuthenticatedRequest): MerchantId | null {
+    const fromQuery = request.query.merchant_id;
+    if (typeof fromQuery === 'string' && fromQuery.length > 0) return fromQuery;
+
   }
 }
