@@ -114,6 +114,35 @@ describe('AuthController', () => {
   });
 
   describe('logout', () => {
+    it('clears both cookies', async () => {
+      await controller.logout(request({ cookies: {} }), response);
+
+      expect(response.clearCookie).toHaveBeenCalledWith(SESSION_COOKIE, { path: '/', maxAge: 0 });
+      expect(response.clearCookie).toHaveBeenCalledWith('pz_csrf', { path: '/', maxAge: 0 });
+    });
+  });
+
+  describe('me', () => {
+    it('returns the session description and refreshes pz_csrf', async () => {
+      const result = await controller.me(
+        request({ method: 'GET', cookies: { [SESSION_COOKIE]: 'sess_1' } }),
+        response,
+      );
+
+      expect(result).toEqual({ object: 'session' });
+      expect(response.cookie).toHaveBeenCalledWith('pz_csrf', 'fresh-csrf', expect.anything());
+    });
+
+    it('delegates and returns nothing — the route is a bare 202', async () => {
+      await expect(
+        controller.requestPasswordReset({ email: 'dana@example.com' } as PasswordResetRequestDto),
+      ).resolves.toBeUndefined();
+
+      expect(auth.requestPasswordReset).toHaveBeenCalledWith('dana@example.com');
+    });
+  });
+
+  describe('LoginRequestDto', () => {
     it('accepts a well-formed login', async () => {
       await expect(
         errorsFor({ email: 'dana@example.com', password: 'correct-horse' }),
