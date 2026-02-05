@@ -44,12 +44,20 @@ export class ApiKeyResolver {
   constructor(
     @InjectRepository(ApiKeyEntity) private readonly keys: Repository<ApiKeyEntity>,
     private readonly hasher: ApiKeyHasher,
+    @Inject(CLOCK) private readonly clock: Clock,
+  ) {}
+
+  /** Pure. Exported behaviour so the guard can reject garbage before touching the database. */
+  split(token: string): SplitToken | null {
     const match = TOKEN_PATTERN.exec(token.trim());
     if (!match) return null;
     return { mode: match[1] as 'live' | 'test', keyIdSuffix: match[2], secret: match[3] };
   }
 
   async resolve(token: string): Promise<AuthPrincipal> {
+    const split = this.split(token);
+    if (!split) throw new InvalidApiKeyException();
+
     const lookupHash = this.hasher.lookupHash(split.secret);
     const verified = await this.hasher.verifySecret(candidate.secretHash, split.secret);
     if (!verified) throw new InvalidApiKeyException();
