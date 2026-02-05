@@ -45,6 +45,18 @@ export function makeScopedApiKeyPrincipal(
   return makeApiKeyPrincipal({ merchant_id: merchantId, scopes });
 }
 
+export function makeSessionPrincipal(
+  overrides: Partial<Extract<AuthPrincipal, { kind: 'dashboard_session' }>> = {},
+): AuthPrincipal {
+  return {
+    kind: 'dashboard_session',
+    merchant_id: TEST_MERCHANT_ID,
+    user_id: TEST_USER_ID,
+    role: 'owner',
+    ...overrides,
+  };
+}
+
 export function makeSessionPrincipalWithRole(role: UserRole): AuthPrincipal {
   return makeSessionPrincipal({ role });
 }
@@ -52,6 +64,13 @@ export function makeSessionPrincipalWithRole(role: UserRole): AuthPrincipal {
 /** `POST /v1/settlements/:b/items/:i/retry` is `@StaffOnly('finance')` and livemode-only. */
 export function makeFinanceStaffPrincipal(actingMerchantId: MerchantId | null = null): AuthPrincipal {
   return makeStaffPrincipal({ role: 'finance', acting_merchant_id: actingMerchantId });
+}
+
+export function makeStaffPrincipalWithRole(
+  role: StaffRole,
+  actingMerchantId: MerchantId | null = TEST_MERCHANT_ID,
+): AuthPrincipal {
+  return makeStaffPrincipal({ role, acting_merchant_id: actingMerchantId });
 }
 
 export function makeInternalPrincipal(
