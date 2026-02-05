@@ -37,8 +37,21 @@ export function makeApiKeyPrincipal(
   };
 }
 
+/** An api-key principal holding exactly the scopes given — for `@RequiredScopes` specs. */
+export function makeScopedApiKeyPrincipal(
+  scopes: ApiKeyScope[],
+  merchantId: MerchantId = TEST_MERCHANT_ID,
+): AuthPrincipal {
+  return makeApiKeyPrincipal({ merchant_id: merchantId, scopes });
+}
+
 export function makeSessionPrincipalWithRole(role: UserRole): AuthPrincipal {
   return makeSessionPrincipal({ role });
+}
+
+/** `POST /v1/settlements/:b/items/:i/retry` is `@StaffOnly('finance')` and livemode-only. */
+export function makeFinanceStaffPrincipal(actingMerchantId: MerchantId | null = null): AuthPrincipal {
+  return makeStaffPrincipal({ role: 'finance', acting_merchant_id: actingMerchantId });
 }
 
 export function makeInternalPrincipal(

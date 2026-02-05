@@ -64,5 +64,32 @@ describe('ApiKeyGuard', () => {
   });
 
   describe('@RequiredScopes', () => {
+    it('passes when the granted set covers the requirement', async () => {
+      const { context } = guardContext(request);
+
+      await expect(guardWith(['charges:read']).canActivate(context)).resolves.toBe(true);
+    });
+
+    it('403s naming the first missing scope', async () => {
+      const { context } = guardContext(request);
+
+      const err = await rejectsWith(
+        guardWith(['payouts:write']).canActivate(context),
+        PermissionDeniedException,
+      );
+
+      expect(err.httpStatus).toBe(403);
+      expect(err.message).toContain('payouts:write');
+    });
+
+    it('does not run the scope check for a principal that is not an API key', async () => {
+      // A composite route where SessionGuard won first: the principal on the request is a
+      // dashboard session, and asserting API-key scopes against it would deny every console
+      // user on a scope-marked handler.
+      const { context } = guardContext({ ...request, principal: makeSessionPrincipal() });
+
+      await expect(guardWith(['payouts:write']).canActivate(context)).resolves.toBe(true);
+      expect(resolver.resolve).not.toHaveBeenCalled();
+    });
   });
 });
