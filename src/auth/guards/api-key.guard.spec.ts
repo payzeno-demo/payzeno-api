@@ -64,10 +64,18 @@ describe('ApiKeyGuard', () => {
   });
 
   describe('@RequiredScopes', () => {
+    const request = { headers: { authorization: 'Bearer sk_live_ab12cd34_verysecretvaluehere' } };
+
     it('passes when the granted set covers the requirement', async () => {
       const { context } = guardContext(request);
 
       await expect(guardWith(['charges:read']).canActivate(context)).resolves.toBe(true);
+    });
+
+    it('passes on an implied scope — refunds:write grants refunds:read', async () => {
+      const { context } = guardContext(request);
+
+      await expect(guardWith(['refunds:read']).canActivate(context)).resolves.toBe(true);
     });
 
     it('403s naming the first missing scope', async () => {
@@ -80,6 +88,12 @@ describe('ApiKeyGuard', () => {
 
       expect(err.httpStatus).toBe(403);
       expect(err.message).toContain('payouts:write');
+    });
+
+    it('is a no-op when the handler declares no scopes', async () => {
+      const { context } = guardContext(request);
+
+      await expect(guardWith().canActivate(context).then(() => true)).resolves.toBe(true);
     });
 
     it('does not run the scope check for a principal that is not an API key', async () => {

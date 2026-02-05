@@ -101,6 +101,14 @@ describe('AuthController', () => {
       );
     });
 
+    it('sets both cookies', async () => {
+      await controller.login(body, undefined, request(), response);
+
+      expect(response.cookie).toHaveBeenCalledTimes(2);
+      expect(response.cookie).toHaveBeenCalledWith(SESSION_COOKIE, 'sess_1', expect.anything());
+      expect(response.cookie).toHaveBeenCalledWith('pz_csrf', 'csrf-token', expect.anything());
+    });
+
     it('sets pz_session HttpOnly and pz_csrf readable', async () => {
       await controller.login(body, undefined, request(), response);
 
@@ -169,6 +177,12 @@ describe('AuthController', () => {
   });
 
   describe('LoginRequestDto', () => {
+    async function errorsFor(payload: Record<string, unknown>): Promise<string[]> {
+      const dto = plainToInstance(LoginRequestDto, payload);
+      const errors = await validate(dto);
+      return errors.map((e) => e.property);
+    }
+
     it('accepts a well-formed login', async () => {
       await expect(
         errorsFor({ email: 'dana@example.com', password: 'correct-horse' }),
@@ -177,6 +191,12 @@ describe('AuthController', () => {
 
     it('rejects a malformed address', async () => {
       await expect(errorsFor({ email: 'dana', password: 'correct-horse' })).resolves.toContain('email');
+    });
+
+    it('rejects a password under 8 characters', async () => {
+      await expect(errorsFor({ email: 'dana@example.com', password: 'short' })).resolves.toContain(
+        'password',
+      );
     });
 
     it('rejects a 4MB "password" — argon2 will hash whatever it is given', async () => {
