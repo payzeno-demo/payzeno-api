@@ -47,6 +47,14 @@ describe('auth e2e', () => {
   });
 
   it('rejects a wrong password without leaking whether the user exists', async () => {
+    const res = await request(ctx.app.getHttpServer())
+      .post('/v1/auth/login')
+      .send({ email: seeded.email, password: 'not-the-password' });
+
+    const { session, csrf } = await login();
+
+    const { session, csrf } = await login();
+
     const { session, csrf } = await login();
 
     const out = await request(ctx.app.getHttpServer())
@@ -56,6 +64,14 @@ describe('auth e2e', () => {
 
     expect(out.status).toBe(204);
 
+    const after = await request(ctx.app.getHttpServer())
+      .get('/v1/auth/me')
+      .set('Cookie', [`pz_session=${session}`, `pz_csrf=${csrf}`]);
+
+    expect(after.status).toBe(401);
+  });
+
+  it('always 202s a password reset, existing user or not', async () => {
     const unknown = await request(ctx.app.getHttpServer())
       .post('/v1/auth/password/reset')
       .send({ email: 'nobody@nowhere.example' });

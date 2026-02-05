@@ -33,12 +33,16 @@ export class StaffGuard extends BaseAuthGuard {
 
   constructor(
     private readonly sessions: SessionService,
+    private readonly staffUsers: StaffUsersService,
     private readonly reflector: Reflector,
   ) {
     super();
   }
 
   override async canActivate(context: ExecutionContext): Promise<boolean> {
+    const activated = await super.canActivate(context);
+    if (!activated) return false;
+
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const principal = request.principal;
 
