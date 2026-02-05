@@ -39,6 +39,25 @@ export class StaffGuard extends BaseAuthGuard {
   }
 
   override async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
+    const principal = request.principal;
+
+    if (principal?.kind !== 'staff_session') {
+      throw PermissionDeniedException.staffRoleRequired(required);
+    }
+
+    if (!satisfiesStaffRole(principal.role, required)) {
+      throw PermissionDeniedException.staffRoleRequired(required);
+    }
+
+    // A disabled operator keeps a live cookie until it expires; the row is the authority.
+    // `resolveActive` throws PermissionDeniedException when the account is gone or disabled.
+    await this.staffUsers.resolveActive(principal.staff_id);
+
+    return true;
+  }
+
+  protected async authenticate(request: AuthenticatedRequest): Promise<AuthPrincipal | null> {
     const sessionId = this.cookie(request, SESSION_COOKIE);
     if (!sessionId) return null;
 
