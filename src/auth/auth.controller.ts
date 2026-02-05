@@ -84,8 +84,27 @@ export class AuthController {
     return outcome.body;
   }
 
+  /** `POST /v1/auth/logout`. Clears both cookies with the same flags they were set with. */
+  @Post('logout')
   @HttpCode(204)
   @UseGuards(SessionGuard)
+  @AuditLog('auth.logout', { resourceType: 'session' })
+  async logout(
+    @Req() request: AuthenticatedRequest,
+    @Res({ passthrough: true }) response: CookieResponse,
+  ): Promise<void> {
+    await this.auth.logout(request.cookies?.[SESSION_COOKIE]);
+
+    for (const expired of this.sessions.expiredCookies()) {
+      response.clearCookie(expired.name, expired.options);
+    }
+  }
+
+  /**
+   * `GET /v1/auth/me`. The console's bootstrap call — it is what tells the SPA which merchant
+   * it is looking at — and it refreshes `pz_csrf` so a long-lived tab keeps a valid token.
+   */
+  @Get('me')
   @UseGuards(SessionGuard)
   async me(
     @Req() request: AuthenticatedRequest,
@@ -112,8 +131,24 @@ export class AuthController {
 }
 
 function headerOf(request: AuthenticatedRequest, name: string): string | null {
+  const raw = request.headers[name];
+  if (Array.isArray(raw)) return raw[0] ?? null;
+  return raw ?? null;
+}
+
+/**
+ * Declared here rather than in a `dto/` folder: `src/auth` has no DTO directory by design —
+ * two request shapes do not earn one. It `implements LoginRequest`; it does not restate it.
+ */
+export class LoginRequestDto implements LoginRequest {
   @IsEmail()
   @IsString()
+  @MinLength(8)
+  @MaxLength(256)
+  password!: string;
+}
+
+export class PasswordResetRequestDto {
   @IsEmail()
   @MaxLength(320)
   email!: string;

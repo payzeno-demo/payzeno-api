@@ -55,6 +55,27 @@ export class MerchantScopeGuard implements CanActivate {
 
     if (!principal) throw new AuthenticationRequiredException();
 
+    const merchantId = this.resolveScope(principal, options);
+    this.assertPathMatches(request, merchantId);
+    this.assertLivemode(context, principal);
+
+    setLivemode(livemodeOf(principal));
+
+    if (!SAFE_METHODS.has(request.method.toUpperCase())) {
+      await this.assertWritable(merchantId, request.method);
+    }
+
+    return true;
+  }
+
+  private resolveScope(principal: AuthPrincipal, options: MerchantScopedOptions): MerchantId {
+    const pathMerchantId = request.params.merchantId;
+    if (pathMerchantId && pathMerchantId !== merchantId) {
+      throw new MerchantNotFoundException(pathMerchantId);
+    }
+  }
+
+  private assertLivemode(context: ExecutionContext, principal: AuthPrincipal): void {
     const livemodeOnly = this.reflector.getAllAndOverride<boolean | undefined>(LIVEMODE_ONLY_KEY, [
       context.getHandler(),
       context.getClass(),
@@ -69,5 +90,15 @@ export class MerchantScopeGuard implements CanActivate {
   }
 
   private async assertWritable(merchantId: MerchantId, method: string): Promise<void> {
+    const merchant = await this.merchants.findById(merchantId);
+
+    if (!merchant) throw new MerchantNotFoundException(merchantId);
+
+    if (WRITE_BLOCKED_STATUSES.has(merchant.status)) {
+      throw new MerchantRestrictedException(
+        merchantId,
+        `merchant status ${merchant.status} may not ${method.toUpperCase()}`,
+      );
+    }
   }
 }

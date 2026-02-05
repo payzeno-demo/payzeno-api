@@ -42,6 +42,17 @@ export class CsrfService {
   private readonly cookieName: string;
   private readonly secureCookies: boolean;
 
+  constructor(@Inject(API_CONFIG) config: ApiConfig) {
+    this.cookieName = config.auth.csrfCookieName;
+    this.ttlSec = config.auth.csrfTtlSeconds;
+    // Secure cookies over plain HTTP never reach the browser, and dev is plain HTTP.
+    this.secureCookies = config.runtime.nodeEnv === 'production';
+  }
+
+  get name(): string {
+    return this.cookieName;
+  }
+
   /** Not HttpOnly. See the header comment before "fixing" it. */
   cookieOptions(): CsrfCookieOptions {
     return {
