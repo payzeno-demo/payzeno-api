@@ -52,6 +52,10 @@ describe('api-key scopes', () => {
   });
 
   describe('DEFAULT_SCOPES', () => {
+    it('is every read scope', () => {
+      expect(DEFAULT_SCOPES).toEqual(READ_SCOPES);
+    });
+
     it('grants no write scope — a merchant who wants to move money has to say so', () => {
       for (const scope of DEFAULT_SCOPES) {
         expect(scope.endsWith(':write')).toBe(false);
@@ -60,6 +64,15 @@ describe('api-key scopes', () => {
   });
 
   describe('IMPLIED_SCOPES', () => {
+    it('only maps scopes that exist', () => {
+      for (const [scope, implied] of Object.entries(IMPLIED_SCOPES)) {
+        expect(isApiKeyScope(scope)).toBe(true);
+        for (const target of implied ?? []) {
+          expect(isApiKeyScope(target)).toBe(true);
+        }
+      }
+    });
+
     it('gives payment_intents:write the charge read as well', () => {
       // A key that can create an intent and cannot read the resulting charge is useless,
       // and every merchant integrating hit this in the first hour.
@@ -74,6 +87,16 @@ describe('api-key scopes', () => {
       expect(expandScopes([])).toEqual([]);
     });
 
+    it('expands payouts:write into both of its reads', () => {
+      expect(expandScopes(['payouts:write']).sort()).toEqual([
+        'balance:read',
+        'payouts:read',
+        'payouts:write',
+      ]);
+    });
+  });
+
+  describe('parseScopes', () => {
     it('passes known scopes through unchanged', () => {
       expect(parseScopes(['refunds:read', 'refunds:write'])).toEqual(['refunds:read', 'refunds:write']);
     });
@@ -96,6 +119,10 @@ describe('api-key scopes', () => {
   });
 
   describe('coversRequired', () => {
+    it('is true when the grant matches exactly', () => {
+      expect(coversRequired(['refunds:read'], ['refunds:read'])).toBe(true);
+    });
+
     it('is true through an implication', () => {
       expect(coversRequired(['refunds:write'], ['refunds:read'])).toBe(true);
     });
@@ -114,6 +141,12 @@ describe('api-key scopes', () => {
   });
 
   describe('firstMissingScope', () => {
+    it('names the missing scope, in the order the handler asked for them', () => {
+      expect(firstMissingScope(['refunds:read'], ['refunds:read', 'disputes:write'])).toBe(
+        'disputes:write',
+      );
+    });
+
     it('is null when everything is covered', () => {
       expect(firstMissingScope(['payouts:write'], ['balance:read'])).toBeNull();
     });
