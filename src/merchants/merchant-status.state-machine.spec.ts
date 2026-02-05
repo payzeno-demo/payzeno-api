@@ -63,6 +63,35 @@ describe('MerchantStatusStateMachine', () => {
     }
   });
 
+  describe('eventFor', () => {
+    it('translates the console’s "put this merchant in state X" into the event', () => {
+      expect(machine.eventFor('active', 'restricted')).toBe('restrict');
+      expect(machine.eventFor('restricted', 'active')).toBe('reinstate');
+      expect(machine.eventFor('pending_review', 'active')).toBe('approve');
+      expect(machine.eventFor('active', 'closed')).toBe('close');
+    });
+
+    it('refuses a target the table has no edge to', () => {
+      expect(() => machine.eventFor('active', 'pending_review')).toThrow(
+        InvalidMerchantTransitionException,
+      );
+      expect(() => machine.eventFor('closed', 'active')).toThrow(InvalidMerchantTransitionException);
+    });
+
+    it('round-trips with apply for every legal edge', () => {
+      const pairs: Array<[MerchantStatus, MerchantStatus]> = [
+        ['pending_review', 'active'],
+        ['active', 'suspended'],
+        ['suspended', 'active'],
+        ['restricted', 'closed'],
+      ];
+
+      for (const [from, to] of pairs) {
+        expect(machine.apply(from, machine.eventFor(from, to))).toBe(to);
+      }
+    });
+  });
+
   describe('isFrozen', () => {
     it('is true for the statuses that stop money moving in either direction', () => {
       expect(machine.isFrozen('suspended')).toBe(true);
@@ -77,4 +106,7 @@ describe('MerchantStatusStateMachine', () => {
     });
   });
 
+  it('names the aggregate so InvalidStateTransitionException details are attributable', () => {
+    expect(machine.entity).toBe('merchant');
+  });
 });
