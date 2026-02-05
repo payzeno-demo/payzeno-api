@@ -37,6 +37,21 @@ export function makeApiKeyPrincipal(
   };
 }
 
+export function makeSessionPrincipalWithRole(role: UserRole): AuthPrincipal {
+  return makeSessionPrincipal({ role });
+}
+
+export function makeInternalPrincipal(
+  overrides: Partial<Extract<AuthPrincipal, { kind: 'internal_service' }>> = {},
+): AuthPrincipal {
+  return {
+    kind: 'internal_service',
+    service: 'payzeno-ledger',
+    scopes: ['internal:read', 'internal:write'],
+    ...overrides,
+  };
+}
+
 /** Every variant, for the guards' "rejects the wrong principal kind" tables. */
 export function allPrincipalKinds(): AuthPrincipal[] {
   return [

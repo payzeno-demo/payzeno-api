@@ -40,6 +40,17 @@ describe('ApiKeyHasher', () => {
       expect(hasher.lookupHash('s3cr3t')).toBe(expected);
     });
 
+    it('is deterministic — the unique index depends on it', () => {
+      expect(hasher.lookupHash('s3cr3t')).toBe(hasher.lookupHash('s3cr3t'));
+    });
+
+    it('changes completely when the pepper rotates', () => {
+      const rotated = new ApiKeyHasher(config('a-different-pepper'));
+
+      // This is why rotating API_KEY_PEPPER invalidates every live key in the environment.
+      expect(rotated.lookupHash('s3cr3t')).not.toBe(hasher.lookupHash('s3cr3t'));
+    });
+
     it('verifies the secret it hashed', async () => {
       const stored = await hasher.hashSecret('s3cr3t');
 
@@ -52,6 +63,15 @@ describe('ApiKeyHasher', () => {
       await expect(hasher.verifySecret(stored, 'not-it')).resolves.toBe(false);
     });
 
+    it('returns false rather than throwing on a corrupt stored hash', async () => {
+      (argon2.verify as jest.Mock).mockRejectedValueOnce(new Error('pchstr'));
+
+      // A corrupt row must fail authentication, not take the endpoint down for every caller.
+      await expect(hasher.verifySecret('not-a-hash', 'anything')).resolves.toBe(false);
+    });
+  });
+
+  describe('mint', () => {
     it('never mints the same secret twice', async () => {
       const [a, b] = await Promise.all([hasher.mint(), hasher.mint()]);
 
@@ -74,6 +94,10 @@ describe('ApiKeyHasher', () => {
 
     it('is true for equal strings', () => {
       expect(ApiKeyHasher.constantTimeEquals('abc123', 'abc123')).toBe(true);
+    });
+
+    it('is false for different strings of the same length', () => {
+      expect(ApiKeyHasher.constantTimeEquals('abc123', 'abc124')).toBe(false);
     });
 
   });
