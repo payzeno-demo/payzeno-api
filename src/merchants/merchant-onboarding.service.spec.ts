@@ -25,7 +25,50 @@ import { FixedClock } from 'test/support/fixed-clock';
 describe('MerchantOnboardingService', () => {
   const clock = new FixedClock('2026-02-01T10:00:00.000Z');
 
+  let ledger: { bootstrapAccounts: jest.Mock };
   let service: MerchantOnboardingService;
+
+  beforeEach(() => {
+    merchants = {
+      insertMapped: jest.fn().mockResolvedValue(undefined),
+      findByLegalName: jest.fn().mockResolvedValue(null),
+    };
+    ledger = { bootstrapAccounts: jest.fn().mockResolvedValue({ accounts: [], created: 9 }) };
+    events = { publish: jest.fn().mockResolvedValue(undefined) };
+    transactions = {
+      runInTransaction: jest.fn(async (cb: (m: EntityManager) => Promise<unknown>) =>
+        cb({} as EntityManager),
+      ),
+    } as unknown as TransactionManager;
+
+    service = new MerchantOnboardingService(
+      merchants as unknown as MerchantRepository,
+      transactions,
+      ledger as unknown as LedgerHttpClient,
+      new IdFactory(),
+      events as unknown as EventPublisher,
+      clock,
+      new NoopLogger(),
+    );
+  });
+
+  it('normalises the inputs the console lets a human type', async () => {
+    const merchant = await service.onboard(request, true, 'stf_operator');
+
+    expect(merchant.legalName).toBe('Aurora Coffee Roasters Ltd');
+    expect(merchant.displayName).toBe('Aurora Coffee');
+    expect(merchant.country).toBe('GB');
+  });
+
+  it('applies the data-model column defaults for a merchant nobody has priced', async () => {
+    const merchant = await service.onboard(request, true, 'stf_operator');
+
+    expect(merchant.platformFeeBps).toBe(290);
+    expect(merchant.platformFeeFixedMinor).toBe(30);
+    expect(merchant.payoutDelayDays).toBe(2);
+    expect(merchant.settlementToleranceMinor).toBe(100);
+    expect(merchant.reserveBps).toBe(0);
+  });
 
   describe('duplicate detection', () => {
     it('rejects a legal name already onboarded in the same country', async () => {
