@@ -30,3 +30,13 @@ import type { ApiError, ErrorCode } from '@payzeno/contracts';
 import { ApiException, ValidationException } from '../errors/api.exception';
 import { RateLimitedException } from '../errors/business.exceptions';
 import { IdempotencyInProgressException } from '../errors/idempotency.exceptions';
+import { LedgerRejectedException } from '../errors/upstream.exceptions';
+import { PAYZENO_LOGGER, type PayzenoLogger } from '../logging/logger';
+import { currentRequestId } from '../logging/request-context';
+
+interface HttpResponse {
+  status(code: number): HttpResponse;
+  setHeader(name: string, value: string): void;
+  json(body: unknown): void;
+}
+

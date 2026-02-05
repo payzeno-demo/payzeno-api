@@ -17,6 +17,11 @@ import type { IdempotencyHarness } from 'test/support/idempotency-harness';
  */
 describe('RedisIdempotencyStore', () => {
   let harness: IdempotencyHarness;
+  beforeEach(() => {
+    harness = buildRedisIdempotencyStore();
+    store = harness.store as RedisIdempotencyStore;
+  });
+
   it('claims an unseen key through the CAS script', async () => {
     await expect(store.begin(TEST_MERCHANT_ID, 'k1', 'fp1')).resolves.toEqual({
       outcome: 'proceed',
@@ -36,12 +41,30 @@ describe('RedisIdempotencyStore', () => {
     }
   });
 
+  it('preserves the fingerprint across complete(), so a later mismatch is still caught', async () => {
+    await store.begin(TEST_MERCHANT_ID, 'k1', 'fp1');
+    await store.complete(TEST_MERCHANT_ID, 'k1', 201, { id: 'pi_1' });
+
+    await expect(store.begin(TEST_MERCHANT_ID, 'k1', 'fp-other')).resolves.toEqual({
+      outcome: 'fingerprint_mismatch',
+    });
+  });
+
   it('lets a failed attempt be re-claimed with the same fingerprint', async () => {
     await store.begin(TEST_MERCHANT_ID, 'k1', 'fp1');
     await store.fail(TEST_MERCHANT_ID, 'k1');
 
     await expect(store.begin(TEST_MERCHANT_ID, 'k1', 'fp1')).resolves.toEqual({
       outcome: 'proceed',
+    });
+  });
+
+  it('does not re-claim a failed attempt for a different fingerprint', async () => {
+    await store.begin(TEST_MERCHANT_ID, 'k1', 'fp1');
+    await store.fail(TEST_MERCHANT_ID, 'k1');
+
+    await expect(store.begin(TEST_MERCHANT_ID, 'k1', 'fp-other')).resolves.toEqual({
+      outcome: 'fingerprint_mismatch',
     });
   });
 
@@ -52,6 +75,15 @@ describe('RedisIdempotencyStore', () => {
 
     // The 60s failure TTL has lapsed; the key is simply gone.
     await expect(store.begin(TEST_MERCHANT_ID, 'k1', 'fp-anything')).resolves.toEqual({
+      outcome: 'proceed',
+    });
+  });
+
+  it('lets the lease expire naturally and re-claims the key', async () => {
+    await store.begin(TEST_MERCHANT_ID, 'k1', 'fp1');
+    harness.clock.advanceSeconds(31);
+
+    await expect(store.begin(TEST_MERCHANT_ID, 'k1', 'fp1')).resolves.toEqual({
       outcome: 'proceed',
     });
   });
