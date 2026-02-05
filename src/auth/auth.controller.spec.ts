@@ -101,6 +101,24 @@ describe('AuthController', () => {
       );
     });
 
+    it('sets both cookies', async () => {
+      await controller.login(body, undefined, request(), response);
+
+      expect(response.cookie).toHaveBeenCalledTimes(2);
+      expect(response.cookie).toHaveBeenCalledWith(SESSION_COOKIE, 'sess_1', expect.anything());
+      expect(response.cookie).toHaveBeenCalledWith('pz_csrf', 'csrf-token', expect.anything());
+    });
+
+    it('sets pz_session HttpOnly and pz_csrf readable', async () => {
+      await controller.login(body, undefined, request(), response);
+
+      const [, , sessionOptions] = response.cookie.mock.calls[0];
+      const [, , csrfOptions] = response.cookie.mock.calls[1];
+
+      expect(sessionOptions).toMatchObject({ httpOnly: true });
+      expect(csrfOptions).toMatchObject({ httpOnly: false });
+    });
+
     it('tolerates a request with no user agent', async () => {
       await controller.login(body, undefined, request({ headers: {} }), response);
 
@@ -114,6 +132,57 @@ describe('AuthController', () => {
   });
 
   describe('logout', () => {
+    it('destroys the session named by the cookie', async () => {
+      await controller.logout(request({ cookies: { [SESSION_COOKIE]: 'sess_1' } }), response);
+
+      expect(auth.logout).toHaveBeenCalledWith('sess_1');
+    });
+
+    it('clears both cookies', async () => {
+      await controller.logout(request({ cookies: {} }), response);
+
+      expect(response.clearCookie).toHaveBeenCalledWith(SESSION_COOKIE, { path: '/', maxAge: 0 });
+      expect(response.clearCookie).toHaveBeenCalledWith('pz_csrf', { path: '/', maxAge: 0 });
+    });
+  });
+
+  describe('me', () => {
+    it('returns the session description and refreshes pz_csrf', async () => {
+      const result = await controller.me(
+        request({ method: 'GET', cookies: { [SESSION_COOKIE]: 'sess_1' } }),
+        response,
+      );
+
+      expect(result).toEqual({ object: 'session' });
+      expect(response.cookie).toHaveBeenCalledWith('pz_csrf', 'fresh-csrf', expect.anything());
+    });
+
+    it('throws when the cookie is missing even though the guard let it through', async () => {
+      // Belt and braces: SessionGuard should have rejected this, and if it did not, /me is
+      // not the place to find out by dereferencing undefined.
+      await expect(controller.me(request({ method: 'GET', cookies: {} }), response)).rejects.toBeInstanceOf(
+        AuthenticationRequiredException,
+      );
+    });
+  });
+
+  describe('password reset', () => {
+    it('delegates and returns nothing — the route is a bare 202', async () => {
+      await expect(
+        controller.requestPasswordReset({ email: 'dana@example.com' } as PasswordResetRequestDto),
+      ).resolves.toBeUndefined();
+
+      expect(auth.requestPasswordReset).toHaveBeenCalledWith('dana@example.com');
+    });
+  });
+
+  describe('LoginRequestDto', () => {
+    async function errorsFor(payload: Record<string, unknown>): Promise<string[]> {
+      const dto = plainToInstance(LoginRequestDto, payload);
+      const errors = await validate(dto);
+      return errors.map((e) => e.property);
+    }
+
     it('accepts a well-formed login', async () => {
       await expect(
         errorsFor({ email: 'dana@example.com', password: 'correct-horse' }),
@@ -122,6 +191,12 @@ describe('AuthController', () => {
 
     it('rejects a malformed address', async () => {
       await expect(errorsFor({ email: 'dana', password: 'correct-horse' })).resolves.toContain('email');
+    });
+
+    it('rejects a password under 8 characters', async () => {
+      await expect(errorsFor({ email: 'dana@example.com', password: 'short' })).resolves.toContain(
+        'password',
+      );
     });
 
     it('rejects a 4MB "password" — argon2 will hash whatever it is given', async () => {

@@ -64,6 +64,67 @@ describe('ApiKeyResolver', () => {
       });
     });
 
+    it('splits a test token', () => {
+      expect(resolver.split('sk_test_AB12CD34_abcdefghijklmnop')?.mode).toBe('test');
+    });
+
+    it('tolerates surrounding whitespace', () => {
+      expect(resolver.split('  sk_live_AB12CD34_abcdefghijklmnop  ')).not.toBeNull();
+    });
+
+    it.each([
+      ['a session cookie value', 'ZmFrZS1zZXNzaW9uLWlk'],
+      ['a client secret', 'pi_01HQ8ZZZ_secret_abc'],
+      ['the pk_ prefix nobody should be using', 'pk_live_AB12CD34_abcdefghijklmnop'],
+      ['a truncated secret', 'sk_live_AB12CD34_short'],
+      ['no secret segment at all', 'sk_live_AB12CD34'],
+      ['the empty string', ''],
+    ])('returns null for %s', (_label, token) => {
+      expect(resolver.split(token)).toBeNull();
+    });
+  });
+
+  describe('resolveEntity', () => {
+    const TOKEN = 'sk_live_AB12CD34_abcdefghijklmnop';
+
+    it('looks the key up by the HMAC of the secret, not by the id suffix', async () => {
+      keys.findOne.mockResolvedValue(row());
+
+      await resolver.resolveEntity(TOKEN);
+
+      expect(hasher.lookupHash).toHaveBeenCalledWith('abcdefghijklmnop');
+      expect(keys.findOne).toHaveBeenCalledWith({
+        where: { lookupHash: 'hmac(abcdefghijklmnop)' },
+      });
+    });
+
+    it('verifies the secret against the stored argon2 hash', async () => {
+      keys.findOne.mockResolvedValue(row());
+
+      await resolver.resolveEntity(TOKEN);
+
+      expect(hasher.verifySecret).toHaveBeenCalledWith('$argon2id$stored', 'abcdefghijklmnop');
+    });
+
+    it('returns the row on success', async () => {
+      const entity = row();
+      keys.findOne.mockResolvedValue(entity);
+
+      await expect(resolver.resolveEntity(TOKEN)).resolves.toBe(entity);
+    });
+
+    it('rejects a malformed token without touching the database', async () => {
+      await expect(resolver.resolveEntity('garbage')).rejects.toBeInstanceOf(InvalidApiKeyException);
+
+      expect(keys.findOne).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unknown key', async () => {
+      keys.findOne.mockResolvedValue(null);
+
+      await expect(resolver.resolveEntity(TOKEN)).rejects.toBeInstanceOf(InvalidApiKeyException);
+    });
+
     it('rejects a wrong secret', async () => {
       keys.findOne.mockResolvedValue(row());
       hasher.verifySecret.mockResolvedValue(false);
@@ -76,6 +137,14 @@ describe('ApiKeyResolver', () => {
       keys.findOne.mockResolvedValue(row({ revokedAt: new Date('2026-02-01T00:00:00.000Z') }));
 
       await expect(resolver.resolveEntity(TOKEN)).resolves.toBeDefined();
+    });
+
+    it('rejects a sk_test_ token whose row is a live key', async () => {
+      keys.findOne.mockResolvedValue(row({ mode: 'live' }));
+
+      await expect(
+        resolver.resolveEntity('sk_test_AB12CD34_abcdefghijklmnop'),
+      ).rejects.toBeInstanceOf(InvalidApiKeyException);
     });
 
     it('gives every failure the same message — no enumeration oracle', async () => {
@@ -98,5 +167,18 @@ describe('ApiKeyResolver', () => {
   });
 
   describe('resolve', () => {
+    it('is derived from the secret HMAC and is stable per key', () => {
+      const first = resolver.bucketKeyFor('sk_live_AB12CD34_abcdefghijklmnop');
+      const second = resolver.bucketKeyFor('sk_live_ZZZZZZZZ_abcdefghijklmnop');
+
+      // The id suffix is decoration; the bucket follows the secret.
+      expect(first).toBe(second);
+      expect(first).toHaveLength(16);
+    });
+
+    it('is null for something that is not a Payzeno key', () => {
+      expect(resolver.bucketKeyFor('Bearer nonsense')).toBeNull();
+    });
+
   });
 });

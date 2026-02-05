@@ -90,6 +90,15 @@ export class LedgerHttpClient extends BaseHttpClient {
 
   // -- accounts & balances -------------------------------------------------
 
+  bootstrapAccounts(merchantId: MerchantId, currency: CurrencyCode, livemode = true): Promise<BootstrapAccountsResponse> {
+    return this.request<BootstrapAccountsResponse, { merchant_id: MerchantId; currency: CurrencyCode; livemode: boolean }>({
+      method: 'POST',
+      path: '/internal/v1/accounts/bootstrap',
+      body: { merchant_id: merchantId, currency, livemode },
+      idempotencyKey: `bootstrap:${merchantId}:${currency}`,
+    });
+  }
+
   getBalance(merchantId: MerchantId, query: BalanceQuery = {}): Promise<Balance> {
     return this.get<Balance>(`/internal/v1/balances/${encodeURIComponent(merchantId)}`, { ...query });
   }

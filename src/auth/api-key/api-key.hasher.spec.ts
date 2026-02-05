@@ -40,6 +40,26 @@ describe('ApiKeyHasher', () => {
       expect(hasher.lookupHash('s3cr3t')).toBe(expected);
     });
 
+    it('is deterministic — the unique index depends on it', () => {
+      expect(hasher.lookupHash('s3cr3t')).toBe(hasher.lookupHash('s3cr3t'));
+    });
+
+    it('changes completely when the pepper rotates', () => {
+      const rotated = new ApiKeyHasher(config('a-different-pepper'));
+
+      // This is why rotating API_KEY_PEPPER invalidates every live key in the environment.
+      expect(rotated.lookupHash('s3cr3t')).not.toBe(hasher.lookupHash('s3cr3t'));
+    });
+
+    it('hashes with argon2id at the OWASP baseline', async () => {
+      await hasher.hashSecret('s3cr3t');
+
+      expect(argon2.hash).toHaveBeenCalledWith(
+        's3cr3t',
+        expect.objectContaining({ memoryCost: 65_536, timeCost: 3, parallelism: 4 }),
+      );
+    });
+
     it('verifies the secret it hashed', async () => {
       const stored = await hasher.hashSecret('s3cr3t');
 
@@ -50,6 +70,24 @@ describe('ApiKeyHasher', () => {
       const stored = await hasher.hashSecret('s3cr3t');
 
       await expect(hasher.verifySecret(stored, 'not-it')).resolves.toBe(false);
+    });
+
+    it('returns false rather than throwing on a corrupt stored hash', async () => {
+      (argon2.verify as jest.Mock).mockRejectedValueOnce(new Error('pchstr'));
+
+      // A corrupt row must fail authentication, not take the endpoint down for every caller.
+      await expect(hasher.verifySecret('not-a-hash', 'anything')).resolves.toBe(false);
+    });
+  });
+
+  describe('mint', () => {
+    it('returns a secret with both of its hashes and the display suffix', async () => {
+      const minted = await hasher.mint();
+
+      expect(minted.secret).toHaveLength(32); // 24 bytes, base64url
+      expect(minted.lookupHash).toBe(hasher.lookupHash(minted.secret));
+      expect(minted.secretHash).toBe(`$argon2id$fake$${minted.secret}`);
+      expect(minted.lastFour).toBe(minted.secret.slice(-4));
     });
 
     it('never mints the same secret twice', async () => {
@@ -72,8 +110,19 @@ describe('ApiKeyHasher', () => {
       expect(token).toBe('sk_live_AB12CD34_the-secret-part');
     });
 
+    it('uses sk_ for test mode too — pk_ would read as publishable', () => {
+      // A merchant who reads `pk_` ships a server bearer credential in browser JavaScript.
+      expect(hasher.formatToken('test', 'ak_01HQ8ZZZAB12CD34', 'x')).toMatch(/^sk_test_/);
+    });
+  });
+
+  describe('constantTimeEquals', () => {
     it('is true for equal strings', () => {
       expect(ApiKeyHasher.constantTimeEquals('abc123', 'abc123')).toBe(true);
+    });
+
+    it('is false for different strings of the same length', () => {
+      expect(ApiKeyHasher.constantTimeEquals('abc123', 'abc124')).toBe(false);
     });
 
   });
