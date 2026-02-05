@@ -64,6 +64,18 @@ describe('ApiKeyResolver', () => {
       });
     });
 
+    it('rejects a malformed token without touching the database', async () => {
+      await expect(resolver.resolveEntity('garbage')).rejects.toBeInstanceOf(InvalidApiKeyException);
+
+      expect(keys.findOne).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unknown key', async () => {
+      keys.findOne.mockResolvedValue(null);
+
+      await expect(resolver.resolveEntity(TOKEN)).rejects.toBeInstanceOf(InvalidApiKeyException);
+    });
+
     it('rejects a wrong secret', async () => {
       keys.findOne.mockResolvedValue(row());
       hasher.verifySecret.mockResolvedValue(false);
@@ -76,6 +88,14 @@ describe('ApiKeyResolver', () => {
       keys.findOne.mockResolvedValue(row({ revokedAt: new Date('2026-02-01T00:00:00.000Z') }));
 
       await expect(resolver.resolveEntity(TOKEN)).resolves.toBeDefined();
+    });
+
+    it('rejects a sk_test_ token whose row is a live key', async () => {
+      keys.findOne.mockResolvedValue(row({ mode: 'live' }));
+
+      await expect(
+        resolver.resolveEntity('sk_test_AB12CD34_abcdefghijklmnop'),
+      ).rejects.toBeInstanceOf(InvalidApiKeyException);
     });
 
     it('gives every failure the same message — no enumeration oracle', async () => {
@@ -98,5 +118,9 @@ describe('ApiKeyResolver', () => {
   });
 
   describe('resolve', () => {
+    it('is null for something that is not a Payzeno key', () => {
+      expect(resolver.bucketKeyFor('Bearer nonsense')).toBeNull();
+    });
+
   });
 });
