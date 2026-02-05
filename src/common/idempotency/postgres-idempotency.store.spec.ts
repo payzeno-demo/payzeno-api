@@ -49,6 +49,29 @@ describe('PostgresIdempotencyStore', () => {
       });
     });
 
+    it('does not reclaim a lapsed lease for a different fingerprint', async () => {
+      await store.begin(TEST_MERCHANT_ID, 'k1', 'fp1');
+      harness.expireLease(TEST_MERCHANT_ID, 'k1');
+
+      // Same key, different body: that is key reuse, and reclaiming would let the second
+      // request overwrite the first one's identity.
+      await expect(store.begin(TEST_MERCHANT_ID, 'k1', 'fp-other')).resolves.toEqual({
+        outcome: 'fingerprint_mismatch',
+      });
+    });
+
+    it('does not reclaim a completed record', async () => {
+      await store.begin(TEST_MERCHANT_ID, 'k1', 'fp1');
+      await store.complete(TEST_MERCHANT_ID, 'k1', 201, { id: 'pi_1' });
+      harness.expireLease(TEST_MERCHANT_ID, 'k1');
+
+      const result = await store.begin(TEST_MERCHANT_ID, 'k1', 'fp1');
+
+      expect(isReplay(result)).toBe(true);
+    });
+  });
+
+  describe('Retry-After', () => {
     it('reports the seconds remaining on the holder’s lease', async () => {
       await store.begin(TEST_MERCHANT_ID, 'k1', 'fp1');
       harness.clock.advanceSeconds(10);
@@ -59,6 +82,18 @@ describe('PostgresIdempotencyStore', () => {
       if (result.outcome === 'in_progress') {
         // 30s lease, 10s elapsed.
         expect(result.retryAfterSec).toBe(20);
+      }
+    });
+
+    it('stores the status and body for replay', async () => {
+      await store.begin(TEST_MERCHANT_ID, 'k1', 'fp1');
+      await store.complete(TEST_MERCHANT_ID, 'k1', 201, { id: 'pi_1', object: 'payment_intent' });
+
+      const replayed = await store.begin(TEST_MERCHANT_ID, 'k1', 'fp1');
+
+      expect(isReplay(replayed)).toBe(true);
+      if (isReplay(replayed)) {
+        expect(replayed.body).toEqual({ id: 'pi_1', object: 'payment_intent' });
       }
     });
 

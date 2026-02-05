@@ -29,6 +29,12 @@ describe('idempotency fingerprint', () => {
     );
   });
 
+  it('ignores key order at the top level', () => {
+    expect(fingerprint('POST', '/v1/payment_intents', { amount: 1, currency: 'GBP' })).toBe(
+      fingerprint('POST', '/v1/payment_intents', { currency: 'GBP', amount: 1 }),
+    );
+  });
+
   it('ignores key order at depth', () => {
     expect(
       fingerprint('POST', '/v1/payment_intents', { metadata: { a: 1, b: 2 } }),
@@ -71,6 +77,16 @@ describe('idempotency fingerprint', () => {
     );
   });
 
+  it('respects array order — [a,b] is not [b,a]', () => {
+    expect(fingerprint('POST', '/v1/webhook_endpoints', { enabled_events: ['a', 'b'] })).not.toBe(
+      fingerprint('POST', '/v1/webhook_endpoints', { enabled_events: ['b', 'a'] }),
+    );
+  });
+
+  it('is a hex sha256', () => {
+    expect(fingerprint('POST', '/v1/refunds', BODY)).toMatch(/^[0-9a-f]{64}$/);
+  });
+
   it('handles an empty body — DELETE carries none', () => {
     expect(() => fingerprint('DELETE', '/v1/api-keys/key_1', undefined)).not.toThrow();
   });
@@ -81,14 +97,53 @@ describe('canonicalJson', () => {
     expect(canonicalJson({ b: 1, a: 2 })).toBe('{"a":2,"b":1}');
   });
 
+  it('sorts nested object keys too', () => {
+    expect(canonicalJson({ z: { y: 1, x: 2 } })).toBe('{"z":{"x":2,"y":1}}');
+  });
+
+  it('leaves array order alone', () => {
+    expect(canonicalJson([3, 1, 2])).toBe('[3,1,2]');
+  });
+
+  /**
+   * `canonicalJson` is @payzeno/contracts', not ours, and it refuses `undefined` at the root:
+   * "the caller did not send a body" is not a value it is willing to invent bytes for.
+   * `fingerprint` is where this repo decides an absent body hashes as `null` — see the
+   * DELETE case above. The local copy that used to live here returned `'null'` here and
+   * `'null'` for `NaN` too, which is the silent-divergence the shared module exists to stop.
+   */
+  it('refuses undefined at the root, and renders null as null', () => {
+    expect(canonicalJson(null)).toBe('null');
+    expect(() => canonicalJson(undefined)).toThrow(TypeError);
+  });
+
+  it('refuses a non-finite number rather than emitting null for it', () => {
+    expect(() => canonicalJson({ amount_minor: Number.NaN })).toThrow(RangeError);
+    expect(() => canonicalJson({ amount_minor: Number.POSITIVE_INFINITY })).toThrow(RangeError);
+  });
+
   it('drops undefined properties rather than emitting them', () => {
     expect(canonicalJson({ a: 1, b: undefined })).toBe('{"a":1}');
+  });
+
+  it('escapes keys as JSON strings', () => {
+    expect(canonicalJson({ 'a"b': 1 })).toBe('{"a\\"b":1}');
   });
 
   it('handles scalars', () => {
     expect(canonicalJson('x')).toBe('"x"');
     expect(canonicalJson(42)).toBe('42');
     expect(canonicalJson(true)).toBe('true');
+  });
+
+  it('handles an array of objects with divergent key order', () => {
+    expect(canonicalJson([{ b: 1, a: 2 }])).toBe('[{"a":2,"b":1}]');
+  });
+});
+
+describe('isValidIdempotencyKey', () => {
+  it('accepts an ordinary key', () => {
+    expect(isValidIdempotencyKey('order-4471-attempt-1')).toBe(true);
   });
 
   it('accepts a key at exactly the maximum length', () => {
