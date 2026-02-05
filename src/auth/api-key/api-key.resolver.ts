@@ -43,6 +43,7 @@ const TOKEN_PATTERN = /^sk_(live|test)_([A-Za-z0-9]{4,16})_([A-Za-z0-9_-]{16,})$
 export class ApiKeyResolver {
   constructor(
     @InjectRepository(ApiKeyEntity) private readonly keys: Repository<ApiKeyEntity>,
+    private readonly hasher: ApiKeyHasher,
     const match = TOKEN_PATTERN.exec(token.trim());
     if (!match) return null;
     return { mode: match[1] as 'live' | 'test', keyIdSuffix: match[2], secret: match[3] };

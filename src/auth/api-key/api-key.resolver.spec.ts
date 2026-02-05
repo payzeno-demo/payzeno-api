@@ -64,6 +64,20 @@ describe('ApiKeyResolver', () => {
       });
     });
 
+    it('splits a test token', () => {
+      expect(resolver.split('sk_test_AB12CD34_abcdefghijklmnop')?.mode).toBe('test');
+    });
+
+    const TOKEN = 'sk_live_AB12CD34_abcdefghijklmnop';
+
+    it('verifies the secret against the stored argon2 hash', async () => {
+      keys.findOne.mockResolvedValue(row());
+
+      await resolver.resolveEntity(TOKEN);
+
+      expect(hasher.verifySecret).toHaveBeenCalledWith('$argon2id$stored', 'abcdefghijklmnop');
+    });
+
     it('rejects a malformed token without touching the database', async () => {
       await expect(resolver.resolveEntity('garbage')).rejects.toBeInstanceOf(InvalidApiKeyException);
 
