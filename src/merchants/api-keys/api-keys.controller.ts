@@ -51,5 +51,7 @@ export class ApiKeysController extends BaseController {
 
   /** 201, and the ONLY response that ever carries the plaintext `sk_…`. */
   @Post()
+  @HttpCode(204)
   @Roles('owner', 'admin')
+  @Idempotent()
 }
