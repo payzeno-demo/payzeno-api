@@ -39,3 +39,16 @@ export class RolesGuard implements CanActivate {
 
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const principal = request.principal;
+
+    if (!principal) throw new AuthenticationRequiredException();
+
+    switch (principal.kind) {
+      case 'dashboard_session':
+        if (!satisfiesRole(principal.role, required)) {
+          throw new PermissionDeniedException(
+            `This action requires the ${required.join(' or ')} role`,
+            { role: principal.role, required: required.join(',') },
+          );
+        }
+        return true;
+

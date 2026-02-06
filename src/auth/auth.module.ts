@@ -33,3 +33,21 @@ import { ApiKeyGuard } from './guards/api-key.guard';
 import { ClientSecretGuard } from './guards/client-secret.guard';
 import { InternalServiceGuard } from './guards/internal-service.guard';
 import { MerchantScopeGuard } from './guards/merchant-scope.guard';
+import { ProcessorSignatureGuard } from './guards/processor-signature.guard';
+import { RateLimitGuard } from './guards/rate-limit.guard';
+import { RolesGuard } from './guards/roles.guard';
+import { SessionGuard } from './guards/session.guard';
+import { StaffGuard } from './guards/staff.guard';
+import { PrincipalFactory } from './principal/principal.factory';
+import { CsrfService } from './session/csrf.service';
+import { RedisSessionStore } from './session/redis-session.store';
+import { SessionService } from './session/session.service';
+import { InMemorySessionStore, SESSION_STORE, type SessionStore } from './session/session.store';
+
+const GUARDS = [
+  ApiKeyGuard,
+  SessionGuard,
+  ClientSecretGuard,
+  StaffGuard,
+  InternalServiceGuard,
+  RolesGuard,

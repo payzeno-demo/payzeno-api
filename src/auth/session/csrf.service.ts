@@ -53,6 +53,10 @@ export class CsrfService {
     return this.cookieName;
   }
 
+  mint(): string {
+    return randomBytes(32).toString('base64url');
+  }
+
   /** Not HttpOnly. See the header comment before "fixing" it. */
   cookieOptions(): CsrfCookieOptions {
     return {
@@ -82,4 +86,10 @@ export class CsrfService {
     }
   }
 
+  /** Pulls the header out of whatever shape the framework handed us. */
+  readHeader(headers: Record<string, string | string[] | undefined>): string | undefined {
+    const raw = headers[CSRF_HEADER];
+    if (Array.isArray(raw)) return raw[0];
+    return raw;
+  }
 }
