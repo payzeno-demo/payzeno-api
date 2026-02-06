@@ -82,6 +82,16 @@ export class ApiKeysService extends BaseService<ApiKeyEntity> {
   }
 
   async list(scope: MerchantScope, query: ListQuery): Promise<Paginated<ApiKey>> {
+    const page = await this.paginate(query, scope);
+    return {
+      data: page.data.map((key) => key.toApiKey()),
+      has_more: page.has_more,
+      next_cursor: page.next_cursor,
+    };
+  }
+
+  /** `GET /v1/api-keys/:apiKeyId` — ystackoverflow's first route, PAY-2069. */
+  async get(scope: MerchantScope, apiKeyId: string): Promise<ApiKey> {
     const key = await this.findOneOrThrow(apiKeyId, scope);
     return key.toApiKey();
   }
