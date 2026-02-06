@@ -49,8 +49,18 @@ export class ApiKeysController extends BaseController {
     return this.keys.list(this.scopeOf(principal), query as ListQuery);
   }
 
+  /** No secret in this response, ever. It existed for one function call and is gone. */
+  @Get(':apiKeyId')
+  async get(
+    @CurrentPrincipal() principal: AuthPrincipal,
+    @Param('apiKeyId') apiKeyId: string,
+  ): Promise<ApiKey> {
+    return this.keys.get(this.scopeOf(principal), apiKeyId);
+  }
+
   /** 201, and the ONLY response that ever carries the plaintext `sk_…`. */
   @Post()
+  @Roles('owner', 'admin')
   @Delete(':apiKeyId')
   @HttpCode(204)
   @Roles('owner', 'admin')
