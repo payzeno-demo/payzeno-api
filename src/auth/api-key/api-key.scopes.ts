@@ -15,6 +15,8 @@ import type { ApiKeyScope } from '@payzeno/contracts';
 
 export const ALL_SCOPES: readonly ApiKeyScope[] = API_KEY_SCOPES;
 
+export const READ_SCOPES: readonly ApiKeyScope[] = API_KEY_SCOPES.filter((s) => s.endsWith(':read'));
+
 export const IMPLIED_SCOPES: Readonly<Partial<Record<ApiKeyScope, readonly ApiKeyScope[]>>> = {
   'payment_intents:write': ['payment_intents:read', 'charges:read'],
   'refunds:write': ['refunds:read'],
@@ -22,6 +24,24 @@ export const IMPLIED_SCOPES: Readonly<Partial<Record<ApiKeyScope, readonly ApiKe
   'payouts:write': ['payouts:read', 'balance:read'],
   'webhooks:write': ['webhooks:read'],
 };
+
+/** The granted set plus everything it implies, deduplicated. */
+export function expandScopes(granted: readonly ApiKeyScope[]): ApiKeyScope[] {
+  const out = new Set<ApiKeyScope>(granted);
+  for (const scope of granted) {
+    for (const implied of IMPLIED_SCOPES[scope] ?? []) {
+      out.add(implied);
+    }
+  }
+  return [...out];
+}
+
+export class UnknownScopeError extends Error {
+  constructor(readonly unknownScopes: readonly string[]) {
+    super(`Unknown API key scope(s): ${unknownScopes.join(', ')}`);
+    this.name = 'UnknownScopeError';
+  }
+}
 
 export function firstMissingScope(
   granted: readonly ApiKeyScope[],

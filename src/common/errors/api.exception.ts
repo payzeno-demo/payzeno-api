@@ -21,5 +21,6 @@ export abstract class ApiException extends PayzenoError {
     return this;
   }
 
+  readonly code: ErrorCode = 'invalid_request';
   readonly code: ErrorCode = 'conflict';
 }
