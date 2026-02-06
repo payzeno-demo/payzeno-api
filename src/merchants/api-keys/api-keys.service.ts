@@ -82,6 +82,33 @@ export class ApiKeysService extends BaseService<ApiKeyEntity> {
   }
 
   async list(scope: MerchantScope, query: ListQuery): Promise<Paginated<ApiKey>> {
+    const page = await this.paginate(query, scope);
+    return {
+      data: page.data.map((key) => key.toApiKey()),
+      has_more: page.has_more,
+      next_cursor: page.next_cursor,
+    };
+  }
+
+  /** `GET /v1/api-keys/:apiKeyId` — ystackoverflow's first route, PAY-2069. */
+  async get(scope: MerchantScope, apiKeyId: string): Promise<ApiKey> {
+    const key = await this.findOneOrThrow(apiKeyId, scope);
+    return key.toApiKey();
+  }
+
+  /**
+   * Chain: ApiKeysController.create → here → ApiKeyHasher.mint → argon2.hash
+   *        → ApiKeyRepository.insertMapped → PayzenoRepository.insert
+   *
+   * `mode` and `livemode` are the same fact written twice, and they must agree: a `test` key
+   * whose row says `livemode: true` would authenticate and then read live rows.
+   */
+  async create(
+    merchantId: MerchantId,
+    request: CreateApiKeyRequest,
+    scope: MerchantScope,
+  ): Promise<CreateApiKeyResponse> {
+    const minted = await this.hasher.mint();
     const now = this.clock.now();
   }
 }

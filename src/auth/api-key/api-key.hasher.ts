@@ -62,6 +62,14 @@ export class ApiKeyHasher {
    * stored hash into `false` rather than a 500: a corrupt row must fail authentication, not
    * take the endpoint down.
    */
+  async verifySecret(storedHash: string, presentedSecret: string): Promise<boolean> {
+    try {
+      return await argon2.verify(storedHash, presentedSecret, ARGON2_OPTIONS);
+    } catch {
+      return false;
+    }
+  }
+
   /** Generates a new secret and both of its hashes. Called once per `POST /v1/api-keys`. */
   async mint(): Promise<MintedApiKeySecret> {
     const secret = randomBytes(SECRET_BYTES).toString('base64url');
