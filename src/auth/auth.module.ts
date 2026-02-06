@@ -51,3 +51,20 @@ const GUARDS = [
   StaffGuard,
   InternalServiceGuard,
   RolesGuard,
+  MerchantScopeGuard,
+  RateLimitGuard,
+  ProcessorSignatureGuard,
+];
+
+@Global()
+@Module({
+  imports: [CommonModule, MerchantsModule, StaffModule],
+  controllers: [AuthController],
+  providers: [
+    PrincipalFactory,
+    ApiKeyResolver,
+    CsrfService,
+    SessionService,
+    AuthService,
+    RedisSessionStore,
+    {
