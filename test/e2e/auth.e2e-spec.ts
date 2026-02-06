@@ -38,6 +38,9 @@ describe('auth e2e', () => {
   }
 
   async function login() {
+    const res = await request(ctx.app.getHttpServer())
+      .post('/v1/auth/login')
+      .send({ email: seeded.email, password: PASSWORD });
     const { setCookie } = await login();
 
     expect(cookieAttrs(setCookie, 'pz_session')).toMatch(/HttpOnly/i);
@@ -47,6 +50,37 @@ describe('auth e2e', () => {
   });
 
   it('rejects a wrong password without leaking whether the user exists', async () => {
+    const res = await request(ctx.app.getHttpServer())
+      .post('/v1/auth/login')
+      .send({ email: seeded.email, password: 'not-the-password' });
+
+    const { session, csrf } = await login();
+
+    const res = await request(ctx.app.getHttpServer())
+      .get('/v1/auth/me')
+      .set('Cookie', [`pz_session=${session}`, `pz_csrf=${csrf}`]);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      object: 'session',
+      user: { id: seeded.userId },
+      merchant: { id: seeded.merchant.id },
+    });
+    expect(Array.isArray(res.body.permissions)).toBe(true);
+  });
+
+  it('401s /v1/auth/me without a session cookie', async () => {
+    const res = await request(ctx.app.getHttpServer()).get('/v1/auth/me');
+
+    expect(res.status).toBe(401);
+    expect(res.body).toBeApiError('authentication_required');
+  });
+
+  it('403s a mutating session request with no CSRF header', async () => {
+    const { session, csrf } = await login();
+
+    const { session, csrf } = await login();
+
     const { session, csrf } = await login();
 
     const out = await request(ctx.app.getHttpServer())
@@ -56,6 +90,17 @@ describe('auth e2e', () => {
 
     expect(out.status).toBe(204);
 
+    const after = await request(ctx.app.getHttpServer())
+      .get('/v1/auth/me')
+      .set('Cookie', [`pz_session=${session}`, `pz_csrf=${csrf}`]);
+
+    expect(after.status).toBe(401);
+  });
+
+  it('always 202s a password reset, existing user or not', async () => {
+    const known = await request(ctx.app.getHttpServer())
+      .post('/v1/auth/password/reset')
+      .send({ email: seeded.email });
     const unknown = await request(ctx.app.getHttpServer())
       .post('/v1/auth/password/reset')
       .send({ email: 'nobody@nowhere.example' });

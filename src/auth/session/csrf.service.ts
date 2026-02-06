@@ -40,6 +40,38 @@ export interface CsrfCookieOptions {
 @Injectable()
 export class CsrfService {
   private readonly cookieName: string;
+  private readonly secureCookies: boolean;
+
+  constructor(@Inject(API_CONFIG) config: ApiConfig) {
+    this.cookieName = config.auth.csrfCookieName;
+    this.ttlSec = config.auth.csrfTtlSeconds;
+    // Secure cookies over plain HTTP never reach the browser, and dev is plain HTTP.
+    this.secureCookies = config.runtime.nodeEnv === 'production';
+  }
+
+  get name(): string {
+    return this.cookieName;
+  }
+
+  mint(): string {
+    return randomBytes(32).toString('base64url');
+  }
+
+  /** Not HttpOnly. See the header comment before "fixing" it. */
+  cookieOptions(): CsrfCookieOptions {
+    return {
+      httpOnly: false,
+      secure: this.secureCookies,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: this.ttlSec * 1000,
+    };
+  }
+
+  /**
+   * The check `SessionGuard` runs first, before it even resolves the session. Constant-time
+   * compare: the token is a secret and a timing oracle on it defeats the scheme.
+   */
   assert(method: string, presented: string | undefined, expected: string): void {
     if (SAFE_METHODS.has(method.toUpperCase())) return;
 
@@ -54,4 +86,10 @@ export class CsrfService {
     }
   }
 
+  /** Pulls the header out of whatever shape the framework handed us. */
+  readHeader(headers: Record<string, string | string[] | undefined>): string | undefined {
+    const raw = headers[CSRF_HEADER];
+    if (Array.isArray(raw)) return raw[0];
+    return raw;
+  }
 }

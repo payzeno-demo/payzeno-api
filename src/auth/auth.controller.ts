@@ -58,7 +58,53 @@ export class AuthController {
    * a DTO that restates a contracts shape is a review rejection.
    */
   @Post('login')
+  @AuditLog('auth.login', { resourceType: 'session' })
+  async login(
+    @Body() body: LoginRequestDto,
+    @Query('merchant_id') merchantId: MerchantId | undefined,
+    @Req() request: AuthenticatedRequest,
+    @Res({ passthrough: true }) response: CookieResponse,
+  ): Promise<LoginResponse> {
+    const outcome = await this.auth.login(body.email, body.password, merchantId ?? null, {
+      userAgent: headerOf(request, 'user-agent'),
+      ip: request.ip ?? null,
+    });
+
+    response.cookie(
+      outcome.issued.sessionCookie.name,
+      outcome.issued.sessionCookie.value,
+      outcome.issued.sessionCookie.options,
+    );
+    response.cookie(
+      outcome.issued.csrfCookie.name,
+      outcome.issued.csrfCookie.value,
+      outcome.issued.csrfCookie.options,
+    );
+
+    return outcome.body;
+  }
+
+  /** `POST /v1/auth/logout`. Clears both cookies with the same flags they were set with. */
+  @Post('logout')
   @HttpCode(204)
+  @UseGuards(SessionGuard)
+  @AuditLog('auth.logout', { resourceType: 'session' })
+  async logout(
+    @Req() request: AuthenticatedRequest,
+    @Res({ passthrough: true }) response: CookieResponse,
+  ): Promise<void> {
+    await this.auth.logout(request.cookies?.[SESSION_COOKIE]);
+
+    for (const expired of this.sessions.expiredCookies()) {
+      response.clearCookie(expired.name, expired.options);
+    }
+  }
+
+  /**
+   * `GET /v1/auth/me`. The console's bootstrap call — it is what tells the SPA which merchant
+   * it is looking at — and it refreshes `pz_csrf` so a long-lived tab keeps a valid token.
+   */
+  @Get('me')
   @UseGuards(SessionGuard)
   async me(
     @Req() request: AuthenticatedRequest,
@@ -79,6 +125,30 @@ export class AuthController {
    * response must not be an account-existence oracle.
    */
   @HttpCode(202)
+  async requestPasswordReset(@Body() body: PasswordResetRequestDto): Promise<void> {
+    await this.auth.requestPasswordReset(body.email);
+  }
+}
+
+function headerOf(request: AuthenticatedRequest, name: string): string | null {
+  const raw = request.headers[name];
+  if (Array.isArray(raw)) return raw[0] ?? null;
+  return raw ?? null;
+}
+
+/**
+ * Declared here rather than in a `dto/` folder: `src/auth` has no DTO directory by design —
+ * two request shapes do not earn one. It `implements LoginRequest`; it does not restate it.
+ */
+export class LoginRequestDto implements LoginRequest {
+  @IsEmail()
+  @IsString()
+  @MinLength(8)
+  @MaxLength(256)
+  password!: string;
+}
+
+export class PasswordResetRequestDto {
   @IsEmail()
   @MaxLength(320)
   email!: string;
