@@ -82,6 +82,23 @@ export class ApiKeysService extends BaseService<ApiKeyEntity> {
   }
 
   async list(scope: MerchantScope, query: ListQuery): Promise<Paginated<ApiKey>> {
+    const key = await this.findOneOrThrow(apiKeyId, scope);
+    return key.toApiKey();
+  }
+
+  /**
+   * Chain: ApiKeysController.create → here → ApiKeyHasher.mint → argon2.hash
+   *        → ApiKeyRepository.insertMapped → PayzenoRepository.insert
+   *
+   * `mode` and `livemode` are the same fact written twice, and they must agree: a `test` key
+   * whose row says `livemode: true` would authenticate and then read live rows.
+   */
+  async create(
+    merchantId: MerchantId,
+    request: CreateApiKeyRequest,
+    scope: MerchantScope,
+  ): Promise<CreateApiKeyResponse> {
+    const minted = await this.hasher.mint();
     const now = this.clock.now();
   }
 }
