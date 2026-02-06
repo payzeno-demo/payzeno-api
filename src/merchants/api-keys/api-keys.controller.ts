@@ -51,7 +51,15 @@ export class ApiKeysController extends BaseController {
 
   /** 201, and the ONLY response that ever carries the plaintext `sk_…`. */
   @Post()
+  @Delete(':apiKeyId')
   @HttpCode(204)
   @Roles('owner', 'admin')
   @Idempotent()
+  @AuditLog('api_key.revoke', { resourceType: 'api_key', idParam: 'apiKeyId' })
+  async revoke(
+    @CurrentPrincipal() principal: AuthPrincipal,
+    @Param('apiKeyId') apiKeyId: string,
+  ): Promise<void> {
+    await this.keys.revoke(this.merchantIdOf(principal), apiKeyId);
+  }
 }
