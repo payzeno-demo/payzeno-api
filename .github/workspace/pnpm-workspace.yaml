@@ -6,3 +6,4 @@
 # directory. Locally, `git clone` them as siblings and do the same; see README §Setup.
 packages:
   - 'payzeno-contracts'
+  - 'payzeno-api'
