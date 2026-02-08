@@ -16,12 +16,27 @@ import type { SeededMerchant } from 'test/support/seed';
 describe('merchant scope e2e', () => {
   let ctx: TestApp;
   let own: SeededMerchant;
+  let other: SeededMerchant;
+  let otherIntentId: string;
   it('404s reading another merchant’s charge', async () => {
     const res = await request(ctx.app.getHttpServer())
       .get(`/v1/charges/${otherChargeId}`)
       .set('Authorization', bearer(own));
 
     expect(res.status).toBe(404);
+  });
+
+  it('returns the same 404 body for a resource that does not exist at all', async () => {
+    const foreign = await request(ctx.app.getHttpServer())
+      .get(`/v1/charges/${otherChargeId}`)
+      .set('Authorization', bearer(own));
+    const missing = await request(ctx.app.getHttpServer())
+      .get('/v1/charges/ch_definitely_not_real')
+      .set('Authorization', bearer(own));
+
+    expect(foreign.status).toBe(missing.status);
+    expect(foreign.body.error.code).toBe(missing.body.error.code);
+    expect(foreign.body.error.message).toBe(missing.body.error.message);
   });
 
   it('never leaks another merchant’s rows into a list', async () => {
