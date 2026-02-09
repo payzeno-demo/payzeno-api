@@ -31,7 +31,38 @@ import { FixedClock } from 'test/support/fixed-clock';
 describe('MerchantsService', () => {
   const clock = new FixedClock('2026-03-14T09:21:07.412Z');
 
+  let merchants: {
+    findById: jest.Mock;
+    applyPatch: jest.Mock;
+    transitionStatus: jest.Mock;
+    listForStaff: jest.Mock;
+  };
+  let events: { publish: jest.Mock };
   let service: MerchantsService;
+
+  describe('create', () => {
+    it('delegates the whole multi-aggregate write to the onboarding service', async () => {
+      const created = await service.create(
+        {
+          legal_name: 'Aurora Coffee Roasters Ltd',
+          display_name: 'Aurora Coffee',
+          country: 'GB',
+          default_currency: 'GBP',
+          mcc: '5812',
+        },
+        true,
+        'stf_operator',
+      );
+
+      expect(onboarding.onboard).toHaveBeenCalledWith(
+        expect.objectContaining({ legal_name: 'Aurora Coffee Roasters Ltd' }),
+        true,
+        'stf_operator',
+      );
+      expect(created.object).toBe('merchant');
+      expect(created.status).toBe('pending_review');
+    });
+  });
 
   describe('update', () => {
     it('writes only the keys the request actually carried', async () => {
@@ -125,4 +156,19 @@ describe('MerchantsService', () => {
     });
   });
 
+  it('declares every staff-gated field so the controller can 403 a merchant PATCH', () => {
+    expect(STAFF_ONLY_MERCHANT_FIELDS).toEqual(
+      expect.arrayContaining([
+        'risk_tier',
+        'reserve_bps',
+        'reserve_hold_days',
+        'payout_delay_days',
+        'platform_fee_bps',
+        'platform_fee_fixed_minor',
+        'settlement_tolerance_minor',
+        'capture_at_settlement',
+      ]),
+    );
+    expect(STAFF_ONLY_MERCHANT_FIELDS).not.toContain('display_name');
+  });
 });
