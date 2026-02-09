@@ -67,6 +67,14 @@ export class ChargeRepository extends PayzenoRepository<ChargeEntity> {
     return this.paginateCursor(query, where, { column: 'created_at', direction: 'DESC' });
   }
 
+  listForIntent(paymentIntentId: string, manager?: EntityManager): Promise<ChargeEntity[]> {
+    const repo = manager ? manager.getRepository(ChargeEntity) : this;
+    return repo.find({
+      where: { payment_intent_id: paymentIntentId } as FindOptionsWhere<ChargeEntity>,
+      order: { created_at: 'DESC' },
+    });
+  }
+
   async addRefundedAmount(manager: EntityManager, chargeId: ChargeId, amountMinor: number): Promise<void> {
     await manager
       .createQueryBuilder()
