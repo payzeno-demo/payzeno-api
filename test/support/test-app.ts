@@ -57,5 +57,34 @@ export async function createTestApp(overrides: TestAppOverrides = {}): Promise<T
     ...(overrides.flags ?? {}),
   });
 
+  let builder = Test.createTestingModule({ imports: [AppModule] })
+    .overrideProvider(LedgerHttpClient)
+    .useValue(ledger)
+    .overrideProvider(Clock)
+    .useValue(clock)
+    .overrideProvider(FeatureFlags)
+    .useValue(flags);
+
+  if (overrides.customise) {
+    builder = overrides.customise(builder);
+  }
+
   const moduleRef = await builder.compile();
+  const dataSource = app.get(DataSource);
+
+  return {
+    app,
+    ledger,
+    clock,
+    flags,
+    dataSource,
+    close: async () => {
+      await app.close();
+    },
+  };
+}
+
+/** The HTTP server supertest binds to. Keeps `request(app.getHttpServer())` off every line. */
+export function serverOf(testApp: TestApp): unknown {
+  return testApp.app.getHttpServer();
 }

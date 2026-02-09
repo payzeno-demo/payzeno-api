@@ -46,4 +46,28 @@ async function bootstrap(): Promise<void> {
   });
 
   const config = app.get<ApiConfig>(API_CONFIG);
+  const shutdown = async (signal: string): Promise<void> => {
+    logger.info('api.shutting_down', { signal });
+    await app.close();
+    // After Nest has closed, so the spans for the in-flight requests are already recorded.
+    await stopInstrumentation();
+  };
+
+  process.on('SIGTERM', () => {
+    void shutdown('SIGTERM');
+  });
+  process.on('SIGINT', () => {
+    void shutdown('SIGINT');
+  });
+}
+
+/**
+ * A rejected bootstrap must exit non-zero. Nest swallows the rejection otherwise and the task
+ * stays "running" with no listener — which ECS reports as healthy right up until the first
+ * request times out.
+ */
+bootstrap().catch((err) => {
+  // eslint-disable-next-line no-console -- the logger is what failed to construct.
+  console.error(JSON.stringify({ level: 'fatal', msg: 'api.boot_failed', ...describeError(err) }));
+  process.exit(1);
 });
