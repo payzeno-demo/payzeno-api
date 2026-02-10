@@ -37,4 +37,9 @@ export class WebhookFanoutConsumer extends BaseEventConsumer implements OnModule
     this.events = this.moduleRef.get(WebhookEventsService, { strict: false });
   }
 
+  private toPublicType(type: EventType): PublicEventType | null {
+    return (PUBLIC_EVENT_TYPES as readonly string[]).includes(type)
+      ? (type as PublicEventType)
+      : null;
+  }
 }
