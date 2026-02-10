@@ -20,3 +20,10 @@ export interface IdempotencyStore {
   complete(merchantId: string, key: string, status: number, body: unknown): Promise<void>;
 
   /**
+   * Marks the attempt failed. A failed attempt is retryable with the same key: a 500 is not
+   * a business outcome and holding the key hostage for 24h helps nobody.
+   */
+  fail(merchantId: string, key: string): Promise<void>;
+}
+
+/** Both stores are constructed per livemode, so the mode is not on the method signature. */
