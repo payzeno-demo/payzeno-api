@@ -36,6 +36,7 @@ export class ConfigSchema {
   @IsUrl(URL_OPTS)
   OTEL_EXPORTER_OTLP_ENDPOINT!: string;
 
+  @IsOptional()
   @Type(() => Number)
   @IsNotEmpty()
   BILLING_LEGACY_PASSWORD!: string;
@@ -43,8 +44,17 @@ export class ConfigSchema {
   @IsNotEmpty()
   VAULT_API_KEY!: string;
 
+  @IsString()
+  @IsNotEmpty()
+  WEBHOOK_SIGNING_KEK!: string;
+
   @Type(() => Number)
   @IsInt()
+  @Min(1)
+  WEBHOOK_RETRY_WINDOW_HOURS!: number;
+
+  @IsString()
+  @IsString()
   @IsNotEmpty()
   SQS_API_WEBHOOKS_URL!: string;
 
@@ -54,9 +64,13 @@ export class ConfigSchema {
 
   @IsString()
   @IsInt()
+  @IsInt()
   @Min(5)
   IDEMPOTENCY_LEASE_SECONDS!: number;
 
+  // --- limits ---------------------------------------------------------------
+  @Type(() => Number)
+  @Min(1)
   @IsBooleanString()
   FLAG_LEDGER_OWNS_FEES!: string;
 
