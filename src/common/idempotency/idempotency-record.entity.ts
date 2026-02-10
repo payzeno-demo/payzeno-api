@@ -20,6 +20,9 @@ export class IdempotencyRecord {
   @PrimaryColumn({ type: 'boolean', name: 'livemode' })
   livemode!: boolean;
 
+  @PrimaryColumn({ type: 'varchar', length: 255, name: 'key' })
+  key!: string;
+
   /** sha256(method || path || canonical_json(body)). */
   @Column({ type: 'char', length: 64, name: 'fingerprint' })
   fingerprint!: string;
@@ -41,8 +44,17 @@ export class IdempotencyRecord {
   @Column({ type: 'jsonb', name: 'response_body', nullable: true })
   responseBody!: unknown;
 
+  @Column({ type: 'timestamptz', name: 'created_at' })
+  createdAt!: Date;
+
+  @Column({ type: 'timestamptz', name: 'expires_at' })
+  expiresAt!: Date;
+
   isReplayable(): boolean {
     return this.state === 'completed' && this.responseStatus !== null;
   }
 
+  leaseExpired(now: Date): boolean {
+    return this.state === 'in_progress' && this.leaseExpiresAt.getTime() <= now.getTime();
+  }
 }
