@@ -27,3 +27,10 @@ export interface IdempotencyStore {
 }
 
 /** Both stores are constructed per livemode, so the mode is not on the method signature. */
+export interface IdempotencyStoreFactory {
+  forMode(livemode: boolean): IdempotencyStore;
+}
+
+export function isReplay(result: IdempotencyBeginResult): result is { outcome: 'replay'; status: number; body: unknown } {
+  return result.outcome === 'replay';
+}

@@ -59,6 +59,29 @@ export class RedisIdempotencyStore implements IdempotencyStore {
     const redisKeyName = this.key(merchantId, key);
     const claim: StoredRecord = { fingerprint, state: 'in_progress' };
 
+    const result = (await this.redis.eval(
+      CLAIM_SCRIPT,
+      1,
+      redisKeyName,
+      fingerprint,
+      JSON.stringify(claim),
+      String(this.config.idempotency.leaseSeconds * 1000),
+    )) as string;
+
+    if (result === 'claimed') return { outcome: 'proceed' };
+
+    const existing = JSON.parse(result) as StoredRecord;
+
+    if (existing.fingerprint !== fingerprint) return { outcome: 'fingerprint_mismatch' };
+
+    if (existing.state === 'completed' && typeof existing.status === 'number') {
+      return { outcome: 'replay', status: existing.status, body: existing.body };
+    }
+
+    return { outcome: 'in_progress', retryAfterSec: await this.retryAfterFor(redisKeyName) };
+  }
+
+  async complete(merchantId: string, key: string, status: number, body: unknown): Promise<void> {
     const redisKeyName = this.key(merchantId, key);
     const raw = await this.redis.get(redisKeyName);
     const fingerprint = raw ? (JSON.parse(raw) as StoredRecord).fingerprint : '';
@@ -73,6 +96,7 @@ export class RedisIdempotencyStore implements IdempotencyStore {
   }
 
   async fail(merchantId: string, key: string): Promise<void> {
+    const redisKeyName = this.key(merchantId, key);
     const raw = await this.redis.get(redisKeyName);
     if (!raw) return;
 
