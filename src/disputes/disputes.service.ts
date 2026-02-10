@@ -64,6 +64,26 @@ export class DisputesService extends BaseService<DisputeEntity> {
   constructor(
     private readonly disputes: DisputeRepository,
     private readonly evidence: DisputeEvidenceService,
+    @Inject(PAYZENO_LOGGER) logger: PayzenoLogger,
+  ) {
+    super(disputes, logger);
+  }
+
+  get entityName(): string {
+    return 'dispute';
+  }
+
+  protected override notFound(id: string): DisputeNotFoundException {
+    return new DisputeNotFoundException(id);
+  }
+
+  /**
+   * The only creation path. Called by ProcessorWebhookService inside the webhook's
+   * transaction, so the dispute row and the `processed_event` claim commit together.
+   */
+  async openFromWebhook(command: OpenDisputeCommand): Promise<Dispute> {
+    const status: DisputeStatus = command.isWarning ? 'warning_needs_response' : 'needs_response';
+    const scope = scopeFrom(principal);
     const next = this.states.apply(dispute.status, 'accept');
 
     return this.close(dispute, next as 'lost', correlationId, null);

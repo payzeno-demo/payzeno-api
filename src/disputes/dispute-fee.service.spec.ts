@@ -11,7 +11,31 @@ import { FixedClock } from 'test/support/fixed-clock';
 describe('DisputeFeeService', () => {
   let findOne: jest.Mock;
   let logger: NoopLogger;
+  let clock: FixedClock;
   let service: DisputeFeeService;
+
+  beforeEach(() => {
+    findOne = jest.fn().mockResolvedValue(null);
+    dataSource = {
+      getRepository: jest.fn().mockReturnValue({ findOne, find: jest.fn().mockResolvedValue([]) }),
+    } as unknown as DataSource;
+    logger = new NoopLogger();
+    jest.spyOn(logger, 'warn');
+    clock = new FixedClock('2026-01-15T12:00:00.000Z');
+    service = new DisputeFeeService(dataSource, clock, logger);
+  });
+
+  it('looks the fee up by acquirer and currency', async () => {
+    findOne.mockResolvedValue({ fee_minor: 1_800 });
+
+    await service.feeFor('nordpay', 'EUR');
+
+    expect(findOne).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ acquirer: 'nordpay', currency: 'EUR' }),
+      }),
+    );
+  });
 
   it('takes the most recent effective-dated row', async () => {
     findOne.mockResolvedValue({ fee_minor: 1_800 });
@@ -21,6 +45,14 @@ describe('DisputeFeeService', () => {
     expect(findOne).toHaveBeenCalledWith(
       expect.objectContaining({ order: { effective_from: 'DESC' } }),
     );
+  });
+
+  it('uses the clock, not Date.now, for the effective date', async () => {
+    const later = new DisputeFeeService(dataSource, new FixedClock('2027-06-01T00:00:00.000Z'), logger);
+
+    await later.feeFor('worldflow', 'GBP');
+
+    expect(findOne).toHaveBeenCalled();
   });
 
   it('coerces a numeric-string fee off the driver', async () => {
