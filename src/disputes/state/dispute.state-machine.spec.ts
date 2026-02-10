@@ -7,12 +7,29 @@ import { DisputeStateMachine } from 'src/disputes/state/dispute.state-machine';
 describe('DisputeStateMachine', () => {
   let fsm: DisputeStateMachine;
 
+  it('needs_response → lost when the merchant accepts liability', () => {
+    expect(fsm.apply('needs_response', 'accept')).toBe('lost');
+  });
+
+  it('needs_response → lost when the evidence deadline passes', () => {
+    // DisputeDeadlineReminderJob drives this one, nightly at 07:00.
+    expect(fsm.apply('needs_response', 'expire')).toBe('lost');
+  });
+
   it('under_review → won when the network finds for the merchant', () => {
     expect(fsm.apply('under_review', 'win')).toBe('won');
   });
 
   it('under_review → lost when the network finds for the cardholder', () => {
     expect(fsm.apply('under_review', 'lose')).toBe('lost');
+  });
+
+  it('warning_needs_response → warning_closed', () => {
+    expect(fsm.apply('warning_needs_response', 'close')).toBe('warning_closed');
+  });
+
+  it('cannot reopen a won dispute', () => {
+    expect(fsm.can('won', 'submit_evidence')).toBe(false);
   });
 
   it('treats won, lost and warning_closed as terminal', () => {

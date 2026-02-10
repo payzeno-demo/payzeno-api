@@ -64,6 +64,7 @@ export class DisputesService extends BaseService<DisputeEntity> {
   constructor(
     private readonly disputes: DisputeRepository,
     private readonly evidence: DisputeEvidenceService,
+    @Inject(EVENT_PUBLISHER) private readonly events: EventPublisher,
     @Inject(PAYZENO_LOGGER) logger: PayzenoLogger,
   ) {
     super(disputes, logger);
@@ -82,7 +83,13 @@ export class DisputesService extends BaseService<DisputeEntity> {
    * transaction, so the dispute row and the `processed_event` claim commit together.
    */
   async openFromWebhook(command: OpenDisputeCommand): Promise<Dispute> {
+    const charge = await this.charges.findOne({ where: { id: command.chargeId } });
+    if (!charge) {
+      throw new ChargeNotFoundException(command.chargeId);
+    }
+
     const status: DisputeStatus = command.isWarning ? 'warning_needs_response' : 'needs_response';
+    const scope = scopeFrom(principal);
     const scope = scopeFrom(principal);
     const next = this.states.apply(dispute.status, 'accept');
 
@@ -158,5 +165,26 @@ export class DisputesService extends BaseService<DisputeEntity> {
     outcome: 'won' | 'lost',
     correlationId: string,
   ): Promise<Dispute | null> {
+    const open = await this.disputes.findOpenForCharge(chargeId);
+    if (!open) {
+      this.logger.info('dispute_close_no_open_row', { charge_id: chargeId, outcome });
+      return null;
+    }
+
+    // Throws InvalidStateTransitionException if the network sends `won` for a dispute the
+    // merchant never responded to — which happens, and which we want to see in the logs.
+    this.states.apply(open.status, this.states.eventForOutcome(outcome));
+
+    return this.close(open, outcome, correlationId, null);
+  }
+
+  async get(principal: AuthPrincipal, disputeId: DisputeId): Promise<Dispute> {
+    return toDispute(await this.findOneOrThrow(disputeId, scopeFrom(principal)));
+  }
+
+  async list(
+    principal: AuthPrincipal,
+    query: ListQuery & { status?: DisputeStatus },
+  ): Promise<Paginated<Dispute>> {
   };
 }

@@ -36,6 +36,13 @@ export class DisputeEntity extends MerchantScopedEntity {
   @Column({ type: 'text' })
   charge_id: ChargeId;
 
+  @ManyToOne(() => ChargeEntity)
+  @JoinColumn({ name: 'charge_id' })
+  charge?: ChargeEntity;
+
+  @Column({ type: 'bigint', transformer: requiredMinorUnitsTransformer })
+  amount_minor: number;
+
   @Column({ type: 'char', length: 3, transformer: currencyTransformer })
   currency: CurrencyCode;
 
@@ -67,10 +74,26 @@ export class DisputeEntity extends MerchantScopedEntity {
   @Column({ type: 'boolean', default: false })
   liability_shifted: boolean;
 
+  @Column({ type: 'timestamptz', nullable: true })
+  resolved_at: Date | null;
+
   isOpen(): boolean {
     return this.status === 'needs_response' || this.status === 'under_review';
   }
 
+  /** The issuer already ate the loss; the console says so instead of asking for evidence. */
+  isIssuerLiability(): boolean {
+    return this.liability_shifted && this.reason === 'fraudulent';
+  }
+}
+
+/**
+ * `dispute_fee_schedule` — the acquirer's chargeback fee, per currency, effective-dated.
+ * Read-only from payzeno-api's point of view: rows are loaded by migration 09 and amended by
+ * finance through a runbook, never by a handler.
+ */
+@Entity({ name: 'dispute_fee_schedule' })
+export class DisputeFeeScheduleEntity {
   @PrimaryColumn({ type: 'enum', enum: ['worldflow', 'nordpay'], enumName: 'acquirer' })
   acquirer: Acquirer;
 
@@ -80,4 +103,6 @@ export class DisputeEntity extends MerchantScopedEntity {
   @PrimaryColumn({ type: 'date' })
   effective_from: IsoDate;
 
+  @Column({ type: 'bigint', transformer: requiredMinorUnitsTransformer })
+  fee_minor: number;
 }
