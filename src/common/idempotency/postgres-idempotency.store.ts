@@ -30,8 +30,30 @@ export class PostgresIdempotencyStore implements IdempotencyStore {
   constructor(
     private readonly dataSource: DataSource,
     @Inject(API_CONFIG) private readonly config: ApiConfig,
+    @Inject(CLOCK) private readonly clock: Clock,
     const lease = this.clock.plusSeconds(this.config.idempotency.leaseSeconds);
     const expires = this.clock.plusSeconds(this.config.idempotency.ttlHours * 3600);
+
+    const [row] = (await this.dataSource.query(
+      `
+      INSERT INTO idempotency_record
+        (merchant_id, livemode, key, fingerprint, state, lease_expires_at, created_at, expires_at)
+      VALUES ($1, $2, $3, $4, 'in_progress', $5, $6, $7)
+      ON CONFLICT (merchant_id, livemode, key) DO UPDATE
+        SET state = 'in_progress',
+            fingerprint = EXCLUDED.fingerprint,
+            lease_expires_at = EXCLUDED.lease_expires_at,
+            response_status = NULL,
+            response_body = NULL
+        WHERE idempotency_record.state = 'in_progress'
+          AND idempotency_record.lease_expires_at < $6
+          AND idempotency_record.fingerprint = EXCLUDED.fingerprint
+      RETURNING true AS claimed, state, fingerprint, response_status, response_body, lease_expires_at
+      `,
+      [merchantId, this.livemode, key, fingerprint, lease, now, expires],
+    )) as BeginRow[];
+
+    if (row?.claimed) return { outcome: 'proceed' };
 
     // No row returned: the conflict existed and the reclaim predicate did not hold. Read it.
     const [existing] = (await this.dataSource.query(
