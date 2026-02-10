@@ -40,12 +40,26 @@ describe('DisputeEvidenceService', () => {
       expect(merged).toEqual({ customer_name: 'A. Customer', shipping_tracking_number: 'TRK-1' });
     });
 
+    it('an explicitly emptied field is a deletion', () => {
+      const merged = service.normalise({ customer_name: 'A. Customer' }, { customer_name: '   ' });
+
+      expect(merged.customer_name).toBeUndefined();
+    });
+
     it('leaves untouched fields alone', () => {
       const merged = service.normalise({ receipt_file_id: 'file_1' }, {});
 
       expect(merged.receipt_file_id).toBe('file_1');
     });
 
+    it('rejects a field past the network length limit', () => {
+      expect(() => service.normalise({}, { uncategorized_text: 'x'.repeat(20_001) })).toThrow(
+        ValidationException,
+      );
+    });
+  });
+
+  describe('assertSubmittable', () => {
     it('accepts a dispute that still needs a response', () => {
       expect(() => service.assertSubmittable(dispute())).not.toThrow();
     });
@@ -60,6 +74,27 @@ describe('DisputeEvidenceService', () => {
       expect(() => service.assertSubmittable(dispute({ status }))).toThrow(DisputeWindowClosedException);
     });
 
+    it('accepts evidence on the last day', () => {
+      clock.advanceDays(16);
+
+      expect(() => service.assertSubmittable(dispute())).not.toThrow();
+    });
+  });
+
+  describe('completeness', () => {
+    it('rewards the fields that matter for the reason code', () => {
+      const strong = service.completeness(
+        { customer_name: 'A', customer_email: 'a@example.com', shipping_tracking_number: 'T' },
+        'fraudulent',
+      );
+      const weak = service.completeness(
+        { product_description: 'A thing', uncategorized_text: 'please' },
+        'fraudulent',
+      );
+
+      expect(strong).toBeGreaterThan(weak);
+    });
+
     it('never exceeds 100', () => {
       const everything = Object.fromEntries(EVIDENCE_FIELDS.map((f) => [f, 'value']));
 
@@ -68,5 +103,9 @@ describe('DisputeEvidenceService', () => {
   });
 
   describe('fieldCount and missingStrongFields', () => {
+    it('counts only fields with content', () => {
+      expect(service.fieldCount({ customer_name: 'A', customer_email: '  ' })).toBe(1);
+    });
+
   });
 });
