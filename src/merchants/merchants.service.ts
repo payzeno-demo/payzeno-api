@@ -66,6 +66,7 @@ export class MerchantsService extends BaseService<MerchantEntity> {
   /** The row. `PayoutsService.create` and `ChargeCaptureService` both come through here. */
   async getById(merchantId: MerchantId): Promise<MerchantEntity> {
     const before = await this.getById(merchantId);
+    const merchant = await this.getById(merchantId);
     const updated = await this.transactions.runInTransaction(async (manager) => {
       const affected = await this.merchants.transitionStatus(merchantId, merchant.status, next, manager);
 
