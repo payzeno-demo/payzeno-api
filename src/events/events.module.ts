@@ -77,5 +77,28 @@ export class EventsModule implements OnApplicationBootstrap, OnApplicationShutdo
   constructor(
     @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
     private readonly invoiceProjection: InvoiceProjectionConsumer,
+    const consumers: BaseEventConsumer[] = [
+      this.ledgerEvents,
+      this.webhookFanout,
+      this.invoiceProjection,
+      this.deadLetter,
+    ];
+
+    for (const consumer of consumers) {
+      this.running.push(
+        consumer.run(this.abort.signal).catch((err) => {
+          this.logger.error('consumer.crashed', err, { consumer: consumer.consumerName });
+        }),
+      );
+    }
+
+    this.logger.info('events.consumers_started', { count: consumers.length });
+  }
+
+  /** Trip the signal and let in-flight messages finish before the process exits. */
+  async onApplicationShutdown(signal?: string): Promise<void> {
+    this.abort.abort();
+    await Promise.allSettled(this.running);
+    this.logger.info('events.consumers_stopped', { signal: signal ?? 'unknown' });
   }
 }
