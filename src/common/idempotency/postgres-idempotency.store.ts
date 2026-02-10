@@ -31,6 +31,11 @@ export class PostgresIdempotencyStore implements IdempotencyStore {
     private readonly dataSource: DataSource,
     @Inject(API_CONFIG) private readonly config: ApiConfig,
     @Inject(CLOCK) private readonly clock: Clock,
+    private readonly livemode: boolean = true,
+  ) {}
+
+  async begin(merchantId: string, key: string, fingerprint: string): Promise<IdempotencyBeginResult> {
+    const now = this.clock.now();
     const lease = this.clock.plusSeconds(this.config.idempotency.leaseSeconds);
     const expires = this.clock.plusSeconds(this.config.idempotency.ttlHours * 3600);
 
