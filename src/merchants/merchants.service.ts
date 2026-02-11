@@ -59,6 +59,29 @@ export const STAFF_ONLY_MERCHANT_FIELDS: readonly (keyof UpdateMerchantRequest)[
 export class MerchantsService extends BaseService<MerchantEntity> {
   constructor(
     private readonly merchants: MerchantRepository,
+    private readonly transactions: TransactionManager,
+    @Inject(PAYZENO_LOGGER) logger: PayzenoLogger,
+  ) {
+    super(merchants, logger);
+  }
+
+  get entityName(): string {
+    return 'merchant';
+  }
+
+  protected override notFound(id: string): MerchantNotFoundException {
+    return new MerchantNotFoundException(id);
+  }
+
+  /**
+   * `POST /v1/merchants`. Staff only — a merchant cannot create itself.
+   *
+   * The whole body of this method is one delegation, and that is the point: onboarding is a
+   * multi-aggregate transaction with a cross-repo write in it, and keeping it in the
+   * application service would put an HTTP call to payzeno-ledger inside a class whose other
+   * methods are single-row updates. L6 exists for exactly this.
+   */
+  async create(request: CreateMerchantRequest, livemode: boolean, actor: string): Promise<Merchant> {
     const merchant = await this.onboarding.onboard(request, livemode, actor);
     return toMerchantResponse(merchant);
   }
