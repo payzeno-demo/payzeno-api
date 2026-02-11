@@ -77,6 +77,29 @@ describe('MerchantUsersService', () => {
   });
 
   describe('list', () => {
+    it('reports has_more and trims the extra row', async () => {
+      users.listForMerchant.mockResolvedValue([
+        userRow({ id: 'usr_1' }),
+        userRow({ id: 'usr_2' }),
+        userRow({ id: 'usr_3' }),
+      ]);
+
+      const page = await service.list(TEST_MERCHANT_ID, { limit: 2 });
+
+      expect(page.data).toHaveLength(2);
+      expect(page.has_more).toBe(true);
+    });
+
+    it('404s a user id that is not in this tenant', async () => {
+      users.findByIdForMerchant.mockResolvedValue(null);
+
+      await expect(service.get(TEST_MERCHANT_ID, TEST_USER_ID)).rejects.toBeInstanceOf(
+        ResourceNotFoundException,
+      );
+    });
+  });
+
+  describe('invite', () => {
     it('creates the row as invited with an unusable password hash', async () => {
       await service.invite(TEST_MERCHANT_ID, input);
 
@@ -86,6 +109,25 @@ describe('MerchantUsersService', () => {
       expect(row.lastLoginAt).toBeNull();
     });
 
+    it('promotes without any owner check', async () => {
+      users.findByIdForMerchant.mockResolvedValue(userRow({ role: 'developer' }));
+
+      await service.changeRole(TEST_MERCHANT_ID, TEST_USER_ID, 'admin');
+
+      expect(users.countOwners).not.toHaveBeenCalled();
+      expect(users.updateRole).toHaveBeenCalledWith(TEST_MERCHANT_ID, TEST_USER_ID, 'admin');
+    });
+
+    it('404s an unknown user', async () => {
+      users.findByIdForMerchant.mockResolvedValue(null);
+
+      await expect(
+        service.changeRole(TEST_MERCHANT_ID, TEST_USER_ID, 'viewer'),
+      ).rejects.toBeInstanceOf(ResourceNotFoundException);
+    });
+  });
+
+  describe('remove', () => {
     it('disables rather than deleting — audit_log.actor_id points at these rows', async () => {
       users.findByIdForMerchant.mockResolvedValue(userRow({ id: OTHER_USER_ID, role: 'developer' }));
 
