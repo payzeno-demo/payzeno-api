@@ -59,4 +59,42 @@ export class EventOutboxRepository extends PayzenoRepository<EventOutbox> {
     });
   }
 
+  /** Terminal success. A published row is never re-selected. */
+  async markPublished(ids: readonly string[], publishedAt: Date): Promise<number> {
+    if (ids.length === 0) {
+      return 0;
+    }
+    const result = await this.manager.update(
+      EventOutbox,
+      { id: In([...ids]) },
+      { publishedAt, lastError: null },
+    );
+    return result.affected ?? 0;
+  }
+
+  /**
+   * Failure path: bump the attempt, push `next_attempt_at` out exponentially, and tombstone
+   * at attempt 12. `dead_at` is what stops the drain; nothing deletes these rows, because
+   * the postmortem after PAY-2041 wanted the evidence to still be there.
+   */
+  async markFailed(id: string, error: string, now: Date): Promise<'retrying' | 'dead'> {
+    const row = await this.manager.findOneByOrFail(EventOutbox, { id });
+    const attemptCount = row.attemptCount + 1;
+    const dead = attemptCount >= OUTBOX_MAX_ATTEMPTS;
+
+    await this.manager.update(
+      EventOutbox,
+      { id },
+      {
+        attemptCount,
+        lastError: error.slice(0, 2000),
+        nextAttemptAt: nextOutboxAttemptAt(now, attemptCount),
+        claimedAt: null,
+        claimedBy: null,
+        deadAt: dead ? now : null,
+      },
+    );
+    return dead ? 'dead' : 'retrying';
+  }
+
 }
