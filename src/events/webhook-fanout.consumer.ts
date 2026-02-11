@@ -37,6 +37,60 @@ export class WebhookFanoutConsumer extends BaseEventConsumer implements OnModule
     this.events = this.moduleRef.get(WebhookEventsService, { strict: false });
   }
 
+  async handle(event: PayzenoEvent, tx: EntityManager): Promise<void> {
+    const publicType = this.toPublicType(event.type);
+    if (!publicType) {
+      // handledTypes is a subset of PUBLIC_EVENT_TYPES, so this is unreachable unless
+      // someone widens the set without checking. Loud, not silent.
+      this.logger.error('webhook.fanout_non_public_type', null, { type: event.type });
+      return;
+    }
+
+    if (!event.merchant_id) {
+      // Platform-wide events have no merchant to notify.
+      return;
+    }
+
+    const endpoints = await this.endpoints.listEnabledFor(
+      event.merchant_id,
+      publicType,
+      event.livemode,
+    );
+
+    if (endpoints.length === 0) {
+      this.logger.debug('webhook.no_endpoints', {
+        merchant_id: event.merchant_id,
+        type: publicType,
+        livemode: event.livemode,
+      });
+      return;
+    }
+
+    const inserted = await this.events.fanout(tx, {
+      sourceEventId: event.id,
+      merchantId: event.merchant_id,
+      type: publicType,
+      payload: event.payload as unknown as Record<string, unknown>,
+      livemode: event.livemode,
+      endpoints,
+    });
+
+    this.logger.info('webhook.fanned_out', {
+      source_event_id: event.id,
+      merchant_id: event.merchant_id,
+      type: publicType,
+      endpoints: endpoints.length,
+      inserted,
+      deduped: endpoints.length - inserted,
+    });
+  }
+
+  /**
+   * Every handled type is already a `PublicEventType` — the merchant vocabulary is a strict
+   * subset of the bus vocabulary and the names are identical where they overlap. This is a
+   * narrowing, not a mapping table, and it stays a narrowing on purpose: a translation table
+   * is where a `settlement.duplicate_detected` eventually leaks to a merchant.
+   */
   private toPublicType(type: EventType): PublicEventType | null {
     return (PUBLIC_EVENT_TYPES as readonly string[]).includes(type)
       ? (type as PublicEventType)
