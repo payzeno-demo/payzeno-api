@@ -50,11 +50,43 @@ describe('cursor', () => {
       expect(qb.offset).not.toHaveBeenCalled();
     });
 
+    it('adds the row-value comparison when a cursor is supplied', () => {
+      apply(encodeCursor({ createdAt: '2026-01-15T12:00:00.000Z', id: TEST_CHARGE_ID }));
+
+      const [sql, params] = qb.andWhere.mock.calls[0];
+      expect(sql).toContain('charge.created_at <');
+      expect(sql).toContain('charge.id <');
+      expect(params).toMatchObject({ cursorId: TEST_CHARGE_ID });
+      expect(params.cursorCreatedAt).toBeInstanceOf(Date);
+    });
+
+    it('flips the comparison for an ascending page', () => {
+      apply(encodeCursor({ createdAt: '2026-01-15T12:00:00.000Z', id: TEST_CHARGE_ID }), 'ASC');
+
+      expect(qb.andWhere.mock.calls[0][0]).toContain('charge.created_at >');
+      expect(qb.orderBy).toHaveBeenCalledWith('charge.created_at', 'ASC');
+    });
+
     const rows = [
       row(nextId('ch_'), '2026-01-15T12:00:03.000Z'),
       row(nextId('ch_'), '2026-01-15T12:00:02.000Z'),
       row(nextId('ch_'), '2026-01-15T12:00:01.000Z'),
     ];
+
+    it('reports has_more false and a null cursor for a short page', () => {
+      const page = toPage(rows, 10);
+
+      expect(page.data).toHaveLength(3);
+      expect(page.has_more).toBe(false);
+      expect(page.next_cursor).toBeNull();
+    });
+
+    it('trims the sentinel row when the page is full', () => {
+      const page = toPage(rows, 2);
+
+      expect(page.data).toHaveLength(2);
+      expect(page.has_more).toBe(true);
+    });
 
     it('mints the next cursor from the last row actually returned', () => {
       const page = toPage(rows, 2);
