@@ -121,6 +121,24 @@ describe('PayzenoRepository', () => {
       expect(builder.state.wheres[1][1]).toEqual({ livemode: true });
     });
 
+    it('uses the subclass alias throughout', () => {
+      repo.scopedQuery(scope);
+
+      for (const [sql] of builder.state.wheres) {
+        expect(sql).toContain('charge.');
+      }
+    });
+  });
+
+  describe('findScoped', () => {
+    it('is false when the count is zero', async () => {
+      (builder.qb as unknown as { getCount: () => Promise<number> }).getCount = async () => 0;
+
+      await expect(repo.existsScoped(TEST_CHARGE_ID, scope)).resolves.toBe(false);
+    });
+  });
+
+  describe('paginateCursor', () => {
     it('orders by created_at then id, descending', async () => {
       await repo.paginateCursor(scope, { limit: 25, cursor: null } as never);
 
@@ -143,6 +161,23 @@ describe('PayzenoRepository', () => {
       expect(sql).toContain('charge.created_at < :createdBefore');
     });
 
+    it('lets a caller extend the scoped builder without escaping the scope', async () => {
+      const extend = jest.fn((qb: SelectQueryBuilder<Row>) => qb);
+
+      await repo.paginateCursor(scope, { limit: 10, cursor: null } as never, extend);
+
+      expect(extend).toHaveBeenCalledWith(builder.qb);
+      expect(builder.state.wheres[0][0]).toContain('merchant_id');
+    });
+
+    it('returns a Paginated envelope', async () => {
+      const page = await repo.paginateCursor(scope, { limit: 10, cursor: null } as never);
+
+      expect(page).toEqual({ data: [], has_more: false, next_cursor: null });
+    });
+  });
+
+  describe('lockForUpdate', () => {
     function managerWithBuilder(): EntityManager {
       return {
         getRepository: () => ({ createQueryBuilder: () => builder.qb }),
