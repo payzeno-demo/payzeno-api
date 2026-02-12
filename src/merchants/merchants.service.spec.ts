@@ -37,6 +37,7 @@ describe('MerchantsService', () => {
     transitionStatus: jest.Mock;
     listForStaff: jest.Mock;
   };
+  let transactions: TransactionManager;
   let events: { publish: jest.Mock };
   let service: MerchantsService;
 
@@ -61,6 +62,22 @@ describe('MerchantsService', () => {
       );
       expect(created.object).toBe('merchant');
       expect(created.status).toBe('pending_review');
+    });
+  });
+
+  describe('getById', () => {
+    it('returns the row', async () => {
+      await expect(service.getById(TEST_MERCHANT_ID)).resolves.toMatchObject({
+        id: TEST_MERCHANT_ID,
+      });
+    });
+
+    it('404s with the merchant-specific subclass', async () => {
+      merchants.findById.mockResolvedValue(null);
+
+      await expect(service.getById(TEST_MERCHANT_ID)).rejects.toBeInstanceOf(
+        MerchantNotFoundException,
+      );
     });
   });
 
@@ -138,6 +155,20 @@ describe('MerchantsService', () => {
         },
         expect.anything(),
       );
+    });
+  });
+
+  describe('restrictForRisk', () => {
+    it('goes through changeStatus so the event and the audit row still happen', async () => {
+      await service.restrictForRisk(TEST_MERCHANT_ID, 137);
+
+      const [type, payload] = events.publish.mock.calls[0];
+      expect(type).toBe('merchant.status_changed');
+      expect(payload).toMatchObject({
+        status: 'restricted',
+        changed_by: 'system:risk_evaluation',
+      });
+      expect(String(payload.reason)).toContain('137 bps');
     });
   });
 
