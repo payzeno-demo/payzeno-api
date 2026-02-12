@@ -56,12 +56,29 @@ export class MerchantEntity extends BaseEntity {
   @Column({ name: 'payout_delay_days', type: 'integer', default: 2 })
   payoutDelayDays!: number;
 
+  @Column({ name: 'capture_at_settlement', type: 'boolean', default: false })
+  captureAtSettlement!: boolean;
+
   @Column({ name: 'livemode', type: 'boolean', default: false })
   livemode!: boolean;
+
+  @OneToMany(() => ApiKeyEntity, (key) => key.merchant)
+  apiKeys?: ApiKeyEntity[];
 
   /** May this merchant take new payments? `restricted` still can — it just cannot pay out. */
   canCharge(): boolean {
     return this.status === 'active' || this.status === 'restricted' || this.status === 'pending_review';
   }
 
+  /** `restricted` is exactly "may charge, may not receive payouts". domain-model.md §1. */
+  canPayOut(): boolean {
+    return this.status === 'active';
+  }
+
+  /**
+   * Auth validity. The schemes grant 30 days on travel / lodging / car rental precisely
+   * because capture happens at return rather than at booking, and `capture_at_settlement`
+   * targets that same MCC set — a flat 7-day expiry would void the holds the feature depends
+   * on. `ChargeExpiryPolicy` is the one that applies this.
+   */
 }

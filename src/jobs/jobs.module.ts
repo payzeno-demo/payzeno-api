@@ -13,3 +13,11 @@
  *
  * docs/runbooks/payzeno-api.md lists every job, its lease and what to do when it stops.
  * — apager
+ */
+import { Module } from '@nestjs/common';
+import { ScheduleModule } from '@nestjs/schedule';
+import { TypeOrmModule } from '@nestjs/typeorm';
+
+import { CommonModule } from '../common/common.module';
+import { IdempotencyRecord } from '../common/idempotency/idempotency-record.entity';
+import { DisputesModule } from '../disputes/disputes.module';
