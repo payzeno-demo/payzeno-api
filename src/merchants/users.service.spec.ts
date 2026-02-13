@@ -77,6 +77,12 @@ describe('MerchantUsersService', () => {
   });
 
   describe('list', () => {
+    it('over-fetches by one to decide has_more', async () => {
+      await service.list(TEST_MERCHANT_ID, { limit: 25 });
+
+      expect(users.listForMerchant).toHaveBeenCalledWith(TEST_MERCHANT_ID, 26);
+    });
+
     it('reports has_more and trims the extra row', async () => {
       users.listForMerchant.mockResolvedValue([
         userRow({ id: 'usr_1' }),
@@ -118,6 +124,16 @@ describe('MerchantUsersService', () => {
       expect(users.updateRole).toHaveBeenCalledWith(TEST_MERCHANT_ID, TEST_USER_ID, 'admin');
     });
 
+    it('refuses to demote the last owner', async () => {
+      users.countOwners.mockResolvedValue(1);
+
+      await expect(
+        service.changeRole(TEST_MERCHANT_ID, TEST_USER_ID, 'viewer'),
+      ).rejects.toBeInstanceOf(ValidationException);
+
+      expect(users.updateRole).not.toHaveBeenCalled();
+    });
+
     it('404s an unknown user', async () => {
       users.findByIdForMerchant.mockResolvedValue(null);
 
@@ -136,6 +152,14 @@ describe('MerchantUsersService', () => {
       expect(users.disable).toHaveBeenCalledWith(TEST_MERCHANT_ID, OTHER_USER_ID);
     });
 
+    it('refuses to let a user remove their own login', async () => {
+      await expect(
+        service.remove(TEST_MERCHANT_ID, TEST_USER_ID, TEST_USER_ID),
+      ).rejects.toBeInstanceOf(PermissionDeniedException);
+
+      expect(users.disable).not.toHaveBeenCalled();
+    });
+
     it('refuses to remove the last owner', async () => {
       users.countOwners.mockResolvedValue(1);
 
@@ -144,5 +168,12 @@ describe('MerchantUsersService', () => {
       ).rejects.toBeInstanceOf(ValidationException);
     });
 
+    it('404s an unknown user before any of the other checks', async () => {
+      users.findByIdForMerchant.mockResolvedValue(null);
+
+      await expect(
+        service.remove(TEST_MERCHANT_ID, OTHER_USER_ID, TEST_USER_ID),
+      ).rejects.toBeInstanceOf(ResourceNotFoundException);
+    });
   });
 });
