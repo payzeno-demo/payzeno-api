@@ -31,7 +31,55 @@ import { FixedClock } from 'test/support/fixed-clock';
 describe('MerchantsService', () => {
   const clock = new FixedClock('2026-03-14T09:21:07.412Z');
 
+  let merchants: {
+    findById: jest.Mock;
+    applyPatch: jest.Mock;
+    transitionStatus: jest.Mock;
+    listForStaff: jest.Mock;
+  };
+  let transactions: TransactionManager;
+  let events: { publish: jest.Mock };
   let service: MerchantsService;
+
+  describe('create', () => {
+    it('delegates the whole multi-aggregate write to the onboarding service', async () => {
+      const created = await service.create(
+        {
+          legal_name: 'Aurora Coffee Roasters Ltd',
+          display_name: 'Aurora Coffee',
+          country: 'GB',
+          default_currency: 'GBP',
+          mcc: '5812',
+        },
+        true,
+        'stf_operator',
+      );
+
+      expect(onboarding.onboard).toHaveBeenCalledWith(
+        expect.objectContaining({ legal_name: 'Aurora Coffee Roasters Ltd' }),
+        true,
+        'stf_operator',
+      );
+      expect(created.object).toBe('merchant');
+      expect(created.status).toBe('pending_review');
+    });
+  });
+
+  describe('getById', () => {
+    it('returns the row', async () => {
+      await expect(service.getById(TEST_MERCHANT_ID)).resolves.toMatchObject({
+        id: TEST_MERCHANT_ID,
+      });
+    });
+
+    it('404s with the merchant-specific subclass', async () => {
+      merchants.findById.mockResolvedValue(null);
+
+      await expect(service.getById(TEST_MERCHANT_ID)).rejects.toBeInstanceOf(
+        MerchantNotFoundException,
+      );
+    });
+  });
 
   describe('update', () => {
     it('writes only the keys the request actually carried', async () => {
@@ -110,6 +158,20 @@ describe('MerchantsService', () => {
     });
   });
 
+  describe('restrictForRisk', () => {
+    it('goes through changeStatus so the event and the audit row still happen', async () => {
+      await service.restrictForRisk(TEST_MERCHANT_ID, 137);
+
+      const [type, payload] = events.publish.mock.calls[0];
+      expect(type).toBe('merchant.status_changed');
+      expect(payload).toMatchObject({
+        status: 'restricted',
+        changed_by: 'system:risk_evaluation',
+      });
+      expect(String(payload.reason)).toContain('137 bps');
+    });
+  });
+
   describe('toMerchantResponse', () => {
     it('coerces the bigint columns to numbers so JSON does not emit strings', () => {
       const wire = toMerchantResponse(
@@ -125,4 +187,19 @@ describe('MerchantsService', () => {
     });
   });
 
+  it('declares every staff-gated field so the controller can 403 a merchant PATCH', () => {
+    expect(STAFF_ONLY_MERCHANT_FIELDS).toEqual(
+      expect.arrayContaining([
+        'risk_tier',
+        'reserve_bps',
+        'reserve_hold_days',
+        'payout_delay_days',
+        'platform_fee_bps',
+        'platform_fee_fixed_minor',
+        'settlement_tolerance_minor',
+        'capture_at_settlement',
+      ]),
+    );
+    expect(STAFF_ONLY_MERCHANT_FIELDS).not.toContain('display_name');
+  });
 });
