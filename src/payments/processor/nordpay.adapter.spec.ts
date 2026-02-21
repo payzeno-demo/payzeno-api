@@ -18,8 +18,23 @@ import { FixedClock } from 'test/support/fixed-clock';
  */
 describe('NordpayAdapter', () => {
   let transport: InMemoryTransport;
+  let adapter: NordpayAdapter;
+
+  beforeEach(() => {
+    transport = new InMemoryTransport();
+    adapter = buildNordpay(transport, new FixedClock('2026-01-15T12:00:00.000Z')).adapter;
+  });
+
   it('identifies itself as nordpay', () => {
     expect(adapter.acquirer).toBe('nordpay');
+  });
+
+  it('calls the nordpay base URL, not worldflow’s', async () => {
+    transport.on('GET', '/v2/health', () => ({ status: 200, body: { status: 'ok' } }));
+
+    await adapter.healthCheck();
+
+    expect(transport.callsTo('GET', '/v2/health')[0].url).toContain('nordpay.test:9101');
   });
 
   it('sends its own credentials', async () => {
@@ -30,6 +45,77 @@ describe('NordpayAdapter', () => {
     const [call] = transport.callsTo('POST', '/v2/authorizations');
     expect(call.headers.authorization).toBe('Bearer np_test_key');
     expect(call.headers['payzeno-acquirer-account']).toBe('np-acct-payzeno');
+  });
+
+  it('maps an approval, translating the card vocabulary', async () => {
+    transport.on('POST', '/v2/authorizations', () => ({ status: 200, body: approval() }));
+
+    const result = await adapter.authorize(euroAuth);
+
+    expect(result).toMatchObject({
+      approved: true,
+      networkTransactionId: 'ntx_np_0001',
+      authorizationCode: 'N44120',
+      processorReference: 'np_auth_0001',
+      riskScore: 8,
+    });
+    expect(result.card).toMatchObject({ brand: 'visa', last_four: '0002', country: 'DE' });
+  });
+
+  describe('3-D Secure transStatus mapping', () => {
+    it.each([
+      ['Y', 'authenticated'],
+      ['A', 'attempted'],
+      ['N', 'failed'],
+      ['U', 'unavailable'],
+    ])('maps status %s to %s', async (status, expected) => {
+      transport.on('POST', '/v2/authorizations', () => ({
+        status: 200,
+        body: approval({
+          authentication: {
+            protocol_version: '2.2.0',
+            flow: 'frictionless',
+            status,
+            eci: '06',
+            liability_shift: status === 'Y',
+          },
+        }),
+      }));
+
+      const result = await adapter.authorize(euroAuth);
+
+      expect(result.threeDSecure?.result).toBe(expected);
+    });
+
+    it('carries liability_shift through untouched', async () => {
+      transport.on('POST', '/v2/authorizations', () => ({
+        status: 200,
+        body: approval({
+          authentication: {
+            protocol_version: '2.2.0',
+            flow: 'frictionless',
+            status: 'A',
+            eci: '06',
+            liability_shift: false,
+          },
+        }),
+      }));
+
+      const result = await adapter.authorize(euroAuth);
+
+      expect(result.threeDSecure?.liabilityShifted).toBe(false);
+    });
+
+    it('returns a null 3DS block when nordpay omits it', async () => {
+      transport.on('POST', '/v2/authorizations', () => ({
+        status: 200,
+        body: approval({ authentication: null }),
+      }));
+
+      const result = await adapter.authorize(euroAuth);
+
+      expect(result.threeDSecure).toBeNull();
+    });
   });
 
   it('captures against the same route shape as worldflow', async () => {

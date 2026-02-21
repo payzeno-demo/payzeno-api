@@ -30,6 +30,25 @@ export interface ParsedSignature {
 export class ProcessorSignatureVerifier {
   constructor(
     private readonly secretsByAcquirer: Readonly<Record<Acquirer, string>>,
+    const expected = this.sign(acquirer, rawBody, parsed.timestamp);
+    if (!constantTimeEquals(expected, parsed.signature)) {
+      throw new PermissionDeniedException(`${acquirer} webhook signature did not verify`);
+    }
+  }
+
+  sign(acquirer: Acquirer, rawBody: Buffer, timestamp: number): string {
+    const secret = this.secretsByAcquirer[acquirer];
+    if (!secret) {
+      throw new PermissionDeniedException(`no webhook secret configured for ${acquirer}`);
+    }
+    return createHmac('sha256', secret)
+      .update(`${timestamp}.`)
+      .update(rawBody)
+      .digest('hex');
+  }
+
+  parse(header: string): ParsedSignature {
+    const parts = (header ?? '').split(',');
     let timestamp: number | null = null;
     let signature: string | null = null;
 
