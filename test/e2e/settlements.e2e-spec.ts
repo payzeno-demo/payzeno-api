@@ -92,6 +92,22 @@ describe('settlements e2e', () => {
     ]);
   });
 
+  it('lists settlements scoped to the calling merchant', async () => {
+    const res = await request(ctx.app.getHttpServer())
+      .get('/v1/settlements')
+      .set('Authorization', bearer(seeded));
+
+    expect(res.status).toBe(200);
+    expect(res.body.data[0]).toMatchObject({
+      object: 'merchant_settlement_batch',
+      id: BATCH_ID,
+      merchant_id: seeded.merchant.id,
+    });
+
+    const [call] = ctx.ledger.callsTo('listSettlementBatches');
+    expect(call.args[0]).toMatchObject({ merchant_id: seeded.merchant.id });
+  });
+
   it('never returns acquirer-level totals on a merchant-facing route', async () => {
     const res = await request(ctx.app.getHttpServer())
       .get('/v1/settlements')
@@ -110,6 +126,17 @@ describe('settlements e2e', () => {
     expect(res.status).toBe(200);
     expect(res.body.id).toBe(BATCH_ID);
     expect(ctx.ledger.callsTo('getSettlementBatch')).toHaveLength(1);
+  });
+
+  it('403s a merchant session on the staff-only retry route', async () => {
+    const res = await request(ctx.app.getHttpServer())
+      .post(`/v1/settlements/${BATCH_ID}/items/ri_000042/retry`)
+      .set('Authorization', bearer(seeded))
+      .set('Idempotency-Key', 'settle-retry-merchant')
+      .send({ reason: 'nudging it' });
+
+    expect(res.status).toBe(403);
+    expect(res.body).toBeApiError('permission_denied');
   });
 
   it('passes 409 settlement_locked through verbatim, with the ledger’s details', async () => {
