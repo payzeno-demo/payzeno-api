@@ -50,6 +50,8 @@ const DEFAULTS = {
 export class MerchantOnboardingService {
   constructor(
     private readonly merchants: MerchantRepository,
+    private readonly ledger: LedgerHttpClient,
+    @Inject(CLOCK) private readonly clock: Clock,
     @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
   ) {}
 
