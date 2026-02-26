@@ -29,4 +29,13 @@ export type MerchantStatusEvent = 'approve' | 'reject' | 'restrict' | 'reinstate
 export class MerchantStatusStateMachine extends StateMachine<MerchantStatus, MerchantStatusEvent> {
   readonly entity = 'merchant';
 
+  protected readonly transitions: TransitionTable<MerchantStatus, MerchantStatusEvent> = {
+    pending_review: { approve: 'active', reject: 'rejected', close: 'closed' },
+    active: { restrict: 'restricted', suspend: 'suspended', close: 'closed' },
+    restricted: { reinstate: 'active', suspend: 'suspended', close: 'closed' },
+    suspended: { reinstate: 'active', close: 'closed' },
+    rejected: {},
+    closed: {},
+  };
+
 }

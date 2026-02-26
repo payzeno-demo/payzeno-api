@@ -34,9 +34,24 @@ export class CreateMerchantDto implements CreateMerchantRequest {
   @MaxLength(100)
   display_name!: string;
 
+  @IsISO31661Alpha2()
+  country!: string;
+
   @IsIn([...CURRENCIES])
   default_currency!: CurrencyCode;
 
+  /** Four digits, as a string. `'0742'` is a real MCC and `742` is not the same value. */
+  @Matches(/^\d{4}$/, { message: 'mcc must be exactly four digits' })
+  mcc!: string;
+
+  @IsIn([...PAYOUT_SCHEDULES])
+  payout_schedule?: PayoutSchedule;
+
+  /**
+   * `@IsPayzenoMetadata()` rejects PAN-shaped values (arc PCI, domain-model.md §11.4). A
+   * merchant putting a card number in `metadata.note` is how cardholder data gets into a
+   * table that is explicitly out of scope.
+   */
   @IsOptional()
   @IsPayzenoMetadata()
   metadata?: Metadata;
