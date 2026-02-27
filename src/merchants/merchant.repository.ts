@@ -80,6 +80,17 @@ export class MerchantRepository extends PayzenoRepository<MerchantEntity> {
       .take(resolved.limit + 1)
       .getMany();
 
+    const hasMore = rows.length > resolved.limit;
+    const data = hasMore ? rows.slice(0, resolved.limit) : rows;
+
+    return { data, has_more: hasMore, next_cursor: null };
+  }
+
+  async applyPatch(
+    merchantId: MerchantId,
+    patch: MerchantPatch,
+    manager?: EntityManager,
+  ): Promise<number> {
     const repo = manager ? manager.getRepository(MerchantEntity) : this;
     const repo = manager ? manager.getRepository(MerchantEntity) : this;
   }

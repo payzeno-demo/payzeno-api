@@ -38,4 +38,8 @@ export class MerchantStatusStateMachine extends StateMachine<MerchantStatus, Mer
     closed: {},
   };
 
+  /** True for the two statuses that stop money moving in either direction. */
+  isFrozen(status: MerchantStatus): boolean {
+    return status === 'suspended' || status === 'closed' || status === 'rejected';
+  }
 }
