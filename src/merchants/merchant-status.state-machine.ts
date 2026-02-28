@@ -29,4 +29,41 @@ export type MerchantStatusEvent = 'approve' | 'reject' | 'restrict' | 'reinstate
 export class MerchantStatusStateMachine extends StateMachine<MerchantStatus, MerchantStatusEvent> {
   readonly entity = 'merchant';
 
+  protected readonly transitions: TransitionTable<MerchantStatus, MerchantStatusEvent> = {
+    pending_review: { approve: 'active', reject: 'rejected', close: 'closed' },
+    active: { restrict: 'restricted', suspend: 'suspended', close: 'closed' },
+    restricted: { reinstate: 'active', suspend: 'suspended', close: 'closed' },
+    suspended: { reinstate: 'active', close: 'closed' },
+    rejected: {},
+    closed: {},
+  };
+
+  eventFor(from: MerchantStatus, to: MerchantStatus): MerchantStatusEvent {
+    const event = (Object.keys(this.transitions[from] ?? {}) as MerchantStatusEvent[]).find(
+      (candidate) => this.transitions[from]?.[candidate] === to,
+    );
+
+    if (!event) {
+      throw new InvalidMerchantTransitionException(from, `→ ${to}`);
+    }
+
+    return event;
+  }
+
+  /**
+   * Overridden so the merchant lifecycle raises its own subclass. Everything else — the
+   * legality decision, the 409, the `allowed_events` detail — still comes from the base.
+   */
+  override apply(from: MerchantStatus, event: MerchantStatusEvent): MerchantStatus {
+    const next = this.transitions[from]?.[event];
+    if (next === undefined) {
+      throw new InvalidMerchantTransitionException(from, event);
+    }
+    return next;
+  }
+
+  /** True for the two statuses that stop money moving in either direction. */
+  isFrozen(status: MerchantStatus): boolean {
+    return status === 'suspended' || status === 'closed' || status === 'rejected';
+  }
 }

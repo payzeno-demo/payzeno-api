@@ -50,12 +50,71 @@ const DEFAULTS = {
 export class MerchantOnboardingService {
   constructor(
     private readonly merchants: MerchantRepository,
+    private readonly transactions: TransactionManager,
+    private readonly ledger: LedgerHttpClient,
+    @Inject(CLOCK) private readonly clock: Clock,
     @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
   ) {}
 
   async onboard(request: CreateMerchantRequest, livemode: boolean, actor: string): Promise<MerchantEntity> {
     await this.assertNotDuplicate(request.legal_name, request.country);
 
+    const merchant = this.build(request, livemode);
+
+    return this.transactions.runInTransaction(async (manager) => {
+      await this.merchants.insertMapped(merchant, manager);
+
+      await this.events.publish(
+        'merchant.created',
+        {
+          merchant_id: merchant.id,
+          legal_name: merchant.legalName,
+          display_name: merchant.displayName,
+          country: merchant.country,
+          default_currency: merchant.defaultCurrency,
+          mcc: merchant.mcc,
+          status: merchant.status,
+          risk_tier: merchant.riskTier,
+          payout_schedule: merchant.payoutSchedule,
+          pricing_model: merchant.pricingModel,
+          reserve_bps: merchant.reserveBps,
+          reserve_hold_days: merchant.reserveHoldDays,
+          payout_delay_days: merchant.payoutDelayDays,
+          settlement_tolerance_minor: merchant.settlementToleranceMinor,
+          capture_at_settlement: merchant.captureAtSettlement,
+          platform_fee_bps: merchant.platformFeeBps,
+          platform_fee_fixed_minor: merchant.platformFeeFixedMinor,
+          created_at: merchant.createdAt.toISOString(),
+        },
+        {
+          merchantId: merchant.id,
+          correlationId: currentCorrelationId(),
+          causationId: null,
+          livemode: merchant.livemode,
+          occurredAt: this.clock.nowIso(),
+        },
+      );
+
+      await this.bootstrapLedgerAccounts(merchant.id, merchant.defaultCurrency, merchant.livemode);
+
+      this.logger.info('merchant.onboarded', {
+        merchant_id: merchant.id,
+        country: merchant.country,
+        currency: merchant.defaultCurrency,
+        livemode: merchant.livemode,
+        actor,
+      });
+
+      return merchant;
+    });
+  }
+
+  /**
+   * `uq_merchant_legal_name_country` would catch this as a 23505, but the mapped message
+   * ("conflict") tells a staff operator nothing. Onboarding the same company twice with
+   * different capitalisation is the duplicate that actually happens.
+   */
+  private async assertNotDuplicate(legalName: string, country: string): Promise<void> {
     const merchant = new MerchantEntity();
   }
 }
