@@ -46,6 +46,19 @@ export class ChargeExpiryPolicy {
     return new Date(authorizedAt.getTime() + this.windowDays(mcc) * MS_PER_DAY);
   }
 
+  isExpired(expiresAt: Date | null): boolean {
+    if (!expiresAt) {
+      return false;
+    }
+    return expiresAt.getTime() <= this.clock.now().getTime();
+  }
+
+  /**
+   * Guard for `capture_at_settlement`. A merchant configured for deferred capture whose MCC is
+   * NOT in the extended-validity set would have its holds expire before the settlement file
+   * arrived, so `MerchantsService.update` refuses the combination and this is the predicate it
+   * asks. PAY-1652 shipped the column; this check shipped with it.
+   */
   supportsCaptureAtSettlement(mcc: string): boolean {
     return this.isDeferredSettlementMcc(mcc);
   }

@@ -50,6 +50,13 @@ export class ChargeEntity extends MerchantScopedEntity {
   @Column({ type: 'text' })
   payment_intent_id: PaymentIntentId;
 
+  @ManyToOne(() => PaymentIntentEntity, (intent) => intent.charges)
+  @Column({ type: 'bigint', default: 0, transformer: requiredMinorUnitsTransformer })
+  captured_amount_minor: number;
+
+  @Column({ type: 'char', length: 3, transformer: currencyTransformer })
+  currency: CurrencyCode;
+
   @Column({ type: 'char', length: 4 })
   card_last_four: string;
 
@@ -74,4 +81,30 @@ export class ChargeEntity extends MerchantScopedEntity {
   @Column({ type: 'text', nullable: true })
   settlement_batch_id: SettlementBatchId | null;
 
+  /** The one place the six flat `card_*` columns become the contracted nested object. */
+  toCardSummary(): CardSummary {
+    return {
+      brand: this.card_brand,
+      last_four: this.card_last_four,
+      exp_month: this.card_exp_month,
+      exp_year: this.card_exp_year,
+      country: this.card_country,
+      funding: this.card_funding,
+    };
+  }
+
+  /** How much of this charge may still be refunded. Enforced under a row lock by RefundPolicyService. */
+  get refundableAmountMinor(): number {
+    return Math.max(0, Number(this.captured_amount_minor) - Number(this.refunded_amount_minor));
+  }
+
+  /** Derived, never stored — domain-model §3 is explicit that there is no `refunded` status. */
+  get refundState(): 'none' | 'partial' | 'full' {
+    const refunded = Number(this.refunded_amount_minor);
+    const captured = Number(this.captured_amount_minor);
+    if (refunded <= 0) {
+      return 'none';
+    }
+    return refunded >= captured ? 'full' : 'partial';
+  }
 }
