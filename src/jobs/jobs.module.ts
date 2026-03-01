@@ -21,3 +21,11 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { CommonModule } from '../common/common.module';
 import { IdempotencyRecord } from '../common/idempotency/idempotency-record.entity';
 import { DisputesModule } from '../disputes/disputes.module';
+import { EventsModule } from '../events/events.module';
+import { LedgerModule } from '../ledger/ledger.module';
+import { MerchantsModule } from '../merchants/merchants.module';
+import { PaymentsModule } from '../payments/payments.module';
+import { WebhooksModule } from '../webhooks/webhooks.module';
+
+import { ChargeExpiryJob } from './charge-expiry.job';
+import { DisputeDeadlineReminderJob } from './dispute-deadline-reminder.job';

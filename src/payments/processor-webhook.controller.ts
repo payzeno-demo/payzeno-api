@@ -44,4 +44,20 @@ export class ProcessorWebhookController {
   @Post(':acquirer')
   @HttpCode(202)
   @UseGuards(ProcessorSignatureGuard)
+  @RateLimit(600, 60)
+  async receive(@Param('acquirer') acquirer: Acquirer, @Req() req: RawBodyRequest): Promise<void> {
+    const signature = String(req.headers['x-payzeno-signature'] ?? '');
+    const rawBody = req.rawBody ?? Buffer.from(JSON.stringify(req.body ?? {}));
+
+    this.logger.debug('processor_webhook_received', {
+      acquirer,
+      body_bytes: rawBody.byteLength,
+      has_signature: signature.length > 0,
+      // Never the body: acquirer payloads carry a masked PAN in `card.display_number` and the
+      // redaction interceptor does not reach a Buffer.
+      raw_body_logged: false,
+    });
+
+    await this.webhooks.handle(acquirer, rawBody, signature);
+  }
 }

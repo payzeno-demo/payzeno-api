@@ -15,8 +15,51 @@ import { makeCharge, makeSettledCharge } from 'test/factories/charge.factory';
 // one switch I can read. TODO(PAY-1988): revisit when nordpay adds partial reversals.
 describe('ProcessorWebhookService', () => {
   let service: ProcessorWebhookService;
+  let charges: jest.Mocked<ChargesService>;
+  let publisher: jest.Mocked<OutboxEventPublisher>;
   let router: jest.Mocked<ProcessorRouter>;
   let adapter: { acquirer: 'worldflow'; parseWebhook: jest.Mock };
+
+  beforeEach(async () => {
+    adapter = { acquirer: 'worldflow', parseWebhook: jest.fn() };
+
+    charges = {
+      findByProcessorReference: jest.fn().mockResolvedValue(makeCharge()),
+      markSettled: jest.fn(),
+    } as unknown as jest.Mocked<ChargesService>;
+
+    disputes = {
+      openFromWebhook: jest.fn(),
+      closeFromWebhook: jest.fn(),
+    } as unknown as jest.Mocked<DisputesService>;
+
+    refunds = { markSettledFromWebhook: jest.fn() } as unknown as jest.Mocked<RefundsService>;
+    publisher = { publish: jest.fn() } as unknown as jest.Mocked<OutboxEventPublisher>;
+    router = { forAcquirer: jest.fn().mockReturnValue(adapter) } as unknown as jest.Mocked<ProcessorRouter>;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        ProcessorWebhookService,
+        { provide: ChargesService, useValue: charges },
+        { provide: DisputesService, useValue: disputes },
+        { provide: RefundsService, useValue: refunds },
+        { provide: OutboxEventPublisher, useValue: publisher },
+        { provide: ProcessorRouter, useValue: router },
+        { provide: PayzenoLogger, useValue: new NoopLogger() },
+      ],
+    }).compile();
+
+    service = moduleRef.get(ProcessorWebhookService);
+  });
+
+  it('parses through the acquirer’s own adapter', async () => {
+    adapter.parseWebhook.mockReturnValue(parsed('capture_settled'));
+
+    await service.handle('worldflow', Buffer.from('{}'), 't=1,v1=abc');
+
+    expect(router.forAcquirer).toHaveBeenCalledWith('worldflow');
+    expect(adapter.parseWebhook).toHaveBeenCalledWith(expect.any(Buffer), 't=1,v1=abc');
+  });
 
   it('drops an event whose network transaction id matches nothing', async () => {
     charges.findByProcessorReference.mockResolvedValue(null as never);
