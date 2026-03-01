@@ -62,7 +62,10 @@ export interface CreateSupportTaskInput {
 export class InternalService {
   constructor(
     private readonly merchants: MerchantsService,
+    private readonly charges: ChargesService,
     private readonly webhookEndpoints: WebhookEndpointsService,
+    private readonly audit: AuditService,
+    @Inject(CLOCK) private readonly clock: Clock,
     const endpoints = await this.webhookEndpoints.listForInternalCaller(merchantId, status);
 
     this.logger.debug('internal.webhook_endpoints_read', {

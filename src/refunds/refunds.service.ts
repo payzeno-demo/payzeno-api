@@ -47,7 +47,75 @@ import { RefundStateMachine } from './state/refund.state-machine';
 export class RefundsService extends BaseService<RefundEntity> {
   constructor(
     private readonly refunds: RefundRepository,
+    private readonly charges: ChargeRepository,
     private readonly router: ProcessorRouter,
     private readonly ids: IdFactory,
+    const { refund, netsAgainstSettlement } = await this.transactions.runInTransaction(async (manager) => {
+      const decision = await this.policy.evaluate(manager, dto.charge_id, dto.amount_minor, dto.reason);
+
+      const row = await this.refunds.insertRefund(manager, {
+        id: this.ids.refundId() as RefundId,
+        merchantId: scope.merchantId,
+        chargeId: decision.charge.id,
+        amountMinor: decision.amountMinor,
+        currency: decision.charge.currency,
+        reason: decision.reason,
+        metadata: dto.metadata ?? {},
+        livemode: scope.livemode,
+        createdAt: this.clock.now(),
+      });
+
+      // Kept on the charge so the next policy evaluation sees it even before the acquirer
+      // answers — the sum query and this counter must not disagree.
+      await this.charges.addRefundedAmount(manager, decision.charge.id, decision.amountMinor);
+
+      await this.events.publish(
+        'refund.created',
+        {
+          refund_id: row.id,
+          charge_id: decision.charge.id,
+          merchant_id: scope.merchantId,
+          amount_minor: decision.amountMinor,
+          currency: decision.charge.currency,
+          reason: decision.reason,
+          nets_against_settlement: decision.netsAgainstSettlement,
+          created_at: row.createdAt.toISOString(),
+        },
+        {
+          merchantId: scope.merchantId,
+          correlationId,
+          causationId: null,
+          livemode: scope.livemode,
+          occurredAt: row.createdAt.toISOString(),
+        },
+      );
+
+      return { refund: row, netsAgainstSettlement: decision.netsAgainstSettlement, charge: decision.charge };
+    });
+
+    return this.submitToAcquirer(refund, netsAgainstSettlement, scope);
+  }
+
+  /**
+   * Step 4. Outside the transaction on purpose — see the header. A failure here leaves the
+   * refund `pending`, which is the honest state: we asked and do not yet know.
+   *
+   * TODO(PAY-1974): pending refunds whose acquirer call threw are only retried by hand.
+   * They want a sweep job like UnsettledChargeSweepJob.
+   */
+  private async submitToAcquirer(
+    refund: RefundEntity,
+    netsAgainstSettlement: boolean,
+    scope: MerchantScope,
+  ): Promise<Refund> {
+    const page = await this.paginate(query, scope, (qb) =>
+      query.charge_id ? qb.andWhere('refund.charge_id = :chargeId', { chargeId: query.charge_id }) : qb,
+    );
+
+    return { ...page, data: page.data.map(toRefund) };
+  }
+
+  /** Used by the charge detail panel; not paginated because a charge has a handful. */
+  async listForCharge(principal: AuthPrincipal, chargeId: ChargeId): Promise<Refund[]> {
   };
 }
