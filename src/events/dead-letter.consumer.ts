@@ -35,6 +35,41 @@ export class DeadLetterConsumer extends BaseEventConsumer {
   readonly queueUrl: string;
   readonly consumerName = 'dead-letter';
 
+  /** In-memory, per-task. A restart resets it — that is acceptable and documented. */
+  private readonly redriveCounts = new Map<string, number>();
+
+  constructor(
+    sqs: SQSClient,
+    transactions: TransactionManager,
+    processedEvents: ProcessedEventRepository,
+    @Inject(PAYZENO_LOGGER) logger: PayzenoLogger,
+    @Inject(API_CONFIG) private readonly config: ApiConfig,
+  ) {
+    super(sqs, transactions, processedEvents, logger);
+    this.queueUrl = this.config.aws.sqsDlqUrl;
+  }
+
+  /**
+   * The claim is the side effect. Recording that we have seen this envelope on the DLQ is
+   * what makes `GET /internal/v1/…` triage and the runbook's "has it been redriven?"
+   * question answerable.
+   */
+  async handle(event: PayzenoEvent, _tx: EntityManager): Promise<void> {
+    this.logger.error('dlq.received', null, {
+      event_id: event.id,
+      type: event.type,
+      source: event.source,
+      merchant_id: event.merchant_id,
+      correlation_id: event.correlation_id,
+      occurred_at: event.occurred_at,
+    });
+  }
+
+  /**
+   * Override the base loop: the DLQ is polled slowly and every message is re-published to
+   * its origin queue rather than merely acknowledged. `runOnce` exists so the redrive can
+   * also be triggered by hand from the runbook without waiting for the poll.
+   */
   async runOnce(): Promise<number> {
     const response = await this.sqs.send(
       new ReceiveMessageCommand({
