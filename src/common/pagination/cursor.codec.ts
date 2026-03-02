@@ -15,3 +15,11 @@
  * the code, which is why cursor.codec.spec.ts exists and is longer than the file.)
  */
 import { ValidationException } from '../errors/api.exception';
+import { isPayzenoId } from '../ids/id.prefix';
+
+export interface Cursor {
+  /** RFC 3339 string of the ordering column. */
+  createdAt: string;
+  /** The row's public id, breaking ties within the same instant. */
+  id: string;
+}
