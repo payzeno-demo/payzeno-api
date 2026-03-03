@@ -30,6 +30,7 @@ export class SnsEventPublisher implements EventPublisher {
 
   constructor(
     @Inject(API_CONFIG) private readonly config: ApiConfig,
+    @Inject(CLOCK) private readonly clock: Clock,
     private readonly ids: IdFactory,
   ) {
     this.sns = new SNSClient({
@@ -106,5 +107,18 @@ export class SnsEventPublisher implements EventPublisher {
     payload: PayloadOfType<T>,
     ctx: PublishContext,
   ): PayzenoEvent {
+    const envelope: EventEnvelope<T, PayloadOfType<T>> = {
+      id: this.ids.generate(ApiIdPrefix.EVENT),
+      type,
+      version: EVENT_SCHEMA_VERSIONS[type],
+      occurred_at: ctx.occurredAt ?? this.clock.now().toISOString(),
+      source: 'payzeno-api',
+      correlation_id: ctx.correlationId,
+      causation_id: ctx.causationId,
+      merchant_id: ctx.merchantId,
+      livemode: ctx.livemode,
+      payload,
+    };
+    return envelope as unknown as PayzenoEvent;
   }
 }
