@@ -15,7 +15,9 @@ class FakeSqs {
 }
 
 class RecordingConsumer extends BaseEventConsumer {
+  readonly queueUrl = 'http://localstack:4566/000000000000/payzeno-api-ledger';
   readonly consumerName = 'recording';
+  readonly handledTypes = new Set<EventType>(['settlement.completed', 'payout.failed']);
   readonly handled: PayzenoEvent[] = [];
   shouldThrow = false;
 
@@ -61,6 +63,13 @@ describe('BaseEventConsumer', () => {
     child: jest.fn(),
   };
 
+  it('unwraps the SNS-to-SQS envelope', async () => {
+    await consumer.processMessage(sqsMessage({ Message: JSON.stringify(envelope()) }));
+
+    expect(consumer.handled).toHaveLength(1);
+    expect(consumer.handled[0].id).toBe('evt_01HZZZ');
+  });
+
   it('acknowledges and drops a type it does not handle', async () => {
     await consumer.processMessage(sqsMessage(envelope({ type: 'payment.captured' as EventType })));
 
@@ -103,4 +112,14 @@ describe('BaseEventConsumer', () => {
     );
   });
 
+  it('does not delete an unparseable message', async () => {
+    await consumer.processMessage({ MessageId: 'm2', ReceiptHandle: 'rh-2', Body: 'not json' });
+
+    expect(sqs.deleted).toEqual([]);
+    expect(logger.error).toHaveBeenCalledWith(
+      'consumer.unparseable_message',
+      null,
+      expect.objectContaining({ message_id: 'm2' }),
+    );
+  });
 });
