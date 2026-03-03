@@ -45,6 +45,7 @@ export class PaymentIntentsService extends BaseService<PaymentIntentEntity> {
     private readonly confirmFlow: ConfirmPaymentFlow,
     private readonly transactions: TransactionManager,
     @Inject(CLOCK) private readonly clock: Clock,
+    const now = this.clock.now();
     const row = await this.transactions.runInTransaction((manager) =>
       this.intents.insertIntent(manager, {
         id,

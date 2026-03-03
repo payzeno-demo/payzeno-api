@@ -47,7 +47,9 @@ export class ProcessorWebhookService {
   constructor(
     private readonly router: ProcessorRouter,
     private readonly charges: ChargesService,
+    private readonly disputes: DisputesService,
     private readonly publisher: OutboxEventPublisher,
+    @Inject(CLOCK) private readonly clock: Clock,
     @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
   ) {}
 
@@ -161,5 +163,70 @@ export class ProcessorWebhookService {
     raw: RefundPayload,
   ): Promise<void> {
     const occurredAt = this.clock.nowIso();
+    const ctx = {
+      merchantId: charge.merchantId,
+      correlationId: `acq:${charge.processor_reference ?? charge.id}`,
+      causationId: null,
+      livemode: charge.livemode,
+      occurredAt,
+    };
+
+    if (raw.failed === true) {
+      await this.publisher.publish(
+        'refund.failed',
+        {
+          refund_id: refundId,
+          charge_id: charge.id,
+          merchant_id: charge.merchantId,
+          amount_minor: amountMinor,
+          currency: charge.currency,
+          failure_reason: raw.failure_reason ?? 'acquirer reported a failed reversal',
+          failed_at: occurredAt,
+        },
+        ctx,
+      );
+      return;
+    }
+
+    await this.publisher.publish(
+      'refund.succeeded',
+      {
+        refund_id: refundId,
+        charge_id: charge.id,
+        merchant_id: charge.merchantId,
+        amount_minor: amountMinor,
+        currency: charge.currency,
+        succeeded_at: occurredAt,
+      },
+      ctx,
+    );
+  }
+}
+
+/**
+ * The acquirers use their own vocabulary and neither of them uses ours. Anything unrecognised
+ * becomes `general`, which is the reason code the networks themselves use for "other".
+ */
+function normaliseDisputeReason(raw: string | undefined): DisputeReason {
+  switch ((raw ?? '').toLowerCase()) {
+    case 'fraudulent':
+    case 'fraud':
+    case 'unauthorized':
+      return 'fraudulent';
+    case 'product_not_received':
+    case 'goods_not_received':
+      return 'product_not_received';
+    case 'product_unacceptable':
+    case 'not_as_described':
+      return 'product_unacceptable';
+    case 'duplicate':
+      return 'duplicate';
+    case 'subscription_canceled':
+    case 'recurring_canceled':
+      return 'subscription_canceled';
+    case 'credit_not_processed':
+      return 'credit_not_processed';
+    default:
+      return 'general';
   }
 }
