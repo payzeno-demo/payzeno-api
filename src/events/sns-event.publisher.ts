@@ -30,6 +30,19 @@ export class SnsEventPublisher implements EventPublisher {
 
   constructor(
     @Inject(API_CONFIG) private readonly config: ApiConfig,
+    private readonly ids: IdFactory,
+  ) {
+    this.sns = new SNSClient({
+      region: this.config.aws.region,
+      endpoint: this.config.aws.endpointUrl,
+    });
+  }
+
+  async publish<T extends EventType>(
+    type: T,
+    payload: PayloadOfType<T>,
+    ctx: PublishContext,
+  ): Promise<string> {
     const topic = topicOf(event.type);
     await this.sns.send(
       new PublishCommand({
@@ -75,5 +88,23 @@ export class SnsEventPublisher implements EventPublisher {
   private groupByTopic(
     events: ReadonlyArray<PayzenoEvent>,
   ): Array<{ topic: TopicName; events: PayzenoEvent[] }> {
+    const buckets = new Map<TopicName, PayzenoEvent[]>();
+    for (const event of events) {
+      const topic = topicOf(event.type);
+      const bucket = buckets.get(topic);
+      if (bucket) {
+        bucket.push(event);
+      } else {
+        buckets.set(topic, [event]);
+      }
+    }
+    return [...buckets.entries()].map(([topic, grouped]) => ({ topic, events: grouped }));
+  }
+
+  private envelope<T extends EventType>(
+    type: T,
+    payload: PayloadOfType<T>,
+    ctx: PublishContext,
+  ): PayzenoEvent {
   }
 }
