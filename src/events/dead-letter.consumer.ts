@@ -106,4 +106,48 @@ export class DeadLetterConsumer extends BaseEventConsumer {
    * attribute the redrive policy stamps; without it we cannot know where to send it and the
    * message stays parked for a human.
    */
+  private async redrive(event: PayzenoEvent, message: Message): Promise<boolean> {
+    const origin = message.MessageAttributes?.origin_queue_url?.StringValue;
+    if (!origin) {
+      this.logger.warn('dlq.parked_no_origin', { event_id: event.id, type: event.type });
+      return false;
+    }
+
+    const attempts = (this.redriveCounts.get(event.id) ?? 0) + 1;
+    this.redriveCounts.set(event.id, attempts);
+
+    if (attempts > MAX_REDRIVES) {
+      this.logger.error('dlq.parked_redrive_exhausted', null, {
+        event_id: event.id,
+        type: event.type,
+        attempts,
+      });
+      return false;
+    }
+
+    await this.sqs.send(
+      new SendMessageCommand({
+        QueueUrl: origin,
+        MessageBody: JSON.stringify(event),
+        MessageAttributes: {
+          event_type: { DataType: 'String', StringValue: event.type },
+          redrive_attempt: { DataType: 'Number', StringValue: String(attempts) },
+        },
+      }),
+    );
+
+    if (message.ReceiptHandle) {
+      await this.sqs.send(
+        new DeleteMessageCommand({ QueueUrl: this.queueUrl, ReceiptHandle: message.ReceiptHandle }),
+      );
+    }
+
+    this.logger.info('dlq.redriven', {
+      event_id: event.id,
+      type: event.type,
+      origin_queue_url: origin,
+      attempt: attempts,
+    });
+    return true;
+  }
 }
