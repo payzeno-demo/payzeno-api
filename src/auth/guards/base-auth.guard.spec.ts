@@ -61,6 +61,23 @@ describe('BaseAuthGuard', () => {
 
   it('raises AuthenticationRequiredException naming its own scheme when nothing resolves', async () => {
     const guard = new StubGuard(null);
+    it('accepts any casing of the scheme, per RFC 7235', () => {
+      expect(guard.readBearer(makeRequest({ headers: { authorization: 'Bearer sk_live_x' } }))).toBe(
+        'sk_live_x',
+      );
+      expect(guard.readBearer(makeRequest({ headers: { authorization: 'bearer sk_live_x' } }))).toBe(
+        'sk_live_x',
+      );
+      expect(guard.readBearer(makeRequest({ headers: { authorization: 'BEARER sk_live_x' } }))).toBe(
+        'sk_live_x',
+      );
+    });
+
+    it('rejects a non-bearer scheme rather than treating the whole header as a token', () => {
+      expect(guard.readBearer(makeRequest({ headers: { authorization: 'Basic abc' } }))).toBeNull();
+    });
+
+    const guard = new StubGuard(null);
     const request = makeRequest({
       cookies: { pz_session: 'sess_1' },
       headers: { 'X-Payzeno-Service': 'payzeno-ledger' },
@@ -73,5 +90,9 @@ describe('BaseAuthGuard', () => {
   });
 
   describe('headerValue', () => {
+    it('collapses a repeated header to its first value', () => {
+      expect(headerValue(['first', 'second'])).toBe('first');
+    });
+
   });
 });

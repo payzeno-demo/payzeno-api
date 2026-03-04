@@ -44,6 +44,17 @@ describe('ApiKeyGuard', () => {
     const principal = makeApiKeyPrincipal();
     resolver.resolve.mockResolvedValue(principal);
 
+    const { context, request } = guardContext({
+      headers: { authorization: 'Bearer sk_live_ab12cd34_verysecretvaluehere' },
+    });
+
+    await expect(guardWith().canActivate(context)).resolves.toBe(true);
+
+    expect(resolver.resolve).toHaveBeenCalledWith('sk_live_ab12cd34_verysecretvaluehere');
+    expect(request.principal).toEqual(principal);
+  });
+
+  it('declines to handle a credential that is not an API key, so the next guard can try', async () => {
     const { context } = guardContext({ headers: { authorization: 'Bearer pi_abc_secret_xyz' } });
 
     // Null from `authenticate` becomes the base's 401 when this is the only guard, but the
@@ -53,6 +64,13 @@ describe('ApiKeyGuard', () => {
   });
 
   it('401s when no Authorization header is present at all', async () => {
+    const { context } = guardContext();
+
+    await rejectsWith(guardWith().canActivate(context), AuthenticationRequiredException);
+    expect(resolver.resolve).not.toHaveBeenCalled();
+  });
+
+  it('lets the resolver own the invalid-key exception rather than remapping it', async () => {
     class Boom extends Error {}
     resolver.resolve.mockRejectedValue(new Boom('invalid'));
 
@@ -64,6 +82,12 @@ describe('ApiKeyGuard', () => {
   });
 
   describe('@RequiredScopes', () => {
+    beforeEach(() => {
+      resolver.resolve.mockImplementation(async () =>
+        makeScopedApiKeyPrincipal(['refunds:write', 'charges:read']),
+      );
+    });
+
     const request = { headers: { authorization: 'Bearer sk_live_ab12cd34_verysecretvaluehere' } };
 
     it('passes when the granted set covers the requirement', async () => {
