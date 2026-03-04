@@ -30,6 +30,10 @@ export class AuditLog extends AppendOnlyEntity {
   })
   actorType!: AuditActorType;
 
+  /** `usr_`, `key_`, `stf_`, or a service name for `internal_service`/`system`. */
+  @Column({ type: 'text', name: 'actor_id', nullable: true })
+  actorId!: string | null;
+
   /** Dotted `<resource>.<verb>`. Indexed vocabulary — keep it small. */
   @Column({ type: 'text', name: 'action' })
   action!: string;
@@ -40,9 +44,26 @@ export class AuditLog extends AppendOnlyEntity {
   @Column({ type: 'text', name: 'resource_id', nullable: true })
   resourceId!: string | null;
 
+  @Column({ type: 'jsonb', name: 'before', nullable: true })
+  before!: Record<string, unknown> | null;
+
+  @Column({ type: 'jsonb', name: 'after', nullable: true })
+  after!: Record<string, unknown> | null;
+
+  @Column({ type: 'text', name: 'request_id', nullable: true })
+  requestId!: string | null;
+
+  @Column({ type: 'inet', name: 'ip', nullable: true })
+  ip!: string | null;
+
   /** Added by migration 31 with the rest of the merchant-scoped tables. */
   @Column({ type: 'boolean', name: 'livemode', default: false })
   livemode!: boolean;
+
+  /** What the console's activity feed renders; the raw diff stays server-side. */
+  summary(): string {
+    return `${this.action} ${this.resourceType}${this.resourceId ? `:${this.resourceId}` : ''}`;
+  }
 
   /** True when the row records a change rather than a read-shaped action. */
   hasDiff(): boolean {

@@ -55,7 +55,71 @@ export interface TransactionalAuditEntry {
 export class AuditService implements AuditSink {
   constructor(
     private readonly rows: AuditLogRepository,
+    private readonly ids: IdFactory,
     private readonly staffAudit: StaffAuditService,
+    @Inject(CLOCK) private readonly clock: Clock,
+  ) {}
+
+  record(entry: AuditEntry): Promise<void>;
+  record(tx: EntityManager, entry: TransactionalAuditEntry): Promise<void>;
+  async record(
+    first: AuditEntry | EntityManager,
+    second?: TransactionalAuditEntry,
+  ): Promise<void> {
+    if (second) {
+      await this.rows.append(this.toRow(second), first as EntityManager);
+      return;
+    }
+
+    const entry = first as AuditEntry;
+    await this.rows.append(
+      this.toRow({
+        merchantId: entry.merchantId,
+        actorType: entry.actorType,
+        actorId: entry.actorId,
+        action: entry.action,
+        resourceType: entry.resourceType,
+        resourceId: entry.resourceId,
+        before: asJson(entry.before),
+        after: asJson(entry.after),
+        livemode: entry.livemode,
+        requestId: entry.requestId,
+        ip: entry.ip,
+      }),
+    );
+  }
+
+  /** Staff trail. Same interceptor, different table — see StaffAuditService. */
+  async recordStaff(entry: StaffAuditEntry): Promise<void> {
+    await this.staffAudit.record(entry);
+  }
+
+  /**
+   * Several rows, one transaction. `MerchantOnboardingService` writes the merchant, the
+   * bank account and the api key in one go and wants one timeline, not three.
+   */
+  async recordMany(tx: EntityManager, entries: readonly TransactionalAuditEntry[]): Promise<number> {
+    return this.rows.appendMany(
+      entries.map((entry) => this.toRow(entry)),
+      tx,
+    );
+  }
+
+  /** Console activity feed. */
+  async listForMerchant(merchantId: string, limit = 50): Promise<AuditLog[]> {
+    return this.rows.listForMerchant({ merchantId, limit });
+  }
+
+  /**
+   * The remediation query. arc INC: a support agent looking at a possible double charge
+   * wants every row for `ch_…` including the ones the ledger's `duplicate_detected` branch
+   * wrote with a null merchant.
+   */
+  async timelineFor(resourceType: string, resourceId: string): Promise<AuditLog[]> {
+    return this.rows.timelineFor(resourceType, resourceId);
+  }
+
+  private toRow(entry: TransactionalAuditEntry): AuditLog {
     const ctx = getRequestContext();
     const row = new AuditLog();
 
