@@ -59,6 +59,10 @@ export class ApiKeyResolver {
     if (!split) throw new InvalidApiKeyException();
 
     const lookupHash = this.hasher.lookupHash(split.secret);
+    const candidate = await this.keys.findOne({ where: { lookupHash } });
+
+    if (!candidate) throw new InvalidApiKeyException();
+
     const verified = await this.hasher.verifySecret(candidate.secretHash, split.secret);
     if (!verified) throw new InvalidApiKeyException();
 

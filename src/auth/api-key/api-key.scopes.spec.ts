@@ -36,6 +36,10 @@ describe('api-key scopes', () => {
       expect(ALL_SCOPES).toEqual(API_KEY_SCOPES);
     });
 
+    it('partitions into reads and writes with nothing left over', () => {
+      expect(READ_SCOPES.length + WRITE_SCOPES.length).toBe(ALL_SCOPES.length);
+    });
+
     it('has more reads than writes — several resources are read-only', () => {
       // balance, settlements, invoices and charges have no write scope at all.
       expect(READ_SCOPES.length).toBeGreaterThan(WRITE_SCOPES.length);
@@ -77,6 +81,21 @@ describe('api-key scopes', () => {
       // A key that can create an intent and cannot read the resulting charge is useless,
       // and every merchant integrating hit this in the first hour.
       expect(IMPLIED_SCOPES['payment_intents:write']).toContain('charges:read');
+    });
+
+    it('does not pretend balance or settlements have a write counterpart', () => {
+      expect(IMPLIED_SCOPES['balance:read' as keyof typeof IMPLIED_SCOPES]).toBeUndefined();
+      expect(IMPLIED_SCOPES['settlements:read' as keyof typeof IMPLIED_SCOPES]).toBeUndefined();
+    });
+  });
+
+  describe('expandScopes', () => {
+    it('adds the implied reads', () => {
+      expect(expandScopes(['refunds:write']).sort()).toEqual(['refunds:read', 'refunds:write']);
+    });
+
+    it('deduplicates when the read was granted explicitly too', () => {
+      expect(expandScopes(['refunds:write', 'refunds:read'])).toHaveLength(2);
     });
 
     it('leaves a read-only grant untouched', () => {
@@ -129,6 +148,10 @@ describe('api-key scopes', () => {
 
     it('is false when one of several required scopes is missing', () => {
       expect(coversRequired(['refunds:write'], ['refunds:read', 'disputes:read'])).toBe(false);
+    });
+
+    it('is true when nothing is required — an unannotated handler is not scope-gated', () => {
+      expect(coversRequired([], [])).toBe(true);
     });
 
     it('is false when something is required and nothing was granted', () => {
