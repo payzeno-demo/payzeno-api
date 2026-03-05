@@ -60,3 +60,24 @@ export function makeChallengedPaymentIntent(
   });
 }
 
+export function makeCreatePaymentIntentRequest(
+  overrides: Partial<CreatePaymentIntentRequest> = {},
+): CreatePaymentIntentRequest {
+  return {
+    amount_minor: 4_500,
+    currency: 'GBP',
+    capture_method: 'automatic',
+    payment_method_token: 'pmt_visa_4242',
+    customer_reference: 'cus_aurora_881',
+    description: 'Order 4471',
+    statement_descriptor: 'AURORA',
+    confirm: false,
+    metadata: {},
+    ...overrides,
+  };
+}
+
+/** Handy for `PaymentIntentStateMachine` table-driven specs. */
+export function intentInStatus(status: PaymentIntentStatus): PaymentIntent {
+  return makePaymentIntent({ status });
+}
