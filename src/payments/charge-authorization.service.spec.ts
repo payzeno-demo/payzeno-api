@@ -28,6 +28,7 @@ import { makePaymentIntent } from 'test/factories/payment-intent.factory';
  */
 describe('ChargeAuthorizationService', () => {
   let service: ChargeAuthorizationService;
+  let vault: jest.Mocked<VaultClient>;
   let router: jest.Mocked<ProcessorRouter>;
   let repo: jest.Mocked<ChargeRepository>;
   let publisher: jest.Mocked<OutboxEventPublisher>;
@@ -60,6 +61,30 @@ describe('ChargeAuthorizationService', () => {
         authorization_code: 'A17742',
         acquirer: 'worldflow',
       }),
+    );
+  });
+
+  it('emits payment.authorized with the fields the ledger projection requires', async () => {
+    await service.authorize(merchant, intent, { payment_method_token: 'pmt_visa_4242' });
+
+    expect(publisher.publish).toHaveBeenCalledWith(
+      'payment.authorized',
+      expect.objectContaining({
+        reserve_bps: merchant.reserve_bps,
+        processor_reference: 'wf_auth_1',
+        acquirer: 'worldflow',
+        capture_at_settlement: merchant.capture_at_settlement,
+      }),
+      expect.anything(),
+    );
+  });
+
+  it('stamps an expiry from ChargeExpiryPolicy, not a hardcoded 7 days', async () => {
+    await service.authorize(merchant, intent, { payment_method_token: 'pmt_visa_4242' });
+
+    const [, patch] = repo.markAuthorized.mock.calls[0];
+    expect((patch as { authorization_expires_at: string }).authorization_expires_at).toEqual(
+      expect.any(String),
     );
   });
 

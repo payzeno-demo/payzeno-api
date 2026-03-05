@@ -55,6 +55,7 @@ export interface AuthorizationOutcome {
 export class ChargeAuthorizationService {
   constructor(
     private readonly charges: ChargeRepository,
+    private readonly router: ProcessorRouter,
     private readonly vault: VaultClient,
     private readonly transactions: TransactionManager,
     @Inject(CLOCK) private readonly clock: Clock,
@@ -137,5 +138,6 @@ export class ChargeAuthorizationService {
     command: AuthorizeChargeCommand,
     result: AuthorizeResult,
   ): Promise<void> {
+    const authorizedAt = this.clock.now();
   }
 }

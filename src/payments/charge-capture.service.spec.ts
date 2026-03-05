@@ -29,12 +29,51 @@ describe('ChargeCaptureService', () => {
 
   const merchant = makeMerchant();
 
+  it('captures an authorised charge through the acquirer', async () => {
+    const charge = makeCharge({ status: 'authorized' });
+    repo.lockForUpdate.mockResolvedValue(charge as never);
+
+    const result = await service.captureCharge(merchant, charge.id, 4_500);
+
+    expect(adapter.capture).toHaveBeenCalledWith(
+      expect.objectContaining({
+        networkTransactionId: charge.network_transaction_id,
+        amountMinor: 4_500,
+      }),
+    );
+    expect(result.status).toBe('captured');
+  });
+
   it('runs the capture inside a transaction', async () => {
     repo.lockForUpdate.mockResolvedValue(makeCharge({ status: 'authorized' }) as never);
 
     await service.captureCharge(merchant, 'ch_1', 4_500);
 
     expect(txm.runInTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('throws ChargeNotCapturableException for a charge that is not authorized', async () => {
+    repo.lockForUpdate.mockResolvedValue(makeCapturedCharge() as never);
+
+    await expect(service.captureCharge(merchant, 'ch_1', 4_500)).rejects.toBeInstanceOf(
+      ChargeNotCapturableException,
+    );
+    expect(adapter.capture).not.toHaveBeenCalled();
+  });
+
+  it('throws ChargeNotCapturableException for an expired authorisation', async () => {
+    repo.lockForUpdate.mockResolvedValue(makeCharge({ status: 'expired' }) as never);
+
+    await expect(service.captureCharge(merchant, 'ch_1', 4_500)).rejects.toBeInstanceOf(
+      ChargeNotCapturableException,
+    );
+  });
+
+  it('refuses to capture more than was authorised', async () => {
+    repo.lockForUpdate.mockResolvedValue(makeCharge({ status: 'authorized', amount_minor: 4_500 }) as never);
+
+    await expect(service.captureCharge(merchant, 'ch_1', 9_000)).rejects.toThrow();
+    expect(adapter.capture).not.toHaveBeenCalled();
   });
 
   it('allows a partial capture', async () => {
