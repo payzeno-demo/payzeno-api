@@ -48,3 +48,16 @@ export interface CaptureChargeCommand {
 
 export interface CaptureOutcome {
   chargeId: string;
+  capturedAmountMinor: number;
+  capturedAt: Date;
+  /** False when the ledger will issue the acquirer call at settlement instead. */
+  processorCaptureIssued: boolean;
+}
+
+@Injectable()
+export class ChargeCaptureService {
+  constructor(
+    private readonly charges: ChargeRepository,
+    private readonly router: ProcessorRouter,
+    private readonly stateMachine: ChargeStateMachine,
+    private readonly transactions: TransactionManager,
