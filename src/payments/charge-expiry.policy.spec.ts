@@ -21,6 +21,22 @@ describe('ChargeExpiryPolicy', () => {
     });
 
     it('gives a deferred-capture MCC 30 days', () => {
+      // 4722 (travel agencies) is on the extended-window list: a hotel or flight
+      // authorisation must survive until the stay, not seven days.
+      const merchant = makeMerchant({ mcc: '4722' });
+
+      expect(policy.expiresAt(merchant)).toBe('2026-02-14T12:00:00.000Z');
+    });
+
+    it.each(['4511', '4722', '7011', '7512'])('treats MCC %s as extended-window', (mcc) => {
+      expect(policy.windowDays(makeMerchant({ mcc }))).toBe(30);
+    });
+
+    it.each(['5732', '5812', '5999', '7372'])('treats MCC %s as standard', (mcc) => {
+      expect(policy.windowDays(makeMerchant({ mcc }))).toBe(7);
+    });
+
+    it('moves with the clock', () => {
       const later = new FixedClock('2026-03-01T00:00:00.000Z');
       const shifted = new ChargeExpiryPolicy(later);
 
@@ -36,6 +52,12 @@ describe('ChargeExpiryPolicy', () => {
 
   describe('isExpired', () => {
     it('is false for a hold in the future', () => {
+      const charge = makeCharge({ authorization_expires_at: '2026-01-20T12:00:00.000Z' });
+
+      expect(policy.isExpired(charge)).toBe(false);
+    });
+
+    it('is true for a hold in the past', () => {
       const charge = makeCharge({ authorization_expires_at: '2026-01-10T12:00:00.000Z' });
 
       expect(policy.isExpired(charge)).toBe(true);
