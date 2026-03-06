@@ -37,6 +37,69 @@ describe('ChargeAuthorizationService', () => {
   const merchant = makeMerchant();
   const intent = makePaymentIntent();
 
+  function approvedResult(overrides: Record<string, unknown> = {}) {
+    return {
+      approved: true,
+      networkTransactionId: 'ntx_1',
+      authorizationCode: 'A17742',
+      processorReference: 'wf_auth_1',
+      declineCode: null,
+      riskScore: 12,
+      card: makeCard(),
+      threeDSecure: {
+        version: '2.2.0',
+        authenticationFlow: 'frictionless',
+        result: 'authenticated',
+        eci: '05',
+        liabilityShifted: true,
+      },
+      raw: {},
+      ...overrides,
+    };
+  }
+
+  beforeEach(async () => {
+    adapter = { acquirer: 'worldflow', authorize: jest.fn().mockResolvedValue(approvedResult()) };
+
+    vault = {
+      resolve: jest.fn().mockResolvedValue({
+        token: 'pmt_visa_4242',
+        card: makeCard(),
+        fingerprint: 'fp_1',
+      }),
+    } as unknown as jest.Mocked<VaultClient>;
+
+    router = { select: jest.fn().mockReturnValue(adapter) } as unknown as jest.Mocked<ProcessorRouter>;
+
+    repo = {
+      insertCharge: jest.fn().mockImplementation(async (row: Record<string, unknown>) => row),
+      markAuthorized: jest.fn().mockImplementation(async (_id: string, patch: object) => patch),
+      markFailed: jest.fn(),
+    } as unknown as jest.Mocked<ChargeRepository>;
+
+    publisher = { publish: jest.fn().mockResolvedValue('evt_1') } as unknown as jest.Mocked<OutboxEventPublisher>;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        ChargeAuthorizationService,
+        ChargeExpiryPolicy,
+        { provide: VaultClient, useValue: vault },
+        { provide: ProcessorRouter, useValue: router },
+        { provide: ChargeRepository, useValue: repo },
+        { provide: OutboxEventPublisher, useValue: publisher },
+        {
+          provide: TransactionManager,
+          useValue: {
+            runInTransaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => unknown) => cb({})),
+          },
+        },
+        { provide: PayzenoLogger, useValue: new NoopLogger() },
+      ],
+    }).compile();
+
+    service = moduleRef.get(ChargeAuthorizationService);
+  });
+
   it('resolves the payment method token at the vault exactly once', async () => {
     await service.authorize(merchant, intent, { payment_method_token: 'pmt_visa_4242' });
 
@@ -144,4 +207,12 @@ describe('ChargeAuthorizationService', () => {
     });
   });
 
+  it('never writes card data beyond the CardSummary the vault returned', async () => {
+    await service.authorize(merchant, intent, { payment_method_token: 'pmt_visa_4242' });
+
+    const [row] = repo.insertCharge.mock.calls[0];
+    const serialised = JSON.stringify(row);
+    expect(serialised).not.toMatch(/\bpan\b/i);
+    expect(serialised).not.toMatch(/\bcvv\b/i);
+  });
 });
