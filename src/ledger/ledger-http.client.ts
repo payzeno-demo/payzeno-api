@@ -136,6 +136,37 @@ export class LedgerHttpClient extends BaseHttpClient {
    * `409 settlement_locked`, which `mapUpstreamFailure` turns into `LedgerRejectedException`
    * with the code intact. `SettlementsController` passes it straight to the console.
    */
+  retryReconciliationItem(itemId: string, body: RetryItemBody): Promise<ReconciliationItem> {
+    return this.request<ReconciliationItem, RetryItemBody>({
+      method: 'POST',
+      path: `/internal/v1/reconciliation/items/${encodeURIComponent(itemId)}/retry`,
+      body,
+      idempotencyKey: `retry:${itemId}`,
+    });
+  }
+
+  // -- invoices (arc MIG, dead in production) ------------------------------
+
+  /**
+   * The other arm of `InvoiceSourceResolver`. Reads the lines the ledger accumulates in
+   * `invoice_line_staging` behind flag `ledger_owns_invoices`, which is false and has been
+   * false for six months. This method compiles, has a spec, and has never been called in
+   * production — that is arc MIG step 4, and it is unfinished on purpose.
+   *
+   * docs/adr/0012-invoice-cutover.md.
+   */
+  listStagedInvoiceLines(
+    merchantId: MerchantId,
+    invoicePublicId: string,
+  ): Promise<StagedInvoiceLinesResponse> {
+    return this.get<StagedInvoiceLinesResponse>('/internal/v1/invoices/lines', {
+      merchant_id: merchantId,
+      invoice_public_id: invoicePublicId,
+    });
+  }
+
+  // -- payouts -------------------------------------------------------------
+
   getPayout(payoutId: PayoutId): Promise<Payout> {
     return this.get<Payout>(`/internal/v1/payouts/${encodeURIComponent(payoutId)}`);
   }

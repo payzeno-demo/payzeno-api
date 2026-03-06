@@ -77,3 +77,7 @@ export function makeCreatePaymentIntentRequest(
   };
 }
 
+/** Handy for `PaymentIntentStateMachine` table-driven specs. */
+export function intentInStatus(status: PaymentIntentStatus): PaymentIntent {
+  return makePaymentIntent({ status });
+}

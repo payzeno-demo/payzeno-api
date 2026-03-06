@@ -55,10 +55,19 @@ export interface AuthorizationOutcome {
 export class ChargeAuthorizationService {
   constructor(
     private readonly charges: ChargeRepository,
+    private readonly router: ProcessorRouter,
     private readonly vault: VaultClient,
     private readonly transactions: TransactionManager,
+    @Inject(EVENT_PUBLISHER) private readonly events: EventPublisher,
     @Inject(CLOCK) private readonly clock: Clock,
+    const adapter = this.router.select(command.merchant, command.currency, { livemode: command.livemode });
     const chargeId = this.ids.generate(API_ID_PREFIXES.charge) as ChargeId;
+
+    // The vault is the only place card details exist. We get a CardSummary and a fingerprint;
+    // the digits never enter this process (arc PCI, docs/adr/0014-client-side-tokenisation.md).
+    const resolution = await this.vault.resolve(command.paymentMethodToken);
+
+    const charge = await this.insertPendingCharge(chargeId, command, adapter.acquirer, resolution.card);
 
     let result: AuthorizeResult;
     try {
@@ -137,5 +146,6 @@ export class ChargeAuthorizationService {
     command: AuthorizeChargeCommand,
     result: AuthorizeResult,
   ): Promise<void> {
+    const authorizedAt = this.clock.now();
   }
 }

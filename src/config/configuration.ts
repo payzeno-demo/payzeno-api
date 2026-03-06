@@ -53,3 +53,35 @@ function billingLegacy(env: ConfigSchema): BillingLegacyConfig {
   };
 }
 
+function aws(env: ConfigSchema): AwsConfig {
+  return {
+    region: env.AWS_REGION,
+    endpointUrl: env.AWS_ENDPOINT_URL || undefined,
+    snsPaymentsTopicArn: env.SNS_PAYMENTS_TOPIC_ARN,
+    snsMerchantTopicArn: env.SNS_MERCHANT_TOPIC_ARN,
+    sqsLedgerQueueUrl: env.SQS_LEDGER_QUEUE_URL,
+    sqsApiWebhooksUrl: env.SQS_API_WEBHOOKS_URL,
+    sqsConsoleNotificationsUrl: env.SQS_CONSOLE_NOTIFICATIONS_URL,
+    sqsDlqUrl: env.SQS_DLQ_URL,
+  };
+}
+
+export function loadConfiguration(source: NodeJS.ProcessEnv = process.env): ApiConfig {
+  const env = validateEnv(source as Record<string, unknown>);
+
+  return {
+    runtime: runtime(env),
+    database: database(env),
+    redis: redis(env),
+    ledger: ledger(env),
+    billingLegacy: billingLegacy(env),
+    vault: vault(env),
+    acquirers: acquirers(env),
+    auth: auth(env),
+    webhooks: webhooks(env),
+    aws: aws(env),
+    idempotency: idempotency(env),
+    limits: limits(env),
+    flags: flags(env),
+  };
+}
