@@ -39,6 +39,54 @@ export class PayoutsService implements OnModuleInit {
     this.merchants = this.moduleRef.get(MerchantsService, { strict: false });
   }
 
+  get(merchantId: MerchantId, payoutId: PayoutId): Promise<Payout> {
+    return this.readThrough.getPayout(merchantId, payoutId);
+  }
+
+  async create(
+    merchantId: MerchantId,
+    request: CreatePayoutRequest,
+    idempotencyKey: string,
+    livemode: boolean,
+  ): Promise<Payout> {
+    const merchant = await this.merchants.getById(merchantId);
+
+    if (merchant.status !== 'active') {
+      throw new MerchantRestrictedException(
+        merchantId,
+        `merchant status ${merchant.status} may not receive payouts`,
+      );
+    }
+
+    if (request.amount_minor !== undefined) {
+      const check = await this.balances.canPayOut(merchantId, request.currency, request.amount_minor, livemode);
+      if (!check.ok) {
+        throw new MerchantRestrictedException(
+          merchantId,
+          check.negativeMinor > 0
+            ? 'merchant is carrying a negative balance'
+            : `available balance ${check.availableMinor} is below the requested amount`,
+        );
+      }
+    }
+
+    return this.readThrough.createPayout(
+      {
+        merchant_id: merchantId,
+        amount_minor: request.amount_minor,
+        currency: request.currency,
+        bank_account_id: request.bank_account_id,
+        method: request.method,
+        statement_descriptor: request.statement_descriptor,
+      },
+      idempotencyKey,
+    );
+  }
+
+  cancel(merchantId: MerchantId, payoutId: PayoutId): Promise<Payout> {
+    return this.readThrough.cancelPayout(merchantId, payoutId);
+  }
+
   /** `GET /v1/reporting/summary` fills `next_payout` from this. */
   async nextScheduled(merchantId: MerchantId): Promise<Payout | null> {
     const page = await this.readThrough.listPayouts(merchantId, { status: 'scheduled', limit: 1 });
