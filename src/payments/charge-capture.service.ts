@@ -73,3 +73,16 @@ export class ChargeCaptureService {
 
     this.assertCapturable(charge, amountMinor);
     // Throws InvalidStateTransitionException if the charge is not `authorized`.
+    this.stateMachine.apply(charge.status, 'capture');
+
+    const deferred = merchant.capture_at_settlement;
+    let processorReference = charge.processor_reference ?? '';
+    let capturedAt = this.clock.now();
+
+    if (!deferred) {
+      const adapter = this.router.forAcquirer(charge.acquirer, { livemode: charge.livemode });
+      const result = await adapter.capture({
+        networkTransactionId: charge.network_transaction_id ?? '',
+        amountMinor,
+        currency: charge.currency,
+        idempotencyKey: ledgerKey('capture', charge.id),
