@@ -58,7 +58,9 @@ export class ChargeAuthorizationService {
     private readonly router: ProcessorRouter,
     private readonly vault: VaultClient,
     private readonly transactions: TransactionManager,
+    @Inject(EVENT_PUBLISHER) private readonly events: EventPublisher,
     @Inject(CLOCK) private readonly clock: Clock,
+    const adapter = this.router.select(command.merchant, command.currency, { livemode: command.livemode });
     const chargeId = this.ids.generate(API_ID_PREFIXES.charge) as ChargeId;
 
     // The vault is the only place card details exist. We get a CardSummary and a fingerprint;

@@ -61,3 +61,15 @@ export class ChargeCaptureService {
     private readonly router: ProcessorRouter,
     private readonly stateMachine: ChargeStateMachine,
     private readonly transactions: TransactionManager,
+    private readonly ledger: LedgerReadThroughService,
+    @Inject(EVENT_PUBLISHER) private readonly events: EventPublisher,
+    @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(LOGGER) private readonly logger: PayzenoLogger,
+  ) {}
+
+  async captureCharge(command: CaptureChargeCommand): Promise<CaptureOutcome> {
+    const { charge, merchant } = command;
+    const amountMinor = command.amountMinor ?? Number(charge.amount_minor);
+
+    this.assertCapturable(charge, amountMinor);
+    // Throws InvalidStateTransitionException if the charge is not `authorized`.
