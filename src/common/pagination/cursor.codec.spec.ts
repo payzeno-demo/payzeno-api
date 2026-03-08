@@ -35,8 +35,21 @@ describe('cursor.codec', () => {
   });
 
   describe('encodeFrom', () => {
+    it('round-trips an encoded cursor', () => {
+      expect(decodeCursor(encodeCursor(cursor))).toEqual(cursor);
+    });
+
     it('rejects a cursor that is not base64-decodable JSON', () => {
       expect(() => decodeCursor('not-a-cursor-at-all')).toThrow(ValidationException);
+    });
+
+    it('rejects a cursor with a non-instant timestamp', () => {
+      const encoded = Buffer.from(
+        JSON.stringify({ c: 'yesterday-ish', i: TEST_CHARGE_ID }),
+        'utf8',
+      ).toString('base64url');
+
+      expect(() => decodeCursor(encoded)).toThrow(ValidationException);
     });
 
     it('rejects an over-long cursor before attempting to decode it', () => {
@@ -61,5 +74,9 @@ describe('cursor.codec', () => {
   });
 
   describe('decodeOptionalCursor', () => {
+    it('still validates a cursor that is present', () => {
+      expect(() => decodeOptionalCursor('garbage')).toThrow(ValidationException);
+    });
+
   });
 });
