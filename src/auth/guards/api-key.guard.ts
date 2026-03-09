@@ -61,5 +61,14 @@ export class ApiKeyGuard extends BaseAuthGuard {
   }
 
   private assertScopes(context: ExecutionContext, granted: readonly ApiKeyScope[]): void {
+    const required = this.reflector.getAllAndOverride<ApiKeyScope[] | undefined>(
+      REQUIRED_SCOPES_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+
+    if (!required || required.length === 0) return;
+    if (coversRequired(granted, required)) return;
+
+    throw PermissionDeniedException.missingScope(firstMissingScope(granted, required) ?? required[0]);
   }
 }

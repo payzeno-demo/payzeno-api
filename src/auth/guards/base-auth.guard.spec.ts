@@ -79,6 +79,8 @@ describe('BaseAuthGuard', () => {
   });
 
   describe('bearerToken', () => {
+    const guard = new StubGuard(null);
+
     it('accepts any casing of the scheme, per RFC 7235', () => {
       expect(guard.readBearer(makeRequest({ headers: { authorization: 'Bearer sk_live_x' } }))).toBe(
         'sk_live_x',
@@ -95,6 +97,17 @@ describe('BaseAuthGuard', () => {
       expect(guard.readBearer(makeRequest({ headers: { authorization: 'Basic abc' } }))).toBeNull();
     });
 
+    it('returns null for a bearer header with no value', () => {
+      expect(guard.readBearer(makeRequest({ headers: { authorization: 'Bearer' } }))).toBeNull();
+      expect(guard.readBearer(makeRequest({ headers: { authorization: 'Bearer   ' } }))).toBeNull();
+    });
+
+    it('returns null when there is no Authorization header at all', () => {
+      expect(guard.readBearer(makeRequest())).toBeNull();
+    });
+  });
+
+  it('reads cookies and headers without caring about header casing', () => {
     const guard = new StubGuard(null);
     const request = makeRequest({
       cookies: { pz_session: 'sess_1' },
@@ -112,5 +125,9 @@ describe('BaseAuthGuard', () => {
       expect(headerValue(['first', 'second'])).toBe('first');
     });
 
+    it('passes a single value and undefined through untouched', () => {
+      expect(headerValue('only')).toBe('only');
+      expect(headerValue(undefined)).toBeUndefined();
+    });
   });
 });
