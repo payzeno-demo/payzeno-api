@@ -52,6 +52,14 @@ describe('BaseAuthGuard', () => {
 
   it('attaches the resolved principal to the request', async () => {
     const guard = new StubGuard(principal);
+    const { context, request } = guardContext();
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+    expect(request.principal).toEqual(principal);
+  });
+
+  it('short-circuits when an earlier guard already authenticated the request', async () => {
+    const guard = new StubGuard(principal);
     const { context } = guardContext({ principal: makeApiKeyPrincipal({ mode: 'test' }) });
 
     await expect(guard.canActivate(context)).resolves.toBe(true);
@@ -61,6 +69,18 @@ describe('BaseAuthGuard', () => {
 
   it('raises AuthenticationRequiredException naming its own scheme when nothing resolves', async () => {
     const guard = new StubGuard(null);
+    const { context } = guardContext();
+
+    const err = await rejectsWith(guard.canActivate(context), AuthenticationRequiredException);
+
+    expect(err.httpStatus).toBe(401);
+    expect(err.code).toBe('authentication_required');
+    expect(err.message).toContain('stub');
+  });
+
+  describe('bearerToken', () => {
+    const guard = new StubGuard(null);
+
     it('accepts any casing of the scheme, per RFC 7235', () => {
       expect(guard.readBearer(makeRequest({ headers: { authorization: 'Bearer sk_live_x' } }))).toBe(
         'sk_live_x',
@@ -77,6 +97,17 @@ describe('BaseAuthGuard', () => {
       expect(guard.readBearer(makeRequest({ headers: { authorization: 'Basic abc' } }))).toBeNull();
     });
 
+    it('returns null for a bearer header with no value', () => {
+      expect(guard.readBearer(makeRequest({ headers: { authorization: 'Bearer' } }))).toBeNull();
+      expect(guard.readBearer(makeRequest({ headers: { authorization: 'Bearer   ' } }))).toBeNull();
+    });
+
+    it('returns null when there is no Authorization header at all', () => {
+      expect(guard.readBearer(makeRequest())).toBeNull();
+    });
+  });
+
+  it('reads cookies and headers without caring about header casing', () => {
     const guard = new StubGuard(null);
     const request = makeRequest({
       cookies: { pz_session: 'sess_1' },
@@ -94,5 +125,9 @@ describe('BaseAuthGuard', () => {
       expect(headerValue(['first', 'second'])).toBe('first');
     });
 
+    it('passes a single value and undefined through untouched', () => {
+      expect(headerValue('only')).toBe('only');
+      expect(headerValue(undefined)).toBeUndefined();
+    });
   });
 });

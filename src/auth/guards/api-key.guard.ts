@@ -52,5 +52,23 @@ export class ApiKeyGuard extends BaseAuthGuard {
   }
 
   protected async authenticate(request: AuthenticatedRequest): Promise<AuthPrincipal | null> {
+    const token = this.bearerToken(request);
+
+    // Not our credential — a session cookie or a client secret. Let the next guard try.
+    if (!token || !token.startsWith('sk_')) return null;
+
+    return this.resolver.resolve(token);
+  }
+
+  private assertScopes(context: ExecutionContext, granted: readonly ApiKeyScope[]): void {
+    const required = this.reflector.getAllAndOverride<ApiKeyScope[] | undefined>(
+      REQUIRED_SCOPES_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+
+    if (!required || required.length === 0) return;
+    if (coversRequired(granted, required)) return;
+
+    throw PermissionDeniedException.missingScope(firstMissingScope(granted, required) ?? required[0]);
   }
 }

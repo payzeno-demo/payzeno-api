@@ -44,6 +44,8 @@ export abstract class BaseAuthGuard implements CanActivate {
    * Resolve or throw. Returning null means "no credential of my kind was presented", which
    * the base turns into a 401 — subclasses that want a different message throw instead.
    */
+  protected abstract authenticate(request: AuthenticatedRequest): Promise<AuthPrincipal | null>;
+
   /** `Authorization: Bearer <token>` → `<token>`. Case-insensitive on the scheme, per RFC. */
   protected bearerToken(request: AuthenticatedRequest): string | null {
     const header = headerValue(request.headers.authorization);
@@ -60,4 +62,12 @@ export abstract class BaseAuthGuard implements CanActivate {
     return request.cookies?.[name];
   }
 
+  protected header(request: AuthenticatedRequest, name: string): string | undefined {
+    return headerValue(request.headers[name.toLowerCase()]);
+  }
+}
+
+export function headerValue(raw: string | string[] | undefined): string | undefined {
+  if (Array.isArray(raw)) return raw[0];
+  return raw;
 }
