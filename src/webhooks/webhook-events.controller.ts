@@ -35,4 +35,12 @@ export class WebhookEventsController extends BaseController {
   }
 
   @Get()
+  @Get(':eventId')
+  @RequiredScopes('webhooks:write')
+  async redeliver(
+    @CurrentPrincipal() principal: AuthPrincipal,
+    @Param('eventId') eventId: string,
+  ): Promise<WebhookEventDto> {
+    return this.events.redeliver(this.merchantIdOf(principal), eventId);
+  }
 }

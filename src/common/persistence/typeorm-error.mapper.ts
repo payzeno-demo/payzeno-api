@@ -69,3 +69,8 @@ function mapUniqueViolation(driver: DriverError): ApiException {
   }
 }
 
+/** `Key (charge_id)=(ch_01H…) already exists.` — Postgres detail strings are stable enough. */
+function extractChargeId(detail: string | undefined): string | null {
+  return detail?.match(/\(charge_id\)=\(([^)]+)\)/)?.[1] ?? null;
+}
+
