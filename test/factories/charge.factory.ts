@@ -20,6 +20,47 @@ export function makeCard(overrides: Partial<CardSummary> = {}): CardSummary {
   };
 }
 
+export function makeThreeDSecure(
+  overrides: Partial<ThreeDSecureResult> = {},
+): ThreeDSecureResult {
+  return {
+    version: '2.2.0',
+    authentication_flow: 'frictionless',
+    result: 'authenticated',
+    eci: '05',
+    liability_shifted: true,
+    ...overrides,
+  };
+}
+
+/**
+ * Default is an `authorized`, not-yet-captured charge: the state
+ * `ChargeCaptureService.captureCharge` accepts and `RefundsService.create` rejects.
+ * `processor_reference` is always set — it is half of `uq_charge_processor_reference`
+ * (migration 16, committed during the incident) and the reconciliation match key.
+ */
+/** Deferred-capture charge: the ledger captures this at settlement, not payzeno-api. */
+export function makeDeferredCaptureCharge(overrides: Partial<Charge> = {}): Charge {
+  return makeCharge({
+    capture_method: 'manual',
+    authorization_expires_at: '2026-02-11T10:00:03.000Z',
+    ...overrides,
+  });
+}
+
+export function makeDeclinedCharge(overrides: Partial<Charge> = {}): Charge {
+  return makeCharge({
+    status: 'failed',
+    authorization_code: null,
+    authorized_at: null,
+    authorization_expires_at: null,
+    failure_code: 'insufficient_funds',
+    failure_message: 'Issuer declined: insufficient funds',
+    three_d_secure: null,
+    ...overrides,
+  });
+}
+
 export function makeRefund(overrides: Partial<Refund> = {}): Refund {
   return {
     id: nextId('re_'),
