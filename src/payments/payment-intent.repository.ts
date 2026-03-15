@@ -44,6 +44,10 @@ export class PaymentIntentRepository extends PayzenoRepository<PaymentIntentEnti
     return manager.save(PaymentIntentEntity, entity);
   }
 
+  findScopedById(merchantId: MerchantId, id: PaymentIntentId): Promise<PaymentIntentEntity | null> {
+    return this.findOneScoped(merchantId, id);
+  }
+
   list(merchantId: MerchantId, query: PaymentIntentListQuery): Promise<Paginated<PaymentIntentEntity>> {
     const where: FindOptionsWhere<PaymentIntentEntity> = {
       merchant_id: merchantId,
@@ -91,6 +95,24 @@ export class PaymentIntentRepository extends PayzenoRepository<PaymentIntentEnti
       .where('id = :id AND status = :from', { id, from })
       .execute();
     return result.affected ?? 0;
+  }
+
+  async setLatestCharge(manager: EntityManager, id: PaymentIntentId, chargeId: ChargeId): Promise<void> {
+    await manager
+      .createQueryBuilder()
+      .update(PaymentIntentEntity)
+      .set({ latest_charge_id: chargeId })
+      .where('id = :id', { id })
+      .execute();
+  }
+
+  /** Terminal intents accept a metadata patch and nothing else (domain-model §2). */
+  async patchMetadata(
+    merchantId: MerchantId,
+    id: PaymentIntentId,
+    metadata: Record<string, string>,
+  ): Promise<void> {
+    await this.updateScoped(merchantId, id, { metadata } as never);
   }
 
 }

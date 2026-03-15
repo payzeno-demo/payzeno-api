@@ -30,6 +30,7 @@ export class ConfigSchema {
   NODE_ENV!: string;
 
   @IsInt()
+  @Min(1)
   @Max(65535)
   PORT!: number;
 
@@ -38,6 +39,7 @@ export class ConfigSchema {
 
   @IsOptional()
   @Type(() => Number)
+  @IsString()
   @IsNotEmpty()
   BILLING_LEGACY_PASSWORD!: string;
 
@@ -46,6 +48,15 @@ export class ConfigSchema {
 
   @IsString()
   @IsNotEmpty()
+  NORDPAY_API_KEY!: string;
+
+  @IsNotEmpty()
+  CSRF_COOKIE_NAME!: string;
+
+  @MinLength(8)
+  API_KEY_PEPPER!: string;
+
+  @IsNotEmpty()
   WEBHOOK_SIGNING_KEK!: string;
 
   @Type(() => Number)
@@ -53,6 +64,7 @@ export class ConfigSchema {
   @Min(1)
   WEBHOOK_RETRY_WINDOW_HOURS!: number;
 
+  @IsString()
   @IsString()
   @IsString()
   @IsNotEmpty()
@@ -71,6 +83,12 @@ export class ConfigSchema {
   // --- limits ---------------------------------------------------------------
   @Type(() => Number)
   @Min(1)
+  RATE_LIMIT_DEFAULT_RPM!: number;
+
+  @Min(1)
+  @Max(730)
+  REFUND_WINDOW_DAYS!: number;
+
   @IsBooleanString()
   FLAG_LEDGER_OWNS_FEES!: string;
 

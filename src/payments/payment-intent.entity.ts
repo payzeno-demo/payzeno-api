@@ -36,11 +36,18 @@ export class PaymentIntentEntity extends MerchantScopedEntity {
   @Column({ type: 'enum', enum: ['automatic', 'manual'], enumName: 'capture_method', default: 'automatic' })
   capture_method: CaptureMethod;
 
+  /** `pmt_` vault token. Never a PAN — arc PCI, migration 10 dropped the last two PAN columns. */
+  @Column({ type: 'text', nullable: true })
+  payment_method_token: PaymentMethodToken | null;
+
   @Column({ type: 'text', nullable: true })
   customer_reference: string | null;
 
   @Column({ type: 'text', nullable: true })
   description: string | null;
+
+  @Column({ type: 'varchar', length: 22, nullable: true })
+  statement_descriptor: string | null;
 
   /** No FK: the charge references the intent, not the reverse (data-model §1.5). */
   @Column({ type: 'text', nullable: true })
@@ -51,6 +58,14 @@ export class PaymentIntentEntity extends MerchantScopedEntity {
 
   @Column({ type: 'timestamptz', nullable: true })
   canceled_at: Date | null;
+
+  @Column({
+    type: 'enum',
+    enum: ['requested_by_customer', 'duplicate', 'fraudulent', 'abandoned', 'expired'],
+    enumName: 'cancellation_reason',
+    nullable: true,
+  })
+  cancellation_reason: CancellationReason | null;
 
   @OneToMany(() => ChargeEntity, (charge) => charge.payment_intent)
   charges?: ChargeEntity[];

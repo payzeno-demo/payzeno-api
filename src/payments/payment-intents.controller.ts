@@ -50,6 +50,7 @@ export class PaymentIntentsController extends BaseController {
   }
 
   @Post()
+  @HttpCode(201)
   @Idempotent()
   @RateLimit(300, 60)
   @RequiredScopes('payment_intents:write')
@@ -92,8 +93,12 @@ export class PaymentIntentsController extends BaseController {
    * confirms without ever holding an api key. `ClientSecretGuard` pins the principal to this
    * one intent, so the id in the path is checked against the credential, not against a tenant.
    */
+  @Post(':paymentIntentId/confirm')
+  @UseGuards(ClientSecretGuard)
   @Idempotent()
   @RateLimit(300, 60)
+  @RequiredScopes('payment_intents:write')
+  @Post(':paymentIntentId/capture')
   @Idempotent()
   @Post(':paymentIntentId/cancel')
   @RequiredScopes('payment_intents:write')
