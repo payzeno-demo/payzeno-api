@@ -63,4 +63,12 @@ export class ChargeExpiryPolicy {
     return this.isDeferredSettlementMcc(mcc);
   }
 
+  /** Remaining validity in whole hours — the console shows it on the charge detail page. */
+  hoursRemaining(expiresAt: Date | null): number {
+    if (!expiresAt) {
+      return 0;
+    }
+    const remainingMs = expiresAt.getTime() - this.clock.now().getTime();
+    return Math.max(0, Math.floor(remainingMs / (60 * 60 * 1000)));
+  }
 }
