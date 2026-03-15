@@ -40,6 +40,12 @@ describe('DisputeEvidenceService', () => {
       expect(merged).toEqual({ customer_name: 'A. Customer', shipping_tracking_number: 'TRK-1' });
     });
 
+    it('trims whitespace', () => {
+      expect(service.normalise({}, { customer_name: '  A. Customer  ' })).toEqual({
+        customer_name: 'A. Customer',
+      });
+    });
+
     it('an explicitly emptied field is a deletion', () => {
       const merged = service.normalise({ customer_name: 'A. Customer' }, { customer_name: '   ' });
 
@@ -74,6 +80,12 @@ describe('DisputeEvidenceService', () => {
       expect(() => service.assertSubmittable(dispute({ status }))).toThrow(DisputeWindowClosedException);
     });
 
+    it('refuses evidence after the deadline', () => {
+      clock.advanceDays(30);
+
+      expect(() => service.assertSubmittable(dispute())).toThrow(DisputeWindowClosedException);
+    });
+
     it('accepts evidence on the last day', () => {
       clock.advanceDays(16);
 
@@ -82,6 +94,10 @@ describe('DisputeEvidenceService', () => {
   });
 
   describe('completeness', () => {
+    it('is zero for empty evidence', () => {
+      expect(service.completeness({}, 'fraudulent')).toBe(0);
+    });
+
     it('rewards the fields that matter for the reason code', () => {
       const strong = service.completeness(
         { customer_name: 'A', customer_email: 'a@example.com', shipping_tracking_number: 'T' },
@@ -107,5 +123,15 @@ describe('DisputeEvidenceService', () => {
       expect(service.fieldCount({ customer_name: 'A', customer_email: '  ' })).toBe(1);
     });
 
+    it('names what is still worth chasing', () => {
+      const missing = service.missingStrongFields({ shipping_tracking_number: 'T' }, 'product_not_received');
+
+      expect(missing).toContain('receipt_file_id');
+      expect(missing).not.toContain('shipping_tracking_number');
+    });
+
+    it('falls back to the general reason for a code it does not know', () => {
+      expect(service.missingStrongFields({}, 'not_a_real_reason')).toEqual(['uncategorized_text']);
+    });
   });
 });

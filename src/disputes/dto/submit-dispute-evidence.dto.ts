@@ -52,20 +52,31 @@ function NoPanValues(validationOptions?: ValidationOptions): PropertyDecorator {
 
 export class DisputeEvidenceDto implements DisputeEvidence {
   @IsOptional()
+  @IsString()
   @MaxLength(FREE_TEXT_MAX)
   @NoPanValues()
   product_description?: string;
 
   @IsOptional()
+  @IsString()
   @MaxLength(256)
   customer_name?: string;
 
   @IsOptional()
   @IsEmail()
+  @MaxLength(320)
+  customer_email?: string;
+
   @IsOptional()
   @IsString()
+  @MaxLength(128)
+  shipping_tracking_number?: string;
+
   @IsOptional()
   @IsString()
+  @MaxLength(64)
+  receipt_file_id?: string;
+
   @IsOptional()
   @IsString()
   @MaxLength(64)
@@ -86,6 +97,9 @@ export class DisputeEvidenceDto implements DisputeEvidence {
 @Redact('evidence.uncategorized_text', 'evidence.customer_email')
 export class SubmitDisputeEvidenceDto implements SubmitDisputeEvidenceRequest {
   @ValidateNested()
+  @Type(() => DisputeEvidenceDto)
+  evidence: DisputeEvidenceDto;
+
   /** False stages the evidence without sending it — the console autosaves with `false`. */
   @IsOptional()
   @IsBoolean()

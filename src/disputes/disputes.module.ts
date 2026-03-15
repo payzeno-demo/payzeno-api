@@ -30,3 +30,14 @@ import { DisputeStateMachine } from './state/dispute.state-machine';
     EventsModule,
     TypeOrmModule.forFeature([DisputeEntity, DisputeFeeScheduleEntity]),
   ],
+  controllers: [DisputesController],
+  providers: [
+    DisputesService,
+    DisputeRepository,
+    DisputeFeeService,
+    DisputeEvidenceService,
+    DisputeStateMachine,
+  ],
+  exports: [DisputesService, DisputeRepository, DisputeFeeService],
+})
+export class DisputesModule {}

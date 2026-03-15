@@ -64,7 +64,9 @@ export class DisputesService extends BaseService<DisputeEntity> {
   constructor(
     private readonly disputes: DisputeRepository,
     private readonly evidence: DisputeEvidenceService,
+    private readonly transactions: TransactionManager,
     @Inject(EVENT_PUBLISHER) private readonly events: EventPublisher,
+    @Inject(CLOCK) private readonly clock: Clock,
     @Inject(PAYZENO_LOGGER) logger: PayzenoLogger,
   ) {
     super(disputes, logger);
@@ -91,6 +93,7 @@ export class DisputesService extends BaseService<DisputeEntity> {
     const status: DisputeStatus = command.isWarning ? 'warning_needs_response' : 'needs_response';
     const scope = scopeFrom(principal);
     const scope = scopeFrom(principal);
+    const dispute = await this.findOneOrThrow(disputeId, scope);
     const next = this.states.apply(dispute.status, 'accept');
 
     return this.close(dispute, next as 'lost', correlationId, null);
