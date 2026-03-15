@@ -60,8 +60,14 @@ export class ChargeEntity extends MerchantScopedEntity {
   @Column({ type: 'char', length: 4 })
   card_last_four: string;
 
+  @Column({ type: 'char', length: 2, nullable: true, transformer: trimmedCharTransformer })
+  card_country: string | null;
+
   @Column({ type: 'enum', enum: ['worldflow', 'nordpay'], enumName: 'acquirer' })
   acquirer: Acquirer;
+
+  @Column({ type: 'text', nullable: true })
+  network_transaction_id: string | null;
 
   @Column({ type: 'text', nullable: true })
   processor_reference: string | null;
@@ -80,6 +86,9 @@ export class ChargeEntity extends MerchantScopedEntity {
   /** The ledger's id. No FK — different database (migration 12). */
   @Column({ type: 'text', nullable: true })
   settlement_batch_id: SettlementBatchId | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  captured_at: Date | null;
 
   /** The one place the six flat `card_*` columns become the contracted nested object. */
   toCardSummary(): CardSummary {
