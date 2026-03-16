@@ -13,3 +13,18 @@ import { WebhookEndpointRepository } from './webhook-endpoint.repository';
 import { WebhookEndpointsController } from './webhook-endpoints.controller';
 import { WebhookEndpointsService } from './webhook-endpoints.service';
 import { WebhookEventEntity } from './webhook-event.entity';
+import { WebhookEventRepository } from './webhook-event.repository';
+import { WebhookEventsController } from './webhook-events.controller';
+import { WebhookEventsService } from './webhook-events.service';
+
+/**
+ * Outbound webhooks.
+ *
+ * Note what is NOT here: the fanout consumer (it lives in `src/events/`, on the bus side)
+ * and the delivery job (it lives in `src/jobs/`). This module owns the endpoints, the
+ * events table, the secrets and the two wire strategies — the two schedulers reach in.
+ */
+@Module({
+  imports: [
+    CommonModule,
+    ApiModule,
