@@ -48,5 +48,25 @@ export class InternalServiceGuard extends BaseAuthGuard {
   constructor(
     @Inject(API_CONFIG) config: ApiConfig,
     private readonly principals: PrincipalFactory,
+    const spec = this.reflector.getAllAndOverride<InternalOnlySpec | undefined>(INTERNAL_ONLY_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+
+    if (spec && spec.callers.length > 0 && !spec.callers.includes(principal.service)) {
+      this.logger.warn('internal.caller_not_allowed', {
+        service: principal.service,
+        allowed: spec.callers.join(','),
+      });
+      throw new PermissionDeniedException(`${principal.service} may not call this route`, {
+        service: principal.service,
+      });
+    }
+
+    return true;
+  }
+
+  protected async authenticate(request: AuthenticatedRequest): Promise<AuthPrincipal | null> {
+    const service = this.header(request, SERVICE_HEADER);
   }
 }
