@@ -86,6 +86,17 @@ describe('ChargesService', () => {
       expect(result.charge_id).toBe(charge.id);
     });
 
+    it('does not call the ledger at all when the charge is out of scope', async () => {
+      repo.findScoped.mockResolvedValue(null as never);
+
+      await expect(service.getLedger(makeSessionPrincipal(), 'ch_foreign')).rejects.toBeInstanceOf(
+        ChargeNotFoundException,
+      );
+      expect(ledger.listChargeTransactions).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('markSettled', () => {
     it('moves a captured charge to settled and stamps the batch', async () => {
       const charge = makeCapturedCharge();
       repo.findScoped.mockResolvedValue(charge as never);
@@ -145,5 +156,12 @@ describe('ChargesService', () => {
       expect(repo.findByProcessorReference).toHaveBeenCalledWith('worldflow', 'wf_auth_0001');
     });
 
+    it('returns null rather than throwing for an unknown reference', async () => {
+      repo.findByProcessorReference.mockResolvedValue(null as never);
+
+      await expect(
+        service.findByProcessorReference('worldflow', 'wf_unknown'),
+      ).resolves.toBeNull();
+    });
   });
 });

@@ -139,6 +139,27 @@ describe('PaymentIntentsService', () => {
       expect(captureFlow.execute).toHaveBeenCalledTimes(1);
     });
 
+    it('cancel() runs CancelPaymentFlow', async () => {
+      const intent = makePaymentIntent();
+      repo.findScoped.mockResolvedValue(intent as never);
+      cancelFlow.execute.mockResolvedValue(intent as never);
+
+      await service.cancel(principal, intent.id, { cancellation_reason: 'abandoned' });
+
+      expect(cancelFlow.execute).toHaveBeenCalledTimes(1);
+    });
+
+    it('404s before touching a flow when the intent is out of scope', async () => {
+      repo.findScoped.mockResolvedValue(null as never);
+
+      await expect(service.confirm(principal, 'pi_foreign', {})).rejects.toBeInstanceOf(
+        PaymentIntentNotFoundException,
+      );
+      expect(confirmFlow.execute).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('list', () => {
     it('paginates with the merchant filter applied', async () => {
       repo.paginateCursor.mockResolvedValue({
         data: [],
@@ -155,5 +176,17 @@ describe('PaymentIntentsService', () => {
       );
     });
 
+    it('caps an oversized limit rather than letting it through to the query', async () => {
+      repo.paginateCursor.mockResolvedValue({
+        data: [],
+        next_cursor: null,
+        has_more: false,
+      } as never);
+
+      await service.list(principal, { limit: 5_000 });
+
+      const [, query] = repo.paginateCursor.mock.calls[0];
+      expect((query as { limit: number }).limit).toBeLessThanOrEqual(100);
+    });
   });
 });
