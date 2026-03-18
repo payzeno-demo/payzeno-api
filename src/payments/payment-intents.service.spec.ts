@@ -95,6 +95,22 @@ describe('PaymentIntentsService', () => {
       );
     });
 
+    it('confirms in the same call when confirm=true', async () => {
+      const created = makePaymentIntent();
+      repo.insertIntent.mockResolvedValue(created as never);
+      confirmFlow.execute.mockResolvedValue(
+        makePaymentIntent({ id: created.id, status: 'succeeded' }) as never,
+      );
+
+      const result = await service.create(
+        principal,
+        makeCreatePaymentIntentRequest({ confirm: true }),
+      );
+
+      expect(confirmFlow.execute).toHaveBeenCalledTimes(1);
+      expect(result.status).toBe('succeeded');
+    });
+
     it('stamps livemode from the principal, never from the request body', async () => {
       repo.insertIntent.mockResolvedValue(makePaymentIntent() as never);
 
@@ -129,6 +145,20 @@ describe('PaymentIntentsService', () => {
   });
 
   describe('delegation to flows', () => {
+    it('confirm() runs ConfirmPaymentFlow', async () => {
+      const intent = makePaymentIntent();
+      repo.findScoped.mockResolvedValue(intent as never);
+      confirmFlow.execute.mockResolvedValue(intent as never);
+
+      await service.confirm(principal, intent.id, { return_url: 'https://x.example' });
+
+      expect(confirmFlow.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ id: intent.id }),
+        expect.objectContaining({ return_url: 'https://x.example' }),
+      );
+      expect(captureFlow.execute).not.toHaveBeenCalled();
+    });
+
     it('capture() runs CapturePaymentFlow', async () => {
       const intent = makeCapturablePaymentIntent();
       repo.findScoped.mockResolvedValue(intent as never);

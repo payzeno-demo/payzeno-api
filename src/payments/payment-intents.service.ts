@@ -43,6 +43,7 @@ export class PaymentIntentsService extends BaseService<PaymentIntentEntity> {
   constructor(
     private readonly intents: PaymentIntentRepository,
     private readonly confirmFlow: ConfirmPaymentFlow,
+    private readonly cancelFlow: CancelPaymentFlow,
     private readonly transactions: TransactionManager,
     private readonly ids: IdFactory,
     @Inject(CLOCK) private readonly clock: Clock,
