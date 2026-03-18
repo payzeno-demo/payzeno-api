@@ -51,3 +51,56 @@ export class ChargesService extends BaseService<ChargeEntity> {
     private readonly charges: ChargeRepository,
     private readonly ledger: LedgerReadThroughService,
     @Inject(PAYZENO_LOGGER) logger: PayzenoLogger,
+  ) {
+    super(charges, logger);
+  }
+
+  get entityName(): string {
+    return 'charge';
+  }
+
+  protected override notFound(id: string): ChargeNotFoundException {
+    return new ChargeNotFoundException(id);
+  }
+
+  async get(principal: AuthPrincipal, chargeId: ChargeId): Promise<Charge> {
+    return toCharge(await this.findOneOrThrow(chargeId, scopeFrom(principal)));
+  }
+
+  async list(principal: AuthPrincipal, query: ChargeListQuery): Promise<Paginated<Charge>> {
+    // The scope comes from the principal and is applied by the repository; a `merchant_id` in
+    // the query object is ignored rather than honoured. That is a real request we have had.
+    const page = await this.paginate(query, scopeFrom(principal), (qb) => {
+      let builder = qb;
+      if (query.status) {
+        builder = builder.andWhere('charge.status = :status', { status: query.status });
+      }
+      if (query.payment_intent_id) {
+        builder = builder.andWhere('charge.payment_intent_id = :intentId', {
+          intentId: query.payment_intent_id,
+        });
+      }
+      if (query.settlement_batch_id) {
+        builder = builder.andWhere('charge.settlement_batch_id = :batchId', {
+          batchId: query.settlement_batch_id,
+        });
+      }
+      return builder;
+    });
+
+    return { ...page, data: page.data.map(toCharge) };
+  }
+
+  /**
+   * `GET /v1/charges/:chargeId/ledger`. Scope check FIRST, then the ledger call — a charge in
+   * another tenant must 404 without payzeno-ledger ever hearing the id.
+   */
+  async getLedger(principal: AuthPrincipal, chargeId: ChargeId): Promise<ChargeLedgerResponse> {
+    const scope = scopeFrom(principal);
+    await this.findOneOrThrow(chargeId, scope);
+    return this.ledger.getChargeLedger(scope.merchantId, chargeId);
+  }
+
+  /**
+   * arc INC. Called with the consumer's EntityManager so the mark and the event claim commit
+   * together. Returns how many rows actually moved — `LedgerEventsConsumer` records that count

@@ -44,7 +44,27 @@ export class PaymentIntentsService extends BaseService<PaymentIntentEntity> {
     private readonly intents: PaymentIntentRepository,
     private readonly confirmFlow: ConfirmPaymentFlow,
     private readonly transactions: TransactionManager,
+    private readonly ids: IdFactory,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(PAYZENO_LOGGER) logger: PayzenoLogger,
+  ) {
+    super(intents, logger);
+  }
+
+  get entityName(): string {
+    return 'payment_intent';
+  }
+
+  protected override notFound(id: string): PaymentIntentNotFoundException {
+    return new PaymentIntentNotFoundException(id);
+  }
+
+  /**
+   * `livemode` comes from the principal, never from the body. A `sk_test_` key that could ask
+   * for a live intent would put test payments in the live chart of accounts and make them
+   * payable to a real bank account (domain-model §11.5).
+   */
+  async create(principal: AuthPrincipal, dto: CreatePaymentIntentDto): Promise<PaymentIntent> {
     const now = this.clock.now();
     const row = await this.transactions.runInTransaction((manager) =>
       this.intents.insertIntent(manager, {
