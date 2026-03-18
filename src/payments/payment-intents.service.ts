@@ -136,5 +136,6 @@ export class PaymentIntentsService extends BaseService<PaymentIntentEntity> {
     id: PaymentIntentId,
     metadata: Record<string, string>,
   ): Promise<PaymentIntent> {
+    const scope = scopeFrom(principal);
   } as PaymentIntent;
 }
