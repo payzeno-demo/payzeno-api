@@ -16,6 +16,7 @@ import { makeCharge, makeSettledCharge } from 'test/factories/charge.factory';
 describe('ProcessorWebhookService', () => {
   let service: ProcessorWebhookService;
   let charges: jest.Mocked<ChargesService>;
+  let refunds: jest.Mocked<RefundsService>;
   let publisher: jest.Mocked<OutboxEventPublisher>;
   let router: jest.Mocked<ProcessorRouter>;
   let adapter: { acquirer: 'worldflow'; parseWebhook: jest.Mock };
@@ -59,6 +60,29 @@ describe('ProcessorWebhookService', () => {
 
     expect(router.forAcquirer).toHaveBeenCalledWith('worldflow');
     expect(adapter.parseWebhook).toHaveBeenCalledWith(expect.any(Buffer), 't=1,v1=abc');
+  });
+
+  it('opens a dispute on dispute_opened', async () => {
+    adapter.parseWebhook.mockReturnValue(
+      parsed('dispute_opened', {
+        raw: { reason: 'fraudulent', amount_minor: 4_500, network_reason_code: '10.4' },
+      }),
+    );
+
+    await service.handle('worldflow', Buffer.from('{}'), 'sig');
+
+    expect(disputes.openFromWebhook).toHaveBeenCalledWith(
+      expect.objectContaining({ id: expect.any(String) }),
+      expect.objectContaining({ reason: 'fraudulent' }),
+    );
+  });
+
+  it('closes a dispute on dispute_closed', async () => {
+    adapter.parseWebhook.mockReturnValue(parsed('dispute_closed', { raw: { outcome: 'won' } }));
+
+    await service.handle('worldflow', Buffer.from('{}'), 'sig');
+
+    expect(disputes.closeFromWebhook).toHaveBeenCalled();
   });
 
   it('drops an event whose network transaction id matches nothing', async () => {
