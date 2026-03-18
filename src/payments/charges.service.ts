@@ -104,3 +104,20 @@ export class ChargesService extends BaseService<ChargeEntity> {
   /**
    * arc INC. Called with the consumer's EntityManager so the mark and the event claim commit
    * together. Returns how many rows actually moved — `LedgerEventsConsumer` records that count
+   * on `settlement_completion.charges_marked`, and a redelivered chunk contributes zero.
+   */
+  async markSettledFromBatch(
+    manager: EntityManager,
+    chargeIds: ReadonlyArray<ChargeId>,
+    mark: SettlementMark,
+  ): Promise<number> {
+    if (chargeIds.length === 0) {
+      return 0;
+    }
+
+    const marked = await this.charges.markSettled(
+      manager,
+      [...chargeIds],
+      mark.settlementBatchId,
+      new Date(mark.settledAt),
+    );

@@ -53,6 +53,17 @@ describe('ProcessorWebhookService', () => {
     service = moduleRef.get(ProcessorWebhookService);
   });
 
+  function parsed(kind: string, overrides: Record<string, unknown> = {}) {
+    return {
+      acquirer: 'worldflow' as const,
+      kind,
+      networkTransactionId: 'ntx_1',
+      occurredAt: '2026-01-15T12:00:00.000Z',
+      raw: {},
+      ...overrides,
+    };
+  }
+
   it('parses through the acquirer’s own adapter', async () => {
     adapter.parseWebhook.mockReturnValue(parsed('capture_settled'));
 
@@ -83,6 +94,37 @@ describe('ProcessorWebhookService', () => {
     await service.handle('worldflow', Buffer.from('{}'), 'sig');
 
     expect(disputes.closeFromWebhook).toHaveBeenCalled();
+  });
+
+  it('marks a charge settled on capture_settled', async () => {
+    charges.findByProcessorReference.mockResolvedValue(makeSettledCharge() as never);
+    adapter.parseWebhook.mockReturnValue(parsed('capture_settled'));
+
+    await service.handle('worldflow', Buffer.from('{}'), 'sig');
+
+    expect(charges.findByProcessorReference).toHaveBeenCalledWith('worldflow', 'ntx_1');
+  });
+
+  it('emits refund.succeeded on refund_settled', async () => {
+    adapter.parseWebhook.mockReturnValue(
+      parsed('refund_settled', { raw: { refund_reference: 'wf_ref_1' } }),
+    );
+
+    await service.handle('worldflow', Buffer.from('{}'), 'sig');
+
+    expect(publisher.publish).toHaveBeenCalledWith(
+      'refund.succeeded',
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  it('handles chargeback_reversed without inventing a new dispute', async () => {
+    adapter.parseWebhook.mockReturnValue(parsed('chargeback_reversed'));
+
+    await service.handle('worldflow', Buffer.from('{}'), 'sig');
+
+    expect(disputes.openFromWebhook).not.toHaveBeenCalled();
   });
 
   it('drops an event whose network transaction id matches nothing', async () => {
