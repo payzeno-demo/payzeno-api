@@ -86,3 +86,16 @@ export class ChargeCaptureService {
         amountMinor,
         currency: charge.currency,
         idempotencyKey: ledgerKey('capture', charge.id),
+      });
+      if (!result.captured) {
+        throw new ChargeNotCapturableException(charge.id, charge.status);
+      }
+      processorReference = result.processorReference;
+      capturedAt = new Date(result.capturedAt);
+    } else {
+      this.logger.info('capture_deferred_to_settlement', {
+        charge_id: charge.id,
+        merchant_id: merchant.id,
+        acquirer: charge.acquirer,
+        // The ledger will issue POST /v2/authorizations/{ntid}/captures when the acquirer's
+        // settlement file lands. Nothing in payzeno-api touches the acquirer for this charge.

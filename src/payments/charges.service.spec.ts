@@ -63,6 +63,40 @@ describe('ChargesService', () => {
       );
     });
 
+    it('throws ChargeNotFoundException for a charge in another tenant', async () => {
+      repo.findScoped.mockResolvedValue(null as never);
+
+      await expect(service.get(principal, 'ch_foreign')).rejects.toBeInstanceOf(
+        ChargeNotFoundException,
+      );
+    });
+  });
+
+  describe('list', () => {
+    it('reads the charge first, then its transactions', async () => {
+      const charge = makeSettledCharge();
+      repo.findScoped.mockResolvedValue(charge as never);
+      ledger.listChargeTransactions.mockResolvedValue([] as never);
+
+      const result = await service.getLedger(makeSessionPrincipal(), charge.id);
+
+      const scopeOrder = repo.findScoped.mock.invocationCallOrder[0];
+      const ledgerOrder = ledger.listChargeTransactions.mock.invocationCallOrder[0];
+      expect(scopeOrder).toBeLessThan(ledgerOrder);
+      expect(result.charge_id).toBe(charge.id);
+    });
+
+    it('does not call the ledger at all when the charge is out of scope', async () => {
+      repo.findScoped.mockResolvedValue(null as never);
+
+      await expect(service.getLedger(makeSessionPrincipal(), 'ch_foreign')).rejects.toBeInstanceOf(
+        ChargeNotFoundException,
+      );
+      expect(ledger.listChargeTransactions).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('markSettled', () => {
     it('moves a captured charge to settled and stamps the batch', async () => {
       const charge = makeCapturedCharge();
       repo.findScoped.mockResolvedValue(charge as never);
@@ -98,6 +132,20 @@ describe('ChargesService', () => {
       expect(result.status).toBe('settled');
     });
 
+    it('refuses to settle a charge that was never captured', async () => {
+      repo.findScoped.mockResolvedValue(makeCharge({ status: 'authorized' }) as never);
+
+      await expect(
+        service.markSettled('ch_auth', {
+          settlement_batch_id: 'sb_1',
+          settled_at: '2026-01-13T04:20:00.000Z',
+          transaction_id: 'ltx_1',
+        }),
+      ).rejects.toThrow();
+    });
+  });
+
+  describe('findByProcessorReference', () => {
     it('resolves an inbound acquirer webhook back to a charge', async () => {
       const charge = makeCharge();
       repo.findByProcessorReference.mockResolvedValue(charge as never);
@@ -108,5 +156,12 @@ describe('ChargesService', () => {
       expect(repo.findByProcessorReference).toHaveBeenCalledWith('worldflow', 'wf_auth_0001');
     });
 
+    it('returns null rather than throwing for an unknown reference', async () => {
+      repo.findByProcessorReference.mockResolvedValue(null as never);
+
+      await expect(
+        service.findByProcessorReference('worldflow', 'wf_unknown'),
+      ).resolves.toBeNull();
+    });
   });
 });
