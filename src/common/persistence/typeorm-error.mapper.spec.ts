@@ -50,6 +50,22 @@ describe('typeorm-error.mapper', () => {
       expect(isLockNotAvailable(driverError('55P03'))).toBe(true);
     });
 
+    it('rejects a serialization failure', () => {
+      expect(isLockNotAvailable(driverError('40001'))).toBe(false);
+    });
+  });
+
+  describe('mapTypeOrmError', () => {
+    it('maps a 23505 onto a ConflictException', () => {
+      expect(mapTypeOrmError(driverError('23505'))).toBeInstanceOf(ConflictException);
+    });
+
+    it('returns a non-driver error unchanged, so business exceptions survive', () => {
+      const business = new Error('refund window closed');
+
+      expect(mapTypeOrmError(business)).toBe(business);
+    });
+
     it('returns a serialization failure unchanged, so TransactionManager can retry it', () => {
       const err = driverError('40001');
 
