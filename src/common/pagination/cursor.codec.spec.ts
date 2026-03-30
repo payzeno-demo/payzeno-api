@@ -27,6 +27,10 @@ describe('cursor.codec', () => {
       expect(encoded).not.toContain('/');
     });
 
+    it('is deterministic for the same input', () => {
+      expect(encodeCursor(cursor)).toBe(encodeCursor({ ...cursor }));
+    });
+
     it('produces different cursors for different rows', () => {
       expect(encodeCursor(cursor)).not.toBe(
         encodeCursor({ ...cursor, id: nextId('ch_') }),
@@ -35,6 +39,17 @@ describe('cursor.codec', () => {
   });
 
   describe('encodeFrom', () => {
+    it('accepts a row with a Date and normalises it to RFC 3339', () => {
+      const encoded = encodeFrom({
+        createdAt: new Date('2026-01-15T12:00:00.000Z'),
+        id: TEST_CHARGE_ID,
+      });
+
+      expect(decodeCursor(encoded)).toEqual(cursor);
+    });
+  });
+
+  describe('decodeCursor', () => {
     it('round-trips an encoded cursor', () => {
       expect(decodeCursor(encodeCursor(cursor))).toEqual(cursor);
     });
@@ -74,6 +89,11 @@ describe('cursor.codec', () => {
   });
 
   describe('decodeOptionalCursor', () => {
+    it('returns null for null and for an empty string', () => {
+      expect(decodeOptionalCursor(null)).toBeNull();
+      expect(decodeOptionalCursor('')).toBeNull();
+    });
+
     it('still validates a cursor that is present', () => {
       expect(() => decodeOptionalCursor('garbage')).toThrow(ValidationException);
     });
