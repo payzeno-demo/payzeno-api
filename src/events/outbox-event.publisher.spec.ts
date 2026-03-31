@@ -4,6 +4,8 @@ import type { PublishContext } from './publisher.types';
 
 describe('OutboxEventPublisher', () => {
   const now = new Date('2026-04-01T12:00:00.000Z');
+  const tx = { marker: 'business-tx' } as unknown as EntityManager;
+
   const ctx: PublishContext = {
     merchantId: 'mer_1',
     correlationId: 'corr_1',
@@ -26,6 +28,25 @@ describe('OutboxEventPublisher', () => {
       { now: () => now } as never,
       { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn(), child: jest.fn() } as never,
     );
+  });
+
+  it('writes into the caller’s transaction, not a fresh one', async () => {
+    await publisher.publish(
+      'payment.captured',
+      {
+        charge_id: 'ch_1',
+        payment_intent_id: 'pi_1',
+        merchant_id: 'mer_1',
+        captured_amount_minor: 1000,
+        authorized_amount_minor: 1000,
+        currency: 'USD',
+        captured_at: '2026-04-01T11:59:59.000Z',
+      },
+      ctx,
+    );
+
+    expect(transactions.currentManager).toHaveBeenCalled();
+    expect(outbox.enqueue).toHaveBeenCalledWith(tx, expect.objectContaining({ id: 'evt_01HTEST' }));
   });
 
   it('starts a fresh row unpublished and immediately due', async () => {
