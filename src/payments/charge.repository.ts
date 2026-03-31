@@ -118,4 +118,10 @@ export class ChargeRepository extends PayzenoRepository<ChargeEntity> {
       .getMany();
   }
 
+  countByStatus(merchantId: MerchantId, statuses: ChargeStatus[]): Promise<number> {
+    return this.createQueryBuilder('charge')
+      .where('charge.merchant_id = :merchantId', { merchantId })
+      .andWhere('charge.status IN (:...statuses)', { statuses })
+      .getCount();
+  }
 }
