@@ -46,6 +46,15 @@ export class ChargeRepository extends PayzenoRepository<ChargeEntity> {
     super(ChargeEntity, dataSource.createEntityManager());
   }
 
+  protected get alias(): string {
+    return 'charge';
+  }
+
+  /**
+   * `uq_charge_processor_reference` (migration 16, dhotfix, committed during PAY-2041) makes
+   * this an index lookup. It is how an inbound acquirer webhook — which knows a processor
+   * reference and nothing else — finds the charge it is about.
+   */
   findByProcessorReference(acquirer: Acquirer, processorReference: string): Promise<ChargeEntity | null> {
     return this.findOne({
       where: { acquirer, processor_reference: processorReference } as FindOptionsWhere<ChargeEntity>,
@@ -89,6 +98,16 @@ export class ChargeRepository extends PayzenoRepository<ChargeEntity> {
    * `settlement.completed` chunk lost to the DLQ strands charges `captured` forever, and until
    * that job existed the partial index had no reader at all.
    */
+  findStrandedCaptures(olderThan: Date, limit: number): Promise<ChargeEntity[]> {
+    return this.createQueryBuilder('charge')
+      .where('charge.settlement_batch_id IS NULL')
+      .andWhere('charge.status = :status', { status: 'captured' })
+      .andWhere('charge.captured_at < :cutoff', { cutoff: olderThan })
+      .orderBy('charge.captured_at', 'ASC')
+      .limit(limit)
+      .getMany();
+  }
+
   /** Rides `ix_charge_authorization_expires`. `ChargeExpiryJob` drives `authorized → expired`. */
   findExpiredAuthorizations(now: Date, limit: number): Promise<ChargeEntity[]> {
     return this.createQueryBuilder('charge')
@@ -99,4 +118,10 @@ export class ChargeRepository extends PayzenoRepository<ChargeEntity> {
       .getMany();
   }
 
+  countByStatus(merchantId: MerchantId, statuses: ChargeStatus[]): Promise<number> {
+    return this.createQueryBuilder('charge')
+      .where('charge.merchant_id = :merchantId', { merchantId })
+      .andWhere('charge.status IN (:...statuses)', { statuses })
+      .getCount();
+  }
 }
