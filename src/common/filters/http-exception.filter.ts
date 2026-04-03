@@ -40,3 +40,14 @@ interface HttpResponse {
   json(body: unknown): void;
 }
 
+@Catch()
+export class HttpExceptionFilter implements ExceptionFilter {
+  constructor(@Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger) {}
+
+  catch(exception: unknown, host: ArgumentsHost): void {
+    const res = host.switchToHttp().getResponse<HttpResponse>();
+    const requestId = currentRequestId();
+
+    const { status, body } = this.translate(exception, requestId);
+
+    this.applyHeaders(res, exception);
