@@ -53,6 +53,16 @@ function billingLegacy(env: ConfigSchema): BillingLegacyConfig {
   };
 }
 
+function auth(env: ConfigSchema): AuthConfig {
+  return {
+    sessionSecret: env.SESSION_SECRET,
+    csrfCookieName: env.CSRF_COOKIE_NAME,
+    apiKeyPepper: env.API_KEY_PEPPER,
+    sessionTtlSeconds: 60 * 60 * 12,
+    csrfTtlSeconds: 60 * 60 * 24,
+  };
+}
+
 function aws(env: ConfigSchema): AwsConfig {
   return {
     region: env.AWS_REGION,
@@ -63,6 +73,13 @@ function aws(env: ConfigSchema): AwsConfig {
     sqsApiWebhooksUrl: env.SQS_API_WEBHOOKS_URL,
     sqsConsoleNotificationsUrl: env.SQS_CONSOLE_NOTIFICATIONS_URL,
     sqsDlqUrl: env.SQS_DLQ_URL,
+  };
+}
+
+function limits(env: ConfigSchema): LimitsConfig {
+  return {
+    rateLimitDefaultRpm: env.RATE_LIMIT_DEFAULT_RPM,
+    refundWindowDays: env.REFUND_WINDOW_DAYS,
   };
 }
 

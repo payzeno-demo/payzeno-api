@@ -64,6 +64,25 @@ describe('BillingLegacyClient', () => {
       expect(url).toContain('status=open');
     });
 
+    it('gets one invoice by id', async () => {
+      transport.on('GET', '/internal/v1/invoices/:id', () => ({ status: 200, body: invoice }));
+
+      await expect(client.getInvoice('inv_0001')).resolves.toMatchObject({ id: 'inv_0001' });
+    });
+
+    it('voids an invoice with a deterministic idempotency key', async () => {
+      transport.on('POST', '/internal/v1/invoices/:id/void', () => ({
+        status: 200,
+        body: { ...invoice, status: 'void' },
+      }));
+
+      await client.voidInvoice('inv_0001');
+
+      expect(transport.callsTo('POST', /\/void$/)[0].headers['idempotency-key']).toBe(
+        'invoice_void:inv_0001',
+      );
+    });
+
     it('does not log LEGACY_CALL_AFTER_MIGRATION on the live surface', async () => {
       transport.on('GET', '/internal/v1/invoices', () => ({
         status: 200,
@@ -80,11 +99,47 @@ describe('BillingLegacyClient', () => {
   });
 
   describe('the deprecated surface (arc MIG)', () => {
+    it('logs LEGACY_CALL_AFTER_MIGRATION for generateInvoice', async () => {
+      transport.on('POST', '/internal/v1/invoices', () => ({ status: 201, body: invoice }));
+
+      await client.generateInvoice({
+        merchant_id: TEST_MERCHANT_ID,
+        period_start: '2026-01-01',
+        period_end: '2026-01-31',
+      } as never);
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        'LEGACY_CALL_AFTER_MIGRATION',
+        expect.objectContaining({ method: 'generateInvoice', merchant_id: TEST_MERCHANT_ID }),
+      );
+    });
+
+    it('names payzeno-billing-legacy as the upstream in the warning', async () => {
+      transport.on('GET', '/internal/v1/statements', () => ({ status: 200, body: {} }));
+
+      await client.getStatement(TEST_MERCHANT_ID, '2026-01');
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        'LEGACY_CALL_AFTER_MIGRATION',
+        expect.objectContaining({ upstream: 'payzeno-billing-legacy' }),
+      );
+    });
+  });
+
+  describe('error translation', () => {
     it('maps a 404 to ResourceNotFoundException, not to a 502', async () => {
       transport.on('GET', '/internal/v1/invoices/:id', () => ({ status: 404, body: {} }));
 
       await expect(client.getInvoice('inv_missing')).rejects.toBeInstanceOf(
         ResourceNotFoundException,
+      );
+    });
+
+    it('maps every other non-2xx to LegacyBillingUnavailableException', async () => {
+      transport.on('GET', '/internal/v1/invoices/:id', () => ({ status: 500, body: 'stack trace' }));
+
+      await expect(client.getInvoice('inv_0001')).rejects.toBeInstanceOf(
+        LegacyBillingUnavailableException,
       );
     });
 

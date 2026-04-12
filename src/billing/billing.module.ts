@@ -24,3 +24,28 @@ import { LedgerModule } from '../ledger/ledger.module';
 import { BillingLegacyClient } from './billing-legacy.client';
 import { InvoiceSourceResolver } from './invoice-source.resolver';
 import { InvoicesController } from './invoices.controller';
+import { InvoicesService } from './invoices.service';
+import { InvoiceProjectionEntity } from './projection/invoice-projection.entity';
+import { InvoiceProjectionRepository } from './projection/invoice-projection.repository';
+import { InvoiceProjectionService } from './projection/invoice-projection.service';
+
+@Module({
+  imports: [
+    CommonModule,
+    ApiModule,
+    LedgerModule,
+    EventsModule,
+    TypeOrmModule.forFeature([InvoiceProjectionEntity]),
+  ],
+  controllers: [InvoicesController],
+  providers: [
+    {
+      provide: BillingLegacyClient,
+      inject: [ApiConfig, HTTP_TRANSPORT, PAYZENO_LOGGER, CircuitBreakerRegistry],
+      useFactory: (
+        config: ApiConfig,
+        transport: HttpTransport,
+        logger: PayzenoLogger,
+        breakers: CircuitBreakerRegistry,
+      ): BillingLegacyClient =>
+        new BillingLegacyClient(

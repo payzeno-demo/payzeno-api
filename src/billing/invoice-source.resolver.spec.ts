@@ -60,12 +60,28 @@ describe('InvoiceSourceResolver', () => {
       expect(ledger.listStagedInvoiceLines).not.toHaveBeenCalled();
     });
 
+    it('fans out to the legacy service on a projection miss', async () => {
+      const result = await resolver.list(TEST_MERCHANT_ID, {});
+
+      expect(result.source).toBe('billing-legacy');
+      expect(legacy.listInvoices).toHaveBeenCalledWith(TEST_MERCHANT_ID, {});
+    });
+
     it('warms the projection on the way through a miss', async () => {
       await resolver.list(TEST_MERCHANT_ID, {});
 
       // Merchants onboarded before migration 20 have no rows until their next
       // `invoice.issued`; warming is what stops every request fanning out forever.
       expect(projection.warm).toHaveBeenCalledWith(TEST_MERCHANT_ID, [invoice]);
+    });
+
+    it('logs the miss so the cutover’s progress is measurable', async () => {
+      await resolver.list(TEST_MERCHANT_ID, {});
+
+      expect(logger.info).toHaveBeenCalledWith(
+        'invoice_projection_miss',
+        expect.objectContaining({ merchant_id: TEST_MERCHANT_ID, source: 'billing-legacy' }),
+      );
     });
 
     it('never takes the ledger arm', async () => {
@@ -110,5 +126,35 @@ describe('InvoiceSourceResolver', () => {
       expect(ledger.listStagedInvoiceLines).not.toHaveBeenCalled();
     });
 
+    it('assembles an empty page when the ledger has no staged lines', async () => {
+      const result = await resolver.list(TEST_MERCHANT_ID, {});
+
+      expect(result.page.data).toEqual([]);
+      expect(result.page.next_cursor).toBeNull();
+    });
+
+    it('reads a single invoice from staged lines', async () => {
+      ledger.listStagedInvoiceLines.mockResolvedValue({
+        lines: [
+          { description: 'Processing fees', quantity: 1, unit_amount_minor: 1_200, amount_minor: 1_200 },
+        ],
+      } as never);
+
+      const result = await resolver.get(TEST_MERCHANT_ID, 'inv_0001');
+
+      expect(result.source).toBe('ledger');
+      expect(ledger.listStagedInvoiceLines).toHaveBeenCalledWith(TEST_MERCHANT_ID, 'inv_0001');
+    });
+  });
+
+  it('the flag is the only thing that selects the arm', async () => {
+    await resolver.list(TEST_MERCHANT_ID, {});
+    expect(legacy.listInvoices).toHaveBeenCalledTimes(1);
+
+    flags.set(FLAG_NAMES.LEDGER_OWNS_INVOICES, true);
+    await resolver.list(TEST_MERCHANT_ID, {});
+
+    expect(legacy.listInvoices).toHaveBeenCalledTimes(1);
+    expect(ledger.listStagedInvoiceLines).toHaveBeenCalledTimes(1);
   });
 });
