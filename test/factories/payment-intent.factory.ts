@@ -60,6 +60,18 @@ export function makeChallengedPaymentIntent(
   });
 }
 
+/** Manual-capture intent sitting in `requires_capture` — `CapturePaymentFlow`'s input. */
+export function makeCapturablePaymentIntent(
+  overrides: Partial<PaymentIntent> = {},
+): PaymentIntent {
+  return makePaymentIntent({
+    status: 'requires_capture',
+    capture_method: 'manual',
+    latest_charge_id: TEST_CHARGE_ID,
+    ...overrides,
+  });
+}
+
 export function makeCreatePaymentIntentRequest(
   overrides: Partial<CreatePaymentIntentRequest> = {},
 ): CreatePaymentIntentRequest {

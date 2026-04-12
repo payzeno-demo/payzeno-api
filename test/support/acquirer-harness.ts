@@ -30,6 +30,21 @@ export const WORLDFLOW_CREDENTIALS: AcquirerCredentials = {
   acquirerAccountId: 'wf-acct-payzeno',
 };
 
+export const NORDPAY_CREDENTIALS: AcquirerCredentials = {
+  acquirer: 'nordpay',
+  baseUrl: 'http://nordpay.test:9101',
+  apiKey: 'np_test_key',
+  acquirerAccountId: 'np-acct-payzeno',
+};
+
+export interface AcquirerHarness<TAdapter> {
+  adapter: TAdapter;
+  transport: InMemoryTransport;
+  http: AcquirerHttpClient;
+  breakers: CircuitBreakerRegistry;
+  verifier: ProcessorSignatureVerifier;
+}
+
 export function buildWorldflow(
   transport = new InMemoryTransport(),
   clock: Clock = new FixedClock(),
@@ -37,6 +52,15 @@ export function buildWorldflow(
   const { http, breakers } = buildAcquirerClient(WORLDFLOW_CREDENTIALS, transport);
   const verifier = new ProcessorSignatureVerifier(WEBHOOK_SECRETS, clock);
   return { adapter: new WorldflowAdapter(http, verifier), transport, http, breakers, verifier };
+}
+
+export function buildNordpay(
+  transport = new InMemoryTransport(),
+  clock: Clock = new FixedClock(),
+): AcquirerHarness<NordpayAdapter> {
+  const { http, breakers } = buildAcquirerClient(NORDPAY_CREDENTIALS, transport);
+  const verifier = new ProcessorSignatureVerifier(WEBHOOK_SECRETS, clock);
+  return { adapter: new NordpayAdapter(http, verifier), transport, http, breakers, verifier };
 }
 
 /** Builds the `Payzeno-Acquirer-Signature` header the verifier accepts, for a given body. */
