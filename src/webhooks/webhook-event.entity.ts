@@ -27,8 +27,17 @@ export class WebhookEventEntity extends MerchantScopedEntity {
   @Column({ name: 'type', type: 'text' })
   type!: PublicEventType;
 
+  @Column({ name: 'attempt_count', type: 'smallint', default: 0 })
+  attemptCount!: number;
+
   @Column({ name: 'signature_version', type: 'varchar', length: 4, default: 'v1' })
   signatureVersion!: 'v1';
+
+  computeNextAttempt(from: Date): Date {
+    const base = 60 * 1000 * Math.pow(2, Math.min(this.attemptCount, WEBHOOK_TERMINAL_ATTEMPTS));
+    const jitter = 1 + (Math.random() * 0.4 - 0.2);
+    return new Date(from.getTime() + Math.round(base * jitter));
+  }
 
   /** 12 attempts or 72h since creation, whichever comes first. */
   isExhausted(now: Date): boolean {
@@ -38,4 +47,15 @@ export class WebhookEventEntity extends MerchantScopedEntity {
     );
   }
 
+  /** The exact bytes signed and sent. Kept stable so a re-delivery has the same signature. */
+  serialize(): string {
+    return JSON.stringify({
+      id: this.id,
+      object: 'event',
+      type: this.type,
+      livemode: this.livemode,
+      created: Math.floor(this.createdAt.getTime() / 1000),
+      data: { object: this.payload },
+    });
+  }
 }
