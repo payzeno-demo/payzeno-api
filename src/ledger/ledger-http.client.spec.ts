@@ -71,6 +71,18 @@ describe('LedgerHttpClient', () => {
       });
     });
 
+    it('derives a deterministic idempotency key for the bootstrap', async () => {
+      transport.on('POST', '/internal/v1/accounts/bootstrap', () => ({
+        status: 201,
+        body: { accounts: [], created: 0 },
+      }));
+
+      await client.bootstrapAccounts(TEST_MERCHANT_ID, 'GBP');
+
+      const [call] = transport.callsTo('POST', '/internal/v1/accounts/bootstrap');
+      expect(call.headers['idempotency-key']).toBe(`bootstrap:${TEST_MERCHANT_ID}:GBP`);
+    });
+
     it('url-encodes the merchant id into the balance path', async () => {
       transport.on('GET', '/internal/v1/balances/:merchantId', () => ({ status: 200, body: {} }));
 
@@ -78,6 +90,25 @@ describe('LedgerHttpClient', () => {
 
       expect(transport.callsTo('GET', '/internal/v1/balances/:merchantId')[0].path).toBe(
         `/internal/v1/balances/${TEST_MERCHANT_ID}`,
+      );
+    });
+
+    it('posts a transaction with the caller’s idempotency key', async () => {
+      transport.on('POST', '/internal/v1/transactions', () => ({ status: 201, body: { id: 'ltx_1' } }));
+
+      await client.postTransaction({
+        idempotency_key: 'capture:ch_1',
+        purpose: 'capture',
+        merchant_id: TEST_MERCHANT_ID,
+        currency: 'GBP',
+        livemode: true,
+        reference_type: 'charge',
+        reference_id: 'ch_1',
+        lines: [],
+      });
+
+      expect(transport.callsTo('POST', '/internal/v1/transactions')[0].headers['idempotency-key']).toBe(
+        'capture:ch_1',
       );
     });
 
@@ -140,6 +171,18 @@ describe('LedgerHttpClient', () => {
       await expect(client.getBalance(TEST_MERCHANT_ID)).rejects.toMatchObject({ code });
     });
 
+    it('falls back to LedgerUnavailableException on a 5xx with no envelope', async () => {
+      const noRetry = build(0);
+      transport.on('GET', '/internal/v1/balances/:merchantId', () => ({
+        status: 502,
+        body: '<html>bad gateway</html>',
+      }));
+
+      await expect(noRetry.getBalance(TEST_MERCHANT_ID)).rejects.toBeInstanceOf(
+        LedgerUnavailableException,
+      );
+    });
+
     it('reports a socket failure as LedgerUnavailableException, never as rejected', async () => {
       const noRetry = build(0);
       transport.on('GET', '/internal/v1/balances/:merchantId', () => ({ status: 200, body: {} }));
@@ -200,5 +243,27 @@ describe('LedgerHttpClient', () => {
       expect(calls).toBe(2);
     });
 
+    it('does not retry a 409', async () => {
+      let calls = 0;
+      transport.on('GET', '/internal/v1/balances/:merchantId', () => {
+        calls += 1;
+        return { status: 409, body: apiError('account_frozen') };
+      });
+
+      await expect(client.getBalance(TEST_MERCHANT_ID)).rejects.toThrow();
+      expect(calls).toBe(1);
+    });
+  });
+
+  describe('arc MIG', () => {
+    it('exposes listStagedInvoiceLines — compiled, spec’d, and never called in production', async () => {
+      transport.on('GET', /invoice/, () => ({ status: 200, body: { lines: [] } }));
+
+      // The `ledger_owns_invoices` arm of InvoiceSourceResolver. It has to keep working,
+      // because the day the flag flips this is the only path that exists.
+      await expect(
+        client.listStagedInvoiceLines(TEST_MERCHANT_ID, 'inv_0001'),
+      ).resolves.toMatchObject({ lines: [] });
+    });
   });
 });

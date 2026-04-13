@@ -33,5 +33,11 @@ export class BalanceService {
   ): Promise<{ ok: boolean; availableMinor: number; negativeMinor: number }> {
     const balance = await this.readThrough.getBalance(merchantId, currency, livemode);
     const available = Number(balance.available_minor);
+    const negative = Number(balance.negative_balance_minor);
+    return {
+      ok: negative === 0 && available >= amountMinor,
+      availableMinor: available,
+      negativeMinor: negative,
+    };
   }
 }

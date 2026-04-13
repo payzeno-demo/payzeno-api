@@ -39,6 +39,10 @@ export class PayoutsService implements OnModuleInit {
     this.merchants = this.moduleRef.get(MerchantsService, { strict: false });
   }
 
+  list(merchantId: MerchantId, query: Omit<PayoutListQuery, 'merchant_id'>): Promise<Paginated<Payout>> {
+    return this.readThrough.listPayouts(merchantId, query);
+  }
+
   get(merchantId: MerchantId, payoutId: PayoutId): Promise<Payout> {
     return this.readThrough.getPayout(merchantId, payoutId);
   }
