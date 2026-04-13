@@ -35,6 +35,18 @@ const SERIES_SQL = {
   net: 'coalesce(sum(c.captured_amount_minor - c.refunded_amount_minor), 0)',
 } as const;
 
+export type VolumeSeries = keyof typeof SERIES_SQL;
+
+export interface VolumeQueryInput {
+  merchantId: MerchantId;
+  currency: CurrencyCode;
+  livemode: boolean;
+  interval: TimeseriesInterval;
+  from: Date;
+  to: Date;
+  series: VolumeSeries;
+}
+
 interface RawBucket {
   bucket_start: Date;
   amount_minor: string;
@@ -137,3 +149,26 @@ export class VolumeTimeseriesQuery {
   }
 }
 
+function resolveBucket(interval: TimeseriesInterval): string {
+  const sql = BUCKET_SQL[interval];
+  if (!sql) {
+    throw new Error(`unsupported timeseries interval "${interval}"`);
+  }
+  return sql;
+}
+
+function resolveSeries(series: VolumeSeries): string {
+  const sql = SERIES_SQL[series];
+  if (!sql) {
+    throw new Error(`unsupported volume series "${series}"`);
+  }
+  return sql;
+}
+
+function toPoint(row: RawBucket): TimeseriesPoint {
+  return {
+    bucket_start: new Date(row.bucket_start).toISOString(),
+    amount_minor: Number(row.amount_minor),
+    count: Number(row.count),
+  };
+}

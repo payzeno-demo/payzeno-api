@@ -53,6 +53,8 @@ export interface VolumeQuery {
 export class ReportingService {
   constructor(
     private readonly volumes: VolumeTimeseriesQuery,
+    private readonly ledger: LedgerReadThroughService,
+    @Inject(CLOCK) private readonly clock: Clock,
     @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
   ) {}
 
@@ -92,6 +94,9 @@ export class ReportingService {
 
   /** `GET /v1/reporting/volume`. */
   async volume(query: VolumeQuery): Promise<VolumeTimeseries> {
+    const from = new Date(query.from);
+    const to = new Date(query.to);
+
     const points = await this.volumes.run({
       merchantId: query.merchantId,
       currency: query.currency,
@@ -151,5 +156,7 @@ export class ReportingService {
   }
 
   private async nextScheduledPayout(merchantId: MerchantId): Promise<Payout | null> {
+    const page = await this.ledger.listPayouts(merchantId, { status: 'scheduled', limit: 1 });
+    return page.data[0] ?? null;
   }
 }
