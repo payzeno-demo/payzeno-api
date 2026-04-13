@@ -23,6 +23,16 @@ bus event  →  WebhookFanoutConsumer          (the ONLY writer of webhook_event
 `WebhookFanoutConsumer` is the only writer of `webhook_event`. If you find another one, that is
 the bug.
 
+### Signing
+
+Header is `Payzeno-Signature: t=<unix>,v1=<hex>[,v1=<hex>]`. The HMAC is over `"{t}.{raw_body}"`
+— the raw bytes, before any re-serialisation. Tolerance is five minutes.
+
+Two `v1=` values appear during a secret rotation: the new secret first, the previous second.
+That is what lets a merchant roll their verification without a delivery gap.
+
+---
+
 ## 2. State machine and retry schedule
 
 ```
@@ -68,3 +78,32 @@ Work it in this order. Each step rules out a whole class of cause.
 
 ---
 
+## 4. The delivery job is stuck
+
+Symptom: `pending` rows with `next_attempt_at` in the past and no `job.finished` for
+`webhook-delivery`.
+
+- The job runs every 15s under a 60s `@JobLock`. If a pass overruns 60s, a second pass can start
+  alongside it. Claims are `FOR UPDATE SKIP LOCKED`, so that is safe, but sustained overlap means
+  the batch limit is too high or an endpoint is timing out at the transport limit every time.
+- A single very slow merchant endpoint can consume a whole pass. Look for one `endpoint_id`
+  dominating the pass duration.
+- If the job is not running at all, check the Redis lease. A lease left behind by a killed task
+  blocks starts until its TTL expires — that is 60s, so if it is longer than that, the job itself
+  is down.
+
+---
+
+## 5. Secret rotation
+
+`WebhookSecretService` holds the signing secret KMS-envelope-encrypted (migration 24):
+`signing_secret_encrypted`, `signing_secret_previous_encrypted`, `signing_secret_last_four`,
+`rotated_at`.
+
+Rotation moves current → previous and mints a new current. Both are signed with until the
+merchant confirms, which is why the header carries two `v1=` values.
+
+**Known debt:** `readLegacySigningSecretHash()` is still there. It reads the pre-migration-24
+`signing_secret_hash` column for endpoints that have not been rotated since. It was supposed to
+survive one release. It is month 12 and it has survived twelve. It is harmless and it is on the
+list.

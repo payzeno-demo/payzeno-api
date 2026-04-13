@@ -68,3 +68,40 @@ second charge. This is the single most dangerous manual action available on this
 
 ---
 
+## 4. Retention
+
+`IdempotencyRetentionJob` runs hourly and deletes records older than `IDEMPOTENCY_TTL_HOURS`.
+That is separate from lease reclaim on purpose: a stuck lease should clear in seconds, a completed
+record should stay available for a merchant's late retry for a day.
+
+If the table is growing, the job is not running. See the jobs table in `payzeno-api.md`.
+
+---
+
+## 5. What is in the key
+
+The stored hash covers `(merchant_id, livemode, idempotency_key, method, path,
+canonical_json(body))`.
+
+- **`livemode` is in there** since migration 23. Before that, a test-mode request could replay a
+  live-mode response for the same key — and merchants pick keys like `order-1041` in both modes.
+- **method and path are in there.** Without them an HTTP client that attaches one key to a whole
+  request chain gets undefined behaviour across two endpoints, and the endpoint that wins is
+  whichever landed first.
+- **the body is in there**, which is what makes `idempotency_key_reuse` detectable at all.
+
+Canonical JSON means key order and whitespace do not matter. A merchant re-serialising the same
+object gets the same hash.
+
+---
+
+## 6. Replaying events is a different thing
+
+If somebody says "replay", find out which they mean:
+
+- **Idempotency replay** — a merchant retrying an HTTP request. This document.
+- **Bus event replay** — an SQS message redelivered. `BaseEventConsumer.claimEvent` dedupes on
+  `(event_id, consumer)` and the handler simply never runs a second time. See ADR 0011.
+- **Webhook redelivery** — `POST /v1/webhook_events/:id/redeliver`. See `webhook-delivery.md`.
+
+They have nothing to do with each other and conflating them wastes twenty minutes every time.
