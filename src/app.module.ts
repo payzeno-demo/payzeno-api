@@ -104,3 +104,11 @@ const REQUEST_CHAIN = [
 @Module({
   imports: [
     CommonModule,
+    ApiModule,
+    TYPEORM_ROOT,
+    // `ScheduleModule.forRoot()` is NOT here. `JobsModule` imports it, exactly once in the
+    // application — a second registration gives every `@Cron` two schedulers and every job
+    // fires twice. See the header of jobs.module.ts.
+
+    HealthModule,
+    AuthModule,

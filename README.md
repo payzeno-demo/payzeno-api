@@ -121,3 +121,27 @@ Corollaries, all lint-enforced:
   shape by hand will be rejected — the whole point of the contracts package is that the
   console and the ledger break at compile time when we change a payload.
 
+---
+
+## Testing
+
+```bash
+pnpm test          # colocated *.spec.ts, ~2.5k assertions
+pnpm test:cov      # the 80% line gate CI enforces
+pnpm test:e2e      # supertest against a booted app; needs Postgres + Redis
+```
+
+The e2e suite boots a real Nest app with `InMemoryLedgerClient` and `InMemoryTransport`
+swapped in, so it never opens a socket to anything real. If an e2e test tries to,
+`http://ledger.invalid` fails loudly and that is the intended behaviour.
+
+`test/contract/ledger-routes.contract.spec.ts` asserts every path `LedgerHttpClient` calls
+exists in the checked-in `contracts/ledger-openapi.json`. When Core renames a ledger route,
+that spec is what tells us before production does. Refresh the spec file when you bump it;
+do not delete the assertion.
+
+The 80% gate is real and two directories are permanently dragging us toward it —
+`src/reporting/**` and `src/merchants/users/**`. If you are in either, you are expected to
+leave it better than you found it.
+
+---

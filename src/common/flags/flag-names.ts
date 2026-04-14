@@ -6,3 +6,6 @@
  */
 
 export const FLAG_NAMES = {
+  /**
+   * arc MIG step 4. FALSE in production and it has been false for six months.
+   * Flipping it moves `invoice_projection`'s writer from InvoiceProjectionConsumer /
