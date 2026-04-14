@@ -81,3 +81,30 @@ export class WebhookEventRepository extends PayzenoRepository<WebhookEventEntity
 
   async markRetrying(
     id: string,
+    attemptCount: number,
+    nextAttemptAt: Date,
+    responseStatus: number | null,
+    error: string | null,
+  ): Promise<void> {
+    await this.update({ id } as never, {
+      status: 'pending' as WebhookEventStatus,
+      attemptCount,
+      nextAttemptAt,
+      lastResponseStatus: responseStatus,
+      lastError: error?.slice(0, 2000) ?? null,
+    });
+  }
+
+  async markDead(
+    id: string,
+    attemptCount: number,
+    responseStatus: number | null,
+    error: string | null,
+  ): Promise<void> {
+    await this.update({ id } as never, {
+      status: 'dead' as WebhookEventStatus,
+      attemptCount,
+      nextAttemptAt: null,
+      lastResponseStatus: responseStatus,
+      lastError: error?.slice(0, 2000) ?? null,
+    });

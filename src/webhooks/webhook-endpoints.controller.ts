@@ -38,6 +38,7 @@ export class WebhookEndpointsController extends BaseController {
     super();
   }
 
+  @Get()
   @RequiredScopes('webhooks:read')
   async list(
     @CurrentPrincipal() principal: AuthPrincipal,
@@ -47,6 +48,7 @@ export class WebhookEndpointsController extends BaseController {
   }
 
   @UseGuards(RolesGuard)
+  @Idempotent()
   @RequiredScopes('webhooks:write')
   async create(
     @CurrentPrincipal() principal: AuthPrincipal,
@@ -60,6 +62,17 @@ export class WebhookEndpointsController extends BaseController {
   }
 
   @Roles('owner', 'admin')
+  @RequiredScopes('webhooks:write')
+  async rotateSecret(
+    @CurrentPrincipal() principal: AuthPrincipal,
+    @Param('endpointId') endpointId: string,
+  ): Promise<WebhookEndpointDto> {
+    return this.endpoints.rotateSecret(this.merchantIdOf(principal), endpointId);
+  }
+
+  @Delete(':endpointId')
+  @HttpCode(204)
   @Roles('owner', 'admin')
   @Idempotent()
+  @AuditLog('webhook_endpoint.delete')
 }

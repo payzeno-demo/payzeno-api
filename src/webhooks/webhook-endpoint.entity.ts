@@ -27,6 +27,20 @@ export class WebhookEndpointEntity extends MerchantScopedEntity {
   @Column({ name: 'signing_secret_encrypted', type: 'bytea' })
   signingSecretEncrypted!: Buffer;
 
+  @Column({ name: 'rotated_at', type: 'timestamptz', nullable: true })
+  rotatedAt!: Date | null;
+
+  @Column({ name: 'status', type: 'text' })
+  status!: WebhookEndpointStatus;
+
+  /**
+   * Driven by `WebhookDeliveryJob`. An endpoint with no success for 72h and at least 20
+   * consecutive dead events is disabled; without this counter the status column never
+   * changes and we retry a dead host forever.
+   */
+  @Column({ name: 'consecutive_failure_count', type: 'integer', default: 0 })
+  consecutiveFailureCount!: number;
+
   @Column({ name: 'last_success_at', type: 'timestamptz', nullable: true })
   lastSuccessAt!: Date | null;
 
