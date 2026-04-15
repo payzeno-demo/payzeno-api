@@ -19,6 +19,12 @@ export interface WebhookDeliveryStrategy {
   sign(body: string, secret: string, timestamp: number): string;
 }
 
+export type DeliveryStrategyName = WebhookDeliveryStrategy['name'];
+
+/**
+ * A merchant endpoint chooses its content type by URL suffix, which is the convention the
+ * console documents. Anything unmarked is JSON — that has been the default since month 2.
+ */
 export function strategyNameForUrl(url: string): DeliveryStrategyName {
   return url.includes('format=form') ? 'http-form' : 'http-json';
 }

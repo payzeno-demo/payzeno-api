@@ -29,3 +29,10 @@ import { WebhooksModule } from '../webhooks/webhooks.module';
 
 import { ChargeExpiryJob } from './charge-expiry.job';
 import { DisputeDeadlineReminderJob } from './dispute-deadline-reminder.job';
+import { IdempotencyRetentionJob } from './idempotency-retention.job';
+import { OutboxDrainJob } from './outbox-drain.job';
+import { ProcessedEventRetentionJob } from './processed-event-retention.job';
+import { RiskEvaluationJob } from './risk-evaluation.job';
+import { UnsettledChargeSweepJob } from './unsettled-charge-sweep.job';
+import { WebhookDeliveryJob } from './webhook-delivery.job';
+

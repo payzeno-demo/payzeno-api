@@ -51,3 +51,14 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const { status, body } = this.translate(exception, requestId);
 
     this.applyHeaders(res, exception);
+    this.log(status, body.error.code, exception);
+
+    res.status(status).json(body);
+  }
+
+  /** The branch table. Order matters: the most specific class first. */
+  private translate(exception: unknown, requestId: string): { status: number; body: ApiError } {
+    // The passthrough. Must precede the ApiException branch or its status is lost.
+    if (exception instanceof LedgerRejectedException) {
+      return { status: exception.httpStatus, body: exception.toResponse(requestId) };
+    }

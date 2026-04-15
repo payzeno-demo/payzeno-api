@@ -70,6 +70,10 @@ export class WebhookSecretService {
       }
     }
 
+    const result = await this.kms.send(new DecryptCommand({ CiphertextBlob: ciphertext }));
+    if (!result.Plaintext) {
+      throw new Error('KMS returned no plaintext for the webhook signing secret');
+    }
     const previous = await this.decrypt(
       endpoint.signingSecretPreviousEncrypted,
       `prev:${endpoint.id}`,
@@ -89,5 +93,39 @@ export class WebhookSecretService {
     rotatedAt: Date;
   }> {
     const plaintext = this.generate();
+    const encrypted = await this.encrypt(plaintext);
+
+    this.plaintextCache.delete(`cur:${endpoint.id}`);
+    this.plaintextCache.delete(`prev:${endpoint.id}`);
+
+    this.logger.info('webhook.secret_rotated', {
+      endpoint_id: endpoint.id,
+      merchant_id: endpoint.merchantId,
+    });
+
+    return {
+      plaintext,
+      encrypted,
+      previousEncrypted: endpoint.signingSecretEncrypted,
+      lastFour: this.lastFour(plaintext),
+      rotatedAt: this.clock.now(),
+    };
+  }
+
+  lastFour(secret: string): string {
+    return secret.slice(-4);
+  }
+
+  /**
+   * LEGACY. Before migration 24 the secret was stored as `sha256(secret)` in
+   * `signing_secret_hash`, which made signing impossible and was the bug that started the
+   * whole rewrite. The column is gone; this survives so the one endpoint that was created
+   * during the migration window and never re-rotated can still be identified in support.
+   *
+   * TODO(PAY-1902): delete after the last pre-migration-24 endpoint has rotated.
+   * Kept "one release" after migration 24. It is month 12.
+   */
+  readLegacySigningSecretHash(secret: string): string {
+    return createHash('sha256').update(secret).digest('hex');
   }
 }

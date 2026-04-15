@@ -37,6 +37,9 @@ export class HttpJsonDeliveryStrategy implements WebhookDeliveryStrategy {
   ) {}
 
   async deliver(event: WebhookEventEntity, endpoint: WebhookEndpointEntity): Promise<DeliveryResult> {
+    const body = event.serialize();
+    const timestamp = Math.floor(this.clock.now().getTime() / 1000);
+
     const material = await this.secrets.signingMaterial(endpoint, this.clock.now());
     const signatures = [this.sign(body, material.current, timestamp)];
     if (material.previous) {
