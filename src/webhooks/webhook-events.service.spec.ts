@@ -5,6 +5,38 @@ describe('WebhookEventsService', () => {
   const now = new Date('2026-05-02T12:00:00.000Z');
   const tx = {} as EntityManager;
 
+  let service: WebhookEventsService;
+
+  it('creates rows pending and immediately due', async () => {
+    await service.fanout(tx, {
+      sourceEventId: 'evt_bus_2',
+      merchantId: 'mer_1',
+      type: 'refund.failed',
+      payload: {},
+      livemode: false,
+      endpoints: [{ id: 'whe_1' }] as never,
+    });
+
+    const [, rows] = repo.insertIgnoringSourceConflict.mock.calls[0];
+    expect(rows[0].status).toBe('pending');
+    expect(rows[0].attemptCount).toBe(0);
+    expect(rows[0].nextAttemptAt).toEqual(now);
+    expect(rows[0].signatureVersion).toBe('v1');
+  });
+
+  it('is a no-op when the merchant has no endpoints', async () => {
+    const inserted = await service.fanout(tx, {
+      sourceEventId: 'evt_bus_3',
+      merchantId: 'mer_1',
+      type: 'payment.failed',
+      payload: {},
+      livemode: true,
+      endpoints: [],
+    });
+
+    expect(inserted).toBe(0);
+  });
+
   it('404s a webhook_event that belongs to another merchant', async () => {
     await expect(service.get('mer_2', 'evt_1')).rejects.toThrow(/webhook_event/);
   });

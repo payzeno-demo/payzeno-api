@@ -28,3 +28,18 @@ import { WebhookEventsService } from './webhook-events.service';
   imports: [
     CommonModule,
     ApiModule,
+    MerchantsModule,
+    TypeOrmModule.forFeature([WebhookEndpointEntity, WebhookEventEntity]),
+  ],
+  controllers: [WebhookEndpointsController, WebhookEventsController],
+  providers: [
+    WebhookEndpointRepository,
+    WebhookEventRepository,
+    WebhookEndpointsService,
+    WebhookEventsService,
+    WebhookSecretService,
+    WebhookDeliveryStateMachine,
+    HttpJsonDeliveryStrategy,
+    HttpFormDeliveryStrategy,
+    {
+      provide: WEBHOOK_DELIVERY_STRATEGIES,
