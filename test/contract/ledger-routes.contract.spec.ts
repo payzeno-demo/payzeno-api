@@ -75,6 +75,13 @@ describe('LedgerHttpClient ↔ payzeno-ledger OpenAPI contract', () => {
       expect(typeof impl).toBe('function');
     });
 
+    it('has an operationId, so a rename is a diff and not a silent 404', () => {
+      expect(openapi.paths[path][verb].operationId).toEqual(expect.any(String));
+    });
+  });
+
+  it('does not call a ledger path the OpenAPI omits', () => {
+    const described = new Set(Object.keys(openapi.paths));
     const undescribed = LEDGER_ROUTES.filter((r) => !described.has(r.path)).map((r) => r.path);
     expect(undescribed).toEqual([]);
   });
@@ -88,6 +95,13 @@ describe('LedgerHttpClient ↔ payzeno-ledger OpenAPI contract', () => {
 
   it('every LedgerHttpClient public method is covered by the table', () => {
     const declared = new Set<string>(LEDGER_ROUTES.map((r) => r.method as string));
+    const publicMethods = Object.getOwnPropertyNames(LedgerHttpClient.prototype).filter(
+      (name) =>
+        name !== 'constructor' &&
+        !name.startsWith('_') &&
+        typeof (LedgerHttpClient.prototype as unknown as Record<string, unknown>)[name] ===
+          'function',
+    );
     // Inherited BaseHttpClient members (`request`, `get`, `post`, …) are not ledger routes.
     const inherited = new Set(['request', 'get', 'post', 'patch', 'delete', 'buildUrl']);
     const uncovered = publicMethods.filter((m) => !declared.has(m) && !inherited.has(m));
