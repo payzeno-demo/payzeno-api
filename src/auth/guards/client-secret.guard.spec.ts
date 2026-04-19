@@ -23,6 +23,8 @@ describe('ClientSecretGuard', () => {
   const OTHER_INTENT_ID = fixedId('pi_', 'aurora-order-9902');
   const secret = `${TEST_PAYMENT_INTENT_ID}_secret_zg7q2m4v8k`;
 
+  let guard: ClientSecretGuard;
+
   beforeEach(() => {
     intents = {
       findByClientSecret: jest.fn().mockResolvedValue({
@@ -36,6 +38,15 @@ describe('ClientSecretGuard', () => {
       new PrincipalFactory(),
     );
     guard.onModuleInit();
+  });
+
+  it('admits the route whose :paymentIntentId matches the secret', async () => {
+    const { context } = guardContext({
+      headers: { authorization: `Bearer ${secret}` },
+      params: { paymentIntentId: TEST_PAYMENT_INTENT_ID },
+    });
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
   });
 
 });

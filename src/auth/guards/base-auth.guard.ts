@@ -46,6 +46,30 @@ export abstract class BaseAuthGuard implements CanActivate {
    */
   protected abstract authenticate(request: AuthenticatedRequest): Promise<AuthPrincipal | null>;
 
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
+
+    // A previous guard in the same @UseGuards() list already authenticated this request.
+    // The composite `apikey | session` routes rely on this: whichever guard matches, wins.
+    if (request.principal) return true;
+
+    const principal = await this.authenticate(request);
+
+    if (!principal) {
+      throw new AuthenticationRequiredException(`No ${this.scheme} credential presented`, {
+        scheme: this.scheme,
+      });
+    }
+
+    this.attach(request, principal);
+    return true;
+  }
+
+  protected attach(request: AuthenticatedRequest, principal: AuthPrincipal): void {
+    request.principal = principal;
+    attachPrincipal(principal);
+  }
+
   /** `Authorization: Bearer <token>` → `<token>`. Case-insensitive on the scheme, per RFC. */
   protected bearerToken(request: AuthenticatedRequest): string | null {
     const header = headerValue(request.headers.authorization);

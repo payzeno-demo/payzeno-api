@@ -37,6 +37,15 @@ export class ClientSecretGuard extends BaseAuthGuard implements OnModuleInit {
    * get this guard, so `AuthModule` cannot import `PaymentsModule` to get the repository.
    * The lookup happens once, after the whole graph exists.
    */
+  private intents!: PaymentIntentRepository;
+
+  constructor(
+    private readonly moduleRef: ModuleRef,
+    private readonly principals: PrincipalFactory,
+  ) {
+    super();
+  }
+
   onModuleInit(): void {
     this.intents = this.moduleRef.get(PaymentIntentRepository, { strict: false });
   }
