@@ -21,6 +21,7 @@ function decode(body: string): Record<string, string> {
 }
 
 describe('HttpFormDeliveryStrategy', () => {
+  let secrets: { signingMaterial: jest.Mock };
   function endpoint(): WebhookEndpointEntity {
     return {
       id: 'whe_form_1',
@@ -28,6 +29,19 @@ describe('HttpFormDeliveryStrategy', () => {
       url: 'https://legacy.example.com/payzeno?format=form',
     } as WebhookEndpointEntity;
   }
+
+  it('flattens nested payloads to dotted keys under data.object', async () => {
+    await strategy.deliver(
+      event({ id: 'ch_1', amount_minor: 4200, card: { brand: 'visa', last_four: '4242' } }),
+      endpoint(),
+    );
+
+    const form = decode((request.mock.calls[0][1] as { body: string }).body);
+    expect(form['data.object.id']).toBe('ch_1');
+    expect(form['data.object.amount_minor']).toBe('4200');
+    expect(form['data.object.card.brand']).toBe('visa');
+    expect(form['data.object.card.last_four']).toBe('4242');
+  });
 
   it('indexes arrays the way http_build_query does, because that is what they parse', async () => {
     await strategy.deliver(
@@ -45,6 +59,14 @@ describe('HttpFormDeliveryStrategy', () => {
 
     const form = decode((request.mock.calls[0][1] as { body: string }).body);
     expect(form['data.object.failure_code']).toBe('');
+  });
+
+  it('percent-encodes values that would otherwise break the body', async () => {
+    await strategy.deliver(event({ description: 'coffee & cake = 5' }), endpoint());
+
+    const body = (request.mock.calls[0][1] as { body: string }).body;
+    expect(body).toContain('coffee%20%26%20cake%20%3D%205');
+    expect(decode(body)['data.object.description']).toBe('coffee & cake = 5');
   });
 
 });
