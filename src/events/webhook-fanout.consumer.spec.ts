@@ -13,8 +13,25 @@ describe('WebhookFanoutConsumer', () => {
   };
 
   let endpoints: { listEnabledFor: jest.Mock };
+  let events: { fanout: jest.Mock };
   let consumer: WebhookFanoutConsumer;
   const tx = {} as EntityManager;
+
+  function busEvent(overrides: Partial<PayzenoEvent> = {}): PayzenoEvent {
+    return {
+      id: 'evt_f1',
+      type: 'refund.succeeded',
+      version: 1,
+      occurred_at: '2026-03-02T09:00:00.000Z',
+      source: 'payzeno-api',
+      correlation_id: 'corr_9',
+      causation_id: null,
+      merchant_id: 'mer_7',
+      livemode: true,
+      payload: { refund_id: 'ref_1', charge_id: 'ch_1' },
+      ...overrides,
+    } as PayzenoEvent;
+  }
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -33,6 +50,12 @@ describe('WebhookFanoutConsumer', () => {
       } as never,
     );
     consumer.onModuleInit();
+  });
+
+  it('only handles types that are in the merchant-facing vocabulary', () => {
+    for (const type of consumer.handledTypes) {
+      expect(PUBLIC_EVENT_TYPES as readonly string[]).toContain(type);
+    }
   });
 
   it('never handles an internal-only ledger event', () => {
