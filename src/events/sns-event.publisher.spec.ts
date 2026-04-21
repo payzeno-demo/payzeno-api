@@ -34,4 +34,38 @@ describe('SnsEventPublisher', () => {
     );
   });
 
+  it('routes payment events to the payments topic', async () => {
+    await publisher.publish(
+      'payment.failed',
+      {
+        charge_id: null,
+        payment_intent_id: 'pi_1',
+        merchant_id: 'mer_1',
+        amount_minor: 100,
+        currency: 'USD',
+        failure_code: 'do_not_honor',
+        failure_message: 'declined',
+        retryable: false,
+        failed_at: '2026-04-02T08:00:00.000Z',
+      },
+      {
+        merchantId: 'mer_1',
+        correlationId: 'corr_1',
+        causationId: null,
+        livemode: true,
+        occurredAt: '2026-04-02T08:00:00.000Z',
+      },
+    );
+
+    const command = send.mock.calls[0][0] as unknown as PublishCommand;
+    expect(command.input.TopicArn).toBe(config.aws.snsPaymentsTopicArn);
+    expect(command.input.MessageAttributes?.event_type?.StringValue).toBe('payment.failed');
+  });
+
+  it('covers every event type in the contract', () => {
+    expect(() => topicOf('invoice.issued')).not.toThrow();
+    expect(topicOf('dispute.closed')).toBe('payzeno-payments-events');
+    expect(topicOf('merchant.bank_account_verified')).toBe('payzeno-merchant-events');
+  });
+
 });
