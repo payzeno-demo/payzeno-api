@@ -74,3 +74,23 @@ export class LedgerEventsConsumer extends BaseEventConsumer implements OnModuleI
   onModuleInit(): void {
     this.charges = this.moduleRef.get(ChargesService, { strict: false });
     this.merchants = this.moduleRef.get(MerchantsService, { strict: false });
+    this.audit = this.moduleRef.get(AuditService, { strict: false });
+    this.supportTasks = this.moduleRef.get(SupportTasksService, { strict: false });
+  }
+
+  async handle(event: PayzenoEvent, tx: EntityManager): Promise<void> {
+    if (isEventOfType(event, 'settlement.completed')) {
+      await this.onSettlementCompleted(event.payload, event.id, tx);
+      return;
+    }
+    if (isEventOfType(event, 'settlement.duplicate_detected')) {
+      await this.onDuplicateDetected(event.payload, event.id, tx);
+      return;
+    }
+    if (isEventOfType(event, 'settlement.variance_detected')) {
+      await this.onVarianceDetected(event.payload, event.id, tx);
+      return;
+    }
+    if (
+      isEventOfType(event, 'payout.paid') ||
+      isEventOfType(event, 'payout.failed') ||
