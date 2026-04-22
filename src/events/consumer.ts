@@ -65,3 +65,25 @@ export abstract class BaseEventConsumer {
   async run(signal: AbortSignal): Promise<void> {
     this.logger.info('consumer.started', {
       consumer: this.consumerName,
+      queue_url: this.queueUrl,
+      handled_types: [...this.handledTypes].join(','),
+    });
+
+    while (!signal.aborted) {
+      let messages: Message[] = [];
+      try {
+        const response = await this.sqs.send(
+          new ReceiveMessageCommand({
+            QueueUrl: this.queueUrl,
+            MaxNumberOfMessages: MAX_MESSAGES,
+            WaitTimeSeconds: WAIT_TIME_SECONDS,
+            VisibilityTimeout: VISIBILITY_TIMEOUT_SECONDS,
+            MessageAttributeNames: ['All'],
+          }),
+        );
+        messages = response.Messages ?? [];
+      } catch (err) {
+        this.logger.error('consumer.receive_failed', err, { consumer: this.consumerName });
+        await this.pause(2000);
+        continue;
+      }

@@ -31,4 +31,9 @@ export abstract class ApiException extends PayzenoError {
    */
   readonly code: ErrorCode = 'invalid_request';
   readonly code: ErrorCode = 'conflict';
+  readonly httpStatus = 409;
+}
+
+export function isApiException(err: unknown): err is ApiException {
+  return err instanceof ApiException;
 }
