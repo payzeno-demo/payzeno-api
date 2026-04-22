@@ -34,6 +34,40 @@ export class OutboxEventPublisher implements EventPublisher {
   constructor(
     private readonly outbox: EventOutboxRepository,
     private readonly ids: IdFactory,
+    @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
+  ) {}
+
+  async publish<T extends EventType>(
+    type: T,
+    payload: PayloadOfType<T>,
+    ctx: PublishContext,
+  ): Promise<string> {
+    if (!isApiOwnedEvent(type)) {
+      // A service trying to publish settlement.* or ledger.* has misunderstood ownership.
+      // The ledger owns those and would consume its own event straight back off the topic.
+      throw new Error(`payzeno-api does not own event type "${type}"`);
+    }
+
     const row = this.toRow(type, payload, ctx);
+    const row = new EventOutbox();
+    row.id = this.ids.generate(ApiIdPrefix.EVENT);
+    row.type = type;
+    row.version = EVENT_SCHEMA_VERSIONS[type];
+    row.payload = payload as unknown as Record<string, unknown>;
+    row.merchantId = ctx.merchantId;
+    row.correlationId = ctx.correlationId;
+    row.causationId = ctx.causationId;
+    row.livemode = ctx.livemode;
+    row.occurredAt = ctx.occurredAt ? new Date(ctx.occurredAt) : now;
+    row.publishedAt = null;
+    row.attemptCount = 0;
+    row.nextAttemptAt = now;
+    row.claimedAt = null;
+    row.claimedBy = null;
+    row.deadAt = null;
+    row.lastError = null;
+    row.createdAt = now;
+    return row;
   }
 }
