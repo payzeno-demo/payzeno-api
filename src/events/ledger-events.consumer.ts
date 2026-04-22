@@ -94,3 +94,22 @@ export class LedgerEventsConsumer extends BaseEventConsumer implements OnModuleI
     if (
       isEventOfType(event, 'payout.paid') ||
       isEventOfType(event, 'payout.failed') ||
+      isEventOfType(event, 'payout.returned')
+    ) {
+      await this.onPayoutOutcome(event, tx);
+      return;
+    }
+    if (isEventOfType(event, 'ledger.imbalance_detected')) {
+      await this.supportTasks.open(tx, {
+        kind: 'ledger_imbalance',
+        merchantId: event.payload.merchant_id,
+        chargeId: null,
+        severity: 'critical',
+        title: `Ledger imbalance detected (${event.payload.check})`,
+        body:
+          `check=${event.payload.check} currency=${event.payload.currency} ` +
+          `expected=${event.payload.expected_minor} actual=${event.payload.actual_minor} ` +
+          `delta=${event.payload.delta_minor} ` +
+          `sample=${event.payload.sample_transaction_ids.join(',')}`,
+        sourceEventId: event.id,
+      });
