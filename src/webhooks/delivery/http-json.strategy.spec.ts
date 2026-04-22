@@ -12,6 +12,8 @@ jest.mock('undici', () => ({ request: (...args: unknown[]) => request(...args) }
 
 describe('HttpJsonDeliveryStrategy', () => {
   const now = new Date('2026-06-01T12:00:00.000Z');
+  const unix = Math.floor(now.getTime() / 1000);
+
   function endpoint(overrides: Partial<WebhookEndpointEntity> = {}): WebhookEndpointEntity {
     return {
       id: 'whe_live_1',
@@ -20,6 +22,22 @@ describe('HttpJsonDeliveryStrategy', () => {
       ...overrides,
     } as WebhookEndpointEntity;
   }
+
+  it('posts the serialized event as JSON', async () => {
+    const evt = event();
+
+    const result = await strategy.deliver(evt, endpoint());
+
+    expect(result.delivered).toBe(true);
+    expect(result.responseStatus).toBe(200);
+    expect(result.error).toBeNull();
+
+    const [url, options] = request.mock.calls[0] as [string, Record<string, never>];
+    expect(url).toBe('https://merchant.example.com/hooks/payzeno');
+    expect(options.method).toBe('POST');
+    expect(options.body).toBe(evt.serialize());
+    expect((options.headers as Record<string, string>)['content-type']).toBe('application/json');
+  });
 
   it('sends both signatures during a rotation overlap', async () => {
     secrets.signingMaterial.mockResolvedValue({ current: 'whsec_new', previous: 'whsec_old' });
@@ -42,6 +60,16 @@ describe('HttpJsonDeliveryStrategy', () => {
     await strategy.deliver(event(), endpoint());
 
     expect(text).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats a non-2xx as an undelivered attempt without throwing', async () => {
+    respond(500, 'upstream boom');
+
+    const result = await strategy.deliver(event(), endpoint());
+
+    expect(result.delivered).toBe(false);
+    expect(result.responseStatus).toBe(500);
+    expect(result.error).toBe('endpoint responded 500');
   });
 
 });
