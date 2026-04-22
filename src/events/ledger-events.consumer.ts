@@ -113,3 +113,22 @@ export class LedgerEventsConsumer extends BaseEventConsumer implements OnModuleI
           `sample=${event.payload.sample_transaction_ids.join(',')}`,
         sourceEventId: event.id,
       });
+    }
+  }
+
+  /**
+   * PAY-2052. Record the chunk, mark this chunk's charges settled, and close the batch out
+   * only once every index 0..chunk_count-1 has arrived.
+   *
+   * The conditional upsert is not decoration: chunks arrive out of order and a redelivered
+   * chunk must not double-count `charges_marked`. `chunks_seen` is a set, so re-applying an
+   * index is a no-op — which is what makes the whole thing safe under at-least-once.
+   */
+  private async onSettlementCompleted(
+    payload: SettlementCompletedPayload,
+    sourceEventId: string,
+    tx: EntityManager,
+  ): Promise<void> {
+    const marked = await this.charges.markSettledFromBatch(tx, payload.settled_charge_ids, {
+      settlementBatchId: payload.batch_id,
+      settledAt: payload.completed_at,
