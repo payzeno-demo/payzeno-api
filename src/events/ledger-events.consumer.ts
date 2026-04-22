@@ -55,3 +55,22 @@ export class LedgerEventsConsumer extends BaseEventConsumer implements OnModuleI
   ]);
 
   private charges!: ChargesService;
+  private merchants!: MerchantsService;
+  private audit!: AuditService;
+  private supportTasks!: SupportTasksService;
+
+  constructor(
+    sqs: SQSClient,
+    transactions: TransactionManager,
+    processedEvents: ProcessedEventRepository,
+    @Inject(PAYZENO_LOGGER) logger: PayzenoLogger,
+    @Inject(API_CONFIG) private readonly config: ApiConfig,
+    private readonly moduleRef: ModuleRef,
+  ) {
+    super(sqs, transactions, processedEvents, logger);
+    this.queueUrl = this.config.aws.sqsLedgerQueueUrl;
+  }
+
+  onModuleInit(): void {
+    this.charges = this.moduleRef.get(ChargesService, { strict: false });
+    this.merchants = this.moduleRef.get(MerchantsService, { strict: false });
