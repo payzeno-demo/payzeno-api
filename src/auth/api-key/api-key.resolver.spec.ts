@@ -132,6 +132,12 @@ describe('ApiKeyResolver', () => {
       await expect(resolver.resolveEntity(TOKEN)).rejects.toBeInstanceOf(InvalidApiKeyException);
     });
 
+    it('rejects a revoked key', async () => {
+      keys.findOne.mockResolvedValue(row({ revokedAt: new Date('2026-01-01T00:00:00.000Z') }));
+
+      await expect(resolver.resolveEntity(TOKEN)).rejects.toBeInstanceOf(InvalidApiKeyException);
+    });
+
     it('accepts a key whose revocation is scheduled in the future', async () => {
       // `revoked_at` is a timestamp, not a boolean. A key revoked at end of month still works.
       keys.findOne.mockResolvedValue(row({ revokedAt: new Date('2026-02-01T00:00:00.000Z') }));
@@ -167,6 +173,22 @@ describe('ApiKeyResolver', () => {
   });
 
   describe('resolve', () => {
+    it('builds an api_key principal carrying the row scopes and mode', async () => {
+      keys.findOne.mockResolvedValue(row({ scopes: ['refunds:write'], mode: 'test' }));
+
+      const principal = await resolver.resolve('sk_test_AB12CD34_abcdefghijklmnop');
+
+      expect(principal).toEqual({
+        kind: 'api_key',
+        merchant_id: 'mch_01HQ8ZZZ0000000000000001',
+        api_key_id: 'ak_01HQ8ZZZAB12CD34',
+        mode: 'test',
+        scopes: ['refunds:write'],
+      });
+    });
+  });
+
+  describe('bucketKeyFor', () => {
     it('is derived from the secret HMAC and is stable per key', () => {
       const first = resolver.bucketKeyFor('sk_live_AB12CD34_abcdefghijklmnop');
       const second = resolver.bucketKeyFor('sk_live_ZZZZZZZZ_abcdefghijklmnop');
@@ -180,5 +202,10 @@ describe('ApiKeyResolver', () => {
       expect(resolver.bucketKeyFor('Bearer nonsense')).toBeNull();
     });
 
+    it('does not verify the secret — the pre-auth limiter cannot afford argon2', () => {
+      resolver.bucketKeyFor('sk_live_AB12CD34_abcdefghijklmnop');
+
+      expect(hasher.verifySecret).not.toHaveBeenCalled();
+    });
   });
 });
