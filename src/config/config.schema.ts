@@ -37,11 +37,25 @@ export class ConfigSchema {
   @IsUrl(URL_OPTS)
   OTEL_EXPORTER_OTLP_ENDPOINT!: string;
 
+  @IsNotEmpty()
+  REDIS_URL!: string;
+
   @IsOptional()
   @Type(() => Number)
+  @Min(2)
+  DATABASE_POOL_SIZE?: number;
+
+  @IsString()
   @IsString()
   @IsNotEmpty()
+  BILLING_LEGACY_USER!: string;
+
+  @IsNotEmpty()
   BILLING_LEGACY_PASSWORD!: string;
+
+  // --- card vault -----------------------------------------------------------
+  @IsUrl(URL_OPTS)
+  VAULT_BASE_URL!: string;
 
   @IsNotEmpty()
   VAULT_API_KEY!: string;
@@ -50,6 +64,12 @@ export class ConfigSchema {
   @IsNotEmpty()
   NORDPAY_API_KEY!: string;
 
+  @IsIn(['worldflow', 'nordpay'])
+  PROCESSOR_DEFAULT_ACQUIRER!: string;
+
+  // --- auth -----------------------------------------------------------------
+  @IsString()
+  @IsString()
   @IsNotEmpty()
   CSRF_COOKIE_NAME!: string;
 
@@ -85,6 +105,7 @@ export class ConfigSchema {
   @Min(1)
   RATE_LIMIT_DEFAULT_RPM!: number;
 
+  @Type(() => Number)
   @Min(1)
   @Max(730)
   REFUND_WINDOW_DAYS!: number;
