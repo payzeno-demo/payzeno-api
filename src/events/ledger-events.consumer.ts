@@ -55,3 +55,80 @@ export class LedgerEventsConsumer extends BaseEventConsumer implements OnModuleI
   ]);
 
   private charges!: ChargesService;
+  private merchants!: MerchantsService;
+  private audit!: AuditService;
+  private supportTasks!: SupportTasksService;
+
+  constructor(
+    sqs: SQSClient,
+    transactions: TransactionManager,
+    processedEvents: ProcessedEventRepository,
+    @Inject(PAYZENO_LOGGER) logger: PayzenoLogger,
+    @Inject(API_CONFIG) private readonly config: ApiConfig,
+    private readonly moduleRef: ModuleRef,
+  ) {
+    super(sqs, transactions, processedEvents, logger);
+    this.queueUrl = this.config.aws.sqsLedgerQueueUrl;
+  }
+
+  onModuleInit(): void {
+    this.charges = this.moduleRef.get(ChargesService, { strict: false });
+    this.merchants = this.moduleRef.get(MerchantsService, { strict: false });
+    this.audit = this.moduleRef.get(AuditService, { strict: false });
+    this.supportTasks = this.moduleRef.get(SupportTasksService, { strict: false });
+  }
+
+  async handle(event: PayzenoEvent, tx: EntityManager): Promise<void> {
+    if (isEventOfType(event, 'settlement.completed')) {
+      await this.onSettlementCompleted(event.payload, event.id, tx);
+      return;
+    }
+    if (isEventOfType(event, 'settlement.duplicate_detected')) {
+      await this.onDuplicateDetected(event.payload, event.id, tx);
+      return;
+    }
+    if (isEventOfType(event, 'settlement.variance_detected')) {
+      await this.onVarianceDetected(event.payload, event.id, tx);
+      return;
+    }
+    if (
+      isEventOfType(event, 'payout.paid') ||
+      isEventOfType(event, 'payout.failed') ||
+      isEventOfType(event, 'payout.returned')
+    ) {
+      await this.onPayoutOutcome(event, tx);
+      return;
+    }
+    if (isEventOfType(event, 'ledger.imbalance_detected')) {
+      await this.supportTasks.open(tx, {
+        kind: 'ledger_imbalance',
+        merchantId: event.payload.merchant_id,
+        chargeId: null,
+        severity: 'critical',
+        title: `Ledger imbalance detected (${event.payload.check})`,
+        body:
+          `check=${event.payload.check} currency=${event.payload.currency} ` +
+          `expected=${event.payload.expected_minor} actual=${event.payload.actual_minor} ` +
+          `delta=${event.payload.delta_minor} ` +
+          `sample=${event.payload.sample_transaction_ids.join(',')}`,
+        sourceEventId: event.id,
+      });
+    }
+  }
+
+  /**
+   * PAY-2052. Record the chunk, mark this chunk's charges settled, and close the batch out
+   * only once every index 0..chunk_count-1 has arrived.
+   *
+   * The conditional upsert is not decoration: chunks arrive out of order and a redelivered
+   * chunk must not double-count `charges_marked`. `chunks_seen` is a set, so re-applying an
+   * index is a no-op — which is what makes the whole thing safe under at-least-once.
+   */
+  private async onSettlementCompleted(
+    payload: SettlementCompletedPayload,
+    sourceEventId: string,
+    tx: EntityManager,
+  ): Promise<void> {
+    const marked = await this.charges.markSettledFromBatch(tx, payload.settled_charge_ids, {
+      settlementBatchId: payload.batch_id,
+      settledAt: payload.completed_at,
