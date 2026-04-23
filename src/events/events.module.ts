@@ -78,6 +78,14 @@ export class EventsModule implements OnApplicationBootstrap, OnApplicationShutdo
     @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
     private readonly ledgerEvents: LedgerEventsConsumer,
     private readonly invoiceProjection: InvoiceProjectionConsumer,
+    private readonly deadLetter: DeadLetterConsumer,
+  ) {}
+
+  /**
+   * Long-poll loops start after the whole application graph is up, so a consumer can never
+   * receive a message before the services it resolved in `onModuleInit` are usable.
+   */
+  onApplicationBootstrap(): void {
     const consumers: BaseEventConsumer[] = [
       this.ledgerEvents,
       this.webhookFanout,
