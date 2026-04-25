@@ -18,6 +18,10 @@ export interface DeliveryResult {
  * The signing material handed to a strategy. Two entries during a rotation overlap: the
  * merchant may still be verifying against the old secret, so we send both signatures.
  */
+export function isPermanentRejection(status: number | null): boolean {
+  return status === 410;
+}
+
 export function formatSignatureHeader(timestamp: number, signatures: readonly string[]): string {
   return [`t=${timestamp}`, ...signatures.map((sig) => `v1=${sig}`)].join(',');
 }
