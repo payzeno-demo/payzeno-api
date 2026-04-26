@@ -23,6 +23,7 @@ describe('ClientSecretGuard', () => {
   const OTHER_INTENT_ID = fixedId('pi_', 'aurora-order-9902');
   const secret = `${TEST_PAYMENT_INTENT_ID}_secret_zg7q2m4v8k`;
 
+  let intents: { findByClientSecret: jest.Mock };
   let guard: ClientSecretGuard;
 
   beforeEach(() => {
@@ -47,6 +48,20 @@ describe('ClientSecretGuard', () => {
     });
 
     await expect(guard.canActivate(context)).resolves.toBe(true);
+  });
+
+  it('403s a route that names a different intent on the same merchant', async () => {
+    const { context } = guardContext({
+      headers: { authorization: `Bearer ${secret}` },
+      params: { paymentIntentId: OTHER_INTENT_ID },
+    });
+
+    const err = await rejectsWith(guard.canActivate(context), PermissionDeniedException);
+
+    expect(err.httpStatus).toBe(403);
+    expect(err.toResponse('req_1').error.details).toMatchObject({
+      reason: 'client_secret_scope',
+    });
   });
 
 });

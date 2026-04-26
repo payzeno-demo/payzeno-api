@@ -50,4 +50,23 @@ export class ClientSecretGuard extends BaseAuthGuard implements OnModuleInit {
     this.intents = this.moduleRef.get(PaymentIntentRepository, { strict: false });
   }
 
+  protected async authenticate(request: AuthenticatedRequest): Promise<AuthPrincipal | null> {
+    const token = this.bearerToken(request);
+
+    if (!token || !token.startsWith(CLIENT_SECRET_PREFIX) || !token.includes(CLIENT_SECRET_MARKER)) {
+      return null;
+    }
+
+    const intent = await this.intents.findByClientSecret(token);
+    if (!intent) {
+      // Same class, same message as a missing credential: a valid-shaped secret that resolves
+      // to nothing must not be distinguishable from one that was never issued.
+      throw new AuthenticationRequiredException('Invalid client secret');
+    }
+
+    this.assertRouteMatches(request, intent.id);
+
+    return this.principals.fromClientSecret(intent.merchantId, intent.id);
+  }
+
 }
