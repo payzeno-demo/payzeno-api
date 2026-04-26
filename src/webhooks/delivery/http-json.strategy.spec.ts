@@ -14,6 +14,8 @@ describe('HttpJsonDeliveryStrategy', () => {
   const now = new Date('2026-06-01T12:00:00.000Z');
   const unix = Math.floor(now.getTime() / 1000);
 
+  let strategy: HttpJsonDeliveryStrategy;
+
   function endpoint(overrides: Partial<WebhookEndpointEntity> = {}): WebhookEndpointEntity {
     return {
       id: 'whe_live_1',
@@ -22,6 +24,33 @@ describe('HttpJsonDeliveryStrategy', () => {
       ...overrides,
     } as WebhookEndpointEntity;
   }
+
+  function event(overrides: Partial<WebhookEventEntity> = {}): WebhookEventEntity {
+    return Object.assign(new WebhookEventEntity(), {
+      id: 'evt_1',
+      merchantId: 'mer_1',
+      endpointId: 'whe_live_1',
+      type: 'payment.captured',
+      sourceEventId: 'bus_1',
+      payload: { id: 'ch_1', amount_minor: 4200, currency: 'USD' },
+      status: 'pending',
+      attemptCount: 0,
+      livemode: true,
+      createdAt: now,
+      ...overrides,
+    });
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    secrets = { signingMaterial: jest.fn(async () => ({ current: 'whsec_a', previous: null })) };
+    strategy = new HttpJsonDeliveryStrategy(
+      secrets as never,
+      { now: () => now, nowMs: () => now.getTime() } as never,
+      logger as never,
+    );
+    respond(200);
+  });
 
   it('posts the serialized event as JSON', async () => {
     const evt = event();
@@ -51,6 +80,15 @@ describe('HttpJsonDeliveryStrategy', () => {
     expect(header).toContain(
       createHmac('sha256', 'whsec_old').update(`${unix}.${evt.serialize()}`).digest('hex'),
     );
+  });
+
+  it('advertises the attempt number the merchant is seeing', async () => {
+    await strategy.deliver(event({ attemptCount: 3 }), endpoint());
+
+    const headers = (request.mock.calls[0][1] as { headers: Record<string, string> }).headers;
+    expect(headers['payzeno-delivery-attempt']).toBe('4');
+    expect(headers['payzeno-event-id']).toBe('evt_1');
+    expect(headers['payzeno-event-type']).toBe('payment.captured');
   });
 
   it('drains the response body so undici releases the socket', async () => {
