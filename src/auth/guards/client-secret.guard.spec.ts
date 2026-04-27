@@ -23,6 +23,7 @@ describe('ClientSecretGuard', () => {
   const OTHER_INTENT_ID = fixedId('pi_', 'aurora-order-9902');
   const secret = `${TEST_PAYMENT_INTENT_ID}_secret_zg7q2m4v8k`;
 
+  let intents: { findByClientSecret: jest.Mock };
   let guard: ClientSecretGuard;
 
   beforeEach(() => {
@@ -40,6 +41,19 @@ describe('ClientSecretGuard', () => {
     guard.onModuleInit();
   });
 
+  it('resolves the secret and pins the principal to one payment intent', async () => {
+    const { context, request } = guardContext({ headers: { authorization: `Bearer ${secret}` } });
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+
+    expect(intents.findByClientSecret).toHaveBeenCalledWith(secret);
+    expect(request.principal).toEqual({
+      kind: 'client_secret',
+      merchant_id: TEST_MERCHANT_ID,
+      payment_intent_id: TEST_PAYMENT_INTENT_ID,
+    });
+  });
+
   it('admits the route whose :paymentIntentId matches the secret', async () => {
     const { context } = guardContext({
       headers: { authorization: `Bearer ${secret}` },
@@ -49,4 +63,54 @@ describe('ClientSecretGuard', () => {
     await expect(guard.canActivate(context)).resolves.toBe(true);
   });
 
+  it('403s a route that names a different intent on the same merchant', async () => {
+    const { context } = guardContext({
+      headers: { authorization: `Bearer ${secret}` },
+      params: { paymentIntentId: OTHER_INTENT_ID },
+    });
+
+    const err = await rejectsWith(guard.canActivate(context), PermissionDeniedException);
+
+    expect(err.httpStatus).toBe(403);
+    expect(err.toResponse('req_1').error.details).toMatchObject({
+      reason: 'client_secret_scope',
+    });
+  });
+
+  it('declines a bearer token that is not a client secret, so ApiKeyGuard can win', async () => {
+    const { context } = guardContext({
+      headers: { authorization: 'Bearer sk_live_ab12cd34_secretsecretsecret' },
+    });
+
+    await rejectsWith(guard.canActivate(context), AuthenticationRequiredException);
+    expect(intents.findByClientSecret).not.toHaveBeenCalled();
+  });
+
+  it('declines a pi_-prefixed token with no _secret_ marker — that is just an id', async () => {
+    const { context } = guardContext({
+      headers: { authorization: `Bearer ${TEST_PAYMENT_INTENT_ID}` },
+    });
+
+    await rejectsWith(guard.canActivate(context), AuthenticationRequiredException);
+    expect(intents.findByClientSecret).not.toHaveBeenCalled();
+  });
+
+  it('gives a well-shaped secret that resolves to nothing the same answer as a missing one', async () => {
+    intents.findByClientSecret.mockResolvedValue(null);
+
+    const { context } = guardContext({ headers: { authorization: `Bearer ${secret}` } });
+    const resolvedToNothing = await rejectsWith(
+      guard.canActivate(context),
+      AuthenticationRequiredException,
+    );
+
+    const noCredential = await rejectsWith(
+      guard.canActivate(guardContext().context),
+      AuthenticationRequiredException,
+    );
+
+    // Different messages would let a caller probe which intents exist.
+    expect(resolvedToNothing.httpStatus).toBe(noCredential.httpStatus);
+    expect(resolvedToNothing.code).toBe(noCredential.code);
+  });
 });

@@ -30,10 +30,60 @@ import { guardContext, makeReflector, rejectsWith } from 'test/support/guard-con
 describe('InternalServiceGuard', () => {
   const SECRET = 'internal-shared-secret-value';
 
+  const config = {
+    ledger: { internalApiSecret: SECRET },
+  } as unknown as ApiConfig;
+
+  function guardWith(callers?: string[]): InternalServiceGuard {
+    return new InternalServiceGuard(
+      config,
+      new PrincipalFactory(),
+      makeReflector(callers ? { [INTERNAL_ONLY_KEY]: { callers } } : {}),
+      new NoopLogger(),
+    );
+  }
+
+  function headers(overrides: Record<string, string> = {}): Record<string, string> {
+    return {
+      [SERVICE_HEADER]: 'payzeno-ledger',
+      [INTERNAL_SECRET_HEADER]: SECRET,
+      ...overrides,
+    };
+  }
+
+  it('admits payzeno-ledger with the right secret and attaches an internal_service principal', async () => {
+    const { context, request } = guardContext({ method: 'POST', headers: headers() });
+
+    await expect(guardWith().canActivate(context)).resolves.toBe(true);
+
+    expect(request.principal).toEqual(
+      makeInternalPrincipal({ service: 'payzeno-ledger', scopes: ['internal:read', 'internal:write'] }),
+    );
+  });
+
+  it('admits payzeno-billing-legacy — the second known caller', async () => {
+    const { context, request } = guardContext({
+      method: 'GET',
+      headers: headers({ [SERVICE_HEADER]: 'payzeno-billing-legacy' }),
+    });
+
+    await expect(guardWith().canActivate(context)).resolves.toBe(true);
+    expect(request.principal).toMatchObject({ service: 'payzeno-billing-legacy' });
+  });
+
   it('declines when neither internal header is present, so a public route is unaffected', async () => {
     const { context } = guardContext();
 
     await rejectsWith(guardWith().canActivate(context), AuthenticationRequiredException);
+  });
+
+  it('rejects an unknown service name before comparing the secret', async () => {
+    const { context } = guardContext({
+      headers: headers({ [SERVICE_HEADER]: 'payzeno-console' }),
+    });
+
+    const err = await rejectsWith(guardWith().canActivate(context), AuthenticationRequiredException);
+    expect(err.message).toContain('X-Payzeno-Service');
   });
 
   it('rejects a wrong secret', async () => {
