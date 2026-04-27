@@ -77,6 +77,15 @@ describe('ClientSecretGuard', () => {
     });
   });
 
+  it('declines a bearer token that is not a client secret, so ApiKeyGuard can win', async () => {
+    const { context } = guardContext({
+      headers: { authorization: 'Bearer sk_live_ab12cd34_secretsecretsecret' },
+    });
+
+    await rejectsWith(guard.canActivate(context), AuthenticationRequiredException);
+    expect(intents.findByClientSecret).not.toHaveBeenCalled();
+  });
+
   it('declines a pi_-prefixed token with no _secret_ marker — that is just an id', async () => {
     const { context } = guardContext({
       headers: { authorization: `Bearer ${TEST_PAYMENT_INTENT_ID}` },
@@ -86,4 +95,22 @@ describe('ClientSecretGuard', () => {
     expect(intents.findByClientSecret).not.toHaveBeenCalled();
   });
 
+  it('gives a well-shaped secret that resolves to nothing the same answer as a missing one', async () => {
+    intents.findByClientSecret.mockResolvedValue(null);
+
+    const { context } = guardContext({ headers: { authorization: `Bearer ${secret}` } });
+    const resolvedToNothing = await rejectsWith(
+      guard.canActivate(context),
+      AuthenticationRequiredException,
+    );
+
+    const noCredential = await rejectsWith(
+      guard.canActivate(guardContext().context),
+      AuthenticationRequiredException,
+    );
+
+    // Different messages would let a caller probe which intents exist.
+    expect(resolvedToNothing.httpStatus).toBe(noCredential.httpStatus);
+    expect(resolvedToNothing.code).toBe(noCredential.code);
+  });
 });

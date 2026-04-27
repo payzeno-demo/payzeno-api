@@ -69,4 +69,12 @@ export class ClientSecretGuard extends BaseAuthGuard implements OnModuleInit {
     return this.principals.fromClientSecret(intent.merchantId, intent.id);
   }
 
+  private assertRouteMatches(request: AuthenticatedRequest, intentId: string): void {
+    const routeId = request.params.paymentIntentId;
+    if (routeId && routeId !== intentId) {
+      throw new PermissionDeniedException('This client secret does not belong to that payment intent', {
+        reason: 'client_secret_scope',
+      });
+    }
+  }
 }
