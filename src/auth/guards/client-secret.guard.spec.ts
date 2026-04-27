@@ -41,6 +41,19 @@ describe('ClientSecretGuard', () => {
     guard.onModuleInit();
   });
 
+  it('resolves the secret and pins the principal to one payment intent', async () => {
+    const { context, request } = guardContext({ headers: { authorization: `Bearer ${secret}` } });
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+
+    expect(intents.findByClientSecret).toHaveBeenCalledWith(secret);
+    expect(request.principal).toEqual({
+      kind: 'client_secret',
+      merchant_id: TEST_MERCHANT_ID,
+      payment_intent_id: TEST_PAYMENT_INTENT_ID,
+    });
+  });
+
   it('admits the route whose :paymentIntentId matches the secret', async () => {
     const { context } = guardContext({
       headers: { authorization: `Bearer ${secret}` },
@@ -62,6 +75,15 @@ describe('ClientSecretGuard', () => {
     expect(err.toResponse('req_1').error.details).toMatchObject({
       reason: 'client_secret_scope',
     });
+  });
+
+  it('declines a pi_-prefixed token with no _secret_ marker — that is just an id', async () => {
+    const { context } = guardContext({
+      headers: { authorization: `Bearer ${TEST_PAYMENT_INTENT_ID}` },
+    });
+
+    await rejectsWith(guard.canActivate(context), AuthenticationRequiredException);
+    expect(intents.findByClientSecret).not.toHaveBeenCalled();
   });
 
 });

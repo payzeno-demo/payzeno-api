@@ -30,6 +30,29 @@ import { guardContext, makeReflector, rejectsWith } from 'test/support/guard-con
 describe('InternalServiceGuard', () => {
   const SECRET = 'internal-shared-secret-value';
 
+  const config = {
+    ledger: { internalApiSecret: SECRET },
+  } as unknown as ApiConfig;
+
+  function guardWith(callers?: string[]): InternalServiceGuard {
+    return new InternalServiceGuard(
+      config,
+      new PrincipalFactory(),
+      makeReflector(callers ? { [INTERNAL_ONLY_KEY]: { callers } } : {}),
+      new NoopLogger(),
+    );
+  }
+
+  it('admits payzeno-ledger with the right secret and attaches an internal_service principal', async () => {
+    const { context, request } = guardContext({ method: 'POST', headers: headers() });
+
+    await expect(guardWith().canActivate(context)).resolves.toBe(true);
+
+    expect(request.principal).toEqual(
+      makeInternalPrincipal({ service: 'payzeno-ledger', scopes: ['internal:read', 'internal:write'] }),
+    );
+  });
+
   it('declines when neither internal header is present, so a public route is unaffected', async () => {
     const { context } = guardContext();
 
