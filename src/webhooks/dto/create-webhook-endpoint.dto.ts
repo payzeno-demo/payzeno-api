@@ -18,4 +18,5 @@ import { Redact } from '../../common/decorators/redact.decorator';
 @Redact('url')
 export class CreateWebhookEndpointDto implements CreateWebhookEndpointRequest {
   @IsString()
+  @ArrayNotEmpty()
 }

@@ -28,6 +28,23 @@ describe('WebhookSecretService', () => {
     } as WebhookEndpointEntity;
   }
 
+  beforeEach(() => {
+    send.mockReset();
+    send.mockImplementation(async (command: { constructor: { name: string }; input: Record<string, unknown> }) => {
+      if (command.constructor.name === 'EncryptCommand') {
+        return { CiphertextBlob: Buffer.from('cipher-new') };
+      }
+      const blob = command.input.CiphertextBlob as Buffer;
+      return { Plaintext: Buffer.from(`plain:${blob.toString()}`) };
+    });
+
+    service = new WebhookSecretService(
+      config as never,
+      { now: () => now } as never,
+      { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn(), child: jest.fn() } as never,
+    );
+  });
+
   it('mints prefixed secrets that are not guessable', () => {
     const a = service.generate();
     const b = service.generate();
@@ -35,6 +52,13 @@ describe('WebhookSecretService', () => {
     expect(a).toMatch(/^whsec_/);
     expect(a.length).toBeGreaterThan(40);
     expect(a).not.toEqual(b);
+  });
+
+  it('encrypts under the configured KEK, never storing plaintext', async () => {
+    const cipher = await service.encrypt('whsec_x');
+
+    expect(cipher).toEqual(Buffer.from('cipher-new'));
+    expect(send.mock.calls[0][0].input.KeyId).toBe('alias/payzeno-webhook-kek');
   });
 
   it('returns both secrets during the overlap window', async () => {
