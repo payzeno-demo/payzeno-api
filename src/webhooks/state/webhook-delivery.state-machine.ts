@@ -31,6 +31,11 @@ export class WebhookDeliveryStateMachine extends StateMachine<
     dead: {},
   };
 
+  readonly terminalStates: ReadonlySet<WebhookEventStatus> = new Set<WebhookEventStatus>([
+    'delivered',
+    'dead',
+  ]);
+
   readonly entityName = 'webhook_event';
 
   /**

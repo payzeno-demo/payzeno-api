@@ -26,6 +26,15 @@ describe('WebhookDeliveryStateMachine', () => {
     expect(fsm.apply('delivering', 'exhaust')).toBe('dead');
   });
 
+  it('delivered → pending on an operator redelivery', () => {
+    expect(fsm.apply('delivered', 'redeliver')).toBe('pending');
+  });
+
+  it('cannot exhaust a pending event that has not been attempted', () => {
+    expect(fsm.can('pending', 'exhaust')).toBe(false);
+    expect(() => fsm.apply('pending', 'exhaust')).toThrow(InvalidStateTransitionException);
+  });
+
   it('cannot succeed without attempting first', () => {
     expect(fsm.can('pending', 'succeed')).toBe(false);
   });
