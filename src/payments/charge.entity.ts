@@ -51,17 +51,41 @@ export class ChargeEntity extends MerchantScopedEntity {
   payment_intent_id: PaymentIntentId;
 
   @ManyToOne(() => PaymentIntentEntity, (intent) => intent.charges)
+  @Column({ type: 'bigint', transformer: requiredMinorUnitsTransformer })
+  amount_minor: number;
+
   @Column({ type: 'bigint', default: 0, transformer: requiredMinorUnitsTransformer })
   captured_amount_minor: number;
 
   @Column({ type: 'char', length: 3, transformer: currencyTransformer })
   currency: CurrencyCode;
 
+  @Column({
+    type: 'enum',
+    enum: ['pending', 'authorized', 'captured', 'settled', 'failed', 'voided', 'expired', 'reversed'],
+    enumName: 'charge_status',
+  })
+  status: ChargeStatus;
+
   @Column({ type: 'char', length: 4 })
   card_last_four: string;
 
+  @Column({ type: 'smallint' })
+  card_exp_month: number;
+
+  @Column({ type: 'smallint' })
+  card_exp_year: number;
+
   @Column({ type: 'char', length: 2, nullable: true, transformer: trimmedCharTransformer })
   card_country: string | null;
+
+  @Column({
+    type: 'enum',
+    enum: ['credit', 'debit', 'prepaid', 'unknown'],
+    enumName: 'card_funding',
+    default: 'unknown',
+  })
+  card_funding: CardFunding;
 
   @Column({ type: 'enum', enum: ['worldflow', 'nordpay'], enumName: 'acquirer' })
   acquirer: Acquirer;
@@ -72,8 +96,15 @@ export class ChargeEntity extends MerchantScopedEntity {
   @Column({ type: 'text', nullable: true })
   processor_reference: string | null;
 
+  @Column({ type: 'enum', enum: ['automatic', 'manual'], enumName: 'capture_method' })
+  capture_method: CaptureMethod;
+
   @Column({ type: 'text', nullable: true })
   failure_message: string | null;
+
+  /** Migration 28. */
+  @Column({ type: 'jsonb', nullable: true })
+  three_d_secure: ThreeDSecureResult | null;
 
   @Column({
     type: 'enum',
