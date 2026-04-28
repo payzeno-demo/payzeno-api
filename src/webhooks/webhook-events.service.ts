@@ -37,6 +37,12 @@ export interface FanoutInput {
 export class WebhookEventsService {
   constructor(
     private readonly events: WebhookEventRepository,
+    const rows = await this.events.listForMerchant(
+      merchantId,
+      { status: query.status, type: query.type },
+      limit + 1,
+    );
+
     const row = await this.events.findOneBy({ merchantId, id: eventId } as never);
     if (!row) {
       throw new ResourceNotFoundException('webhook_event', eventId);
