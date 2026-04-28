@@ -28,6 +28,16 @@ export class WebhookEndpointsService extends BaseService<WebhookEndpointEntity> 
     private readonly endpoints: WebhookEndpointRepository,
     private readonly secrets: WebhookSecretService,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(PAYZENO_LOGGER) logger: PayzenoLogger,
+  ) {
+    super(endpoints, logger);
+  }
+
+  get entityName(): string {
+    return 'webhook_endpoint';
+  }
+
+  async list(merchantId: MerchantId, query: ListQuery): Promise<Paginated<WebhookEndpointDto>> {
     const page = await this.paginate(query, { merchantId } as never);
     return {
       data: page.data.map((row) => this.toDto(row)),
@@ -57,6 +67,42 @@ export class WebhookEndpointsService extends BaseService<WebhookEndpointEntity> 
     const secret = this.secrets.generate();
     const encrypted = await this.secrets.encrypt(secret);
 
+    const row = new WebhookEndpointEntity();
+    row.id = this.ids.generate(ApiIdPrefix.WEBHOOK_ENDPOINT);
+    row.merchantId = merchantId;
+    row.livemode = livemode;
+    row.url = dto.url;
+    row.enabledEvents = dto.enabled_events;
+    row.signingSecretEncrypted = encrypted;
+    row.signingSecretPreviousEncrypted = null;
+    row.signingSecretLastFour = this.secrets.lastFour(secret);
+    row.rotatedAt = null;
+    row.status = 'enabled';
+    row.consecutiveFailureCount = 0;
+    row.lastSuccessAt = null;
+    row.createdAt = this.clock.now();
+    row.updatedAt = this.clock.now();
+
+    await this.endpoints.insert(row);
+
+    this.logger.info('webhook.endpoint_created', {
+      endpoint_id: row.id,
+      merchant_id: merchantId,
+      events: dto.enabled_events.length,
+      livemode,
+    });
+
+    return { ...this.toDto(row), signing_secret: secret };
+  }
+
+  async delete(merchantId: MerchantId, id: string): Promise<void> {
+    const row = await this.findOneOrThrow(id, merchantId);
+    await this.endpoints.delete({ id: row.id } as never);
+    this.logger.info('webhook.endpoint_deleted', { endpoint_id: id, merchant_id: merchantId });
+  }
+
+  /** Rotation: old secret stays valid for the 24h overlap, then stops being sent. */
+  async rotateSecret(merchantId: MerchantId, id: string): Promise<WebhookEndpointDto> {
     const row = await this.findOneOrThrow(id, merchantId);
     const rotated = await this.secrets.rotate(row);
 
@@ -99,6 +145,7 @@ export class WebhookEndpointsService extends BaseService<WebhookEndpointEntity> 
    * with no success and 20+ consecutive dead events disables the endpoint.
    */
   async disableStale(minConsecutiveFailures: number, limit: number): Promise<string[]> {
+    const cutoff = new Date(this.clock.now().getTime() - 72 * 60 * 60 * 1000);
     const stale = await this.endpoints.findStale(cutoff, minConsecutiveFailures, limit);
 
     for (const endpoint of stale) {

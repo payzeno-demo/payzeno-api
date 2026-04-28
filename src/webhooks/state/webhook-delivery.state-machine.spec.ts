@@ -14,8 +14,16 @@ describe('WebhookDeliveryStateMachine', () => {
     expect(fsm.apply('pending', 'attempt')).toBe('delivering');
   });
 
+  it('delivering → delivered on a 2xx', () => {
+    expect(fsm.apply('delivering', 'succeed')).toBe('delivered');
+  });
+
   it('delivering → pending on a retryable failure', () => {
     expect(fsm.apply('delivering', 'retry')).toBe('pending');
+  });
+
+  it('delivering → dead once the attempts are exhausted', () => {
+    expect(fsm.apply('delivering', 'exhaust')).toBe('dead');
   });
 
   it('cannot succeed without attempting first', () => {

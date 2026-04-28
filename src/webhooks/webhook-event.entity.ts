@@ -34,11 +34,20 @@ export class WebhookEventEntity extends MerchantScopedEntity {
   @Column({ name: 'source_event_id', type: 'text' })
   sourceEventId!: string;
 
+  @Column({ name: 'payload', type: 'jsonb' })
+  payload!: Record<string, unknown>;
+
   @Column({ name: 'status', type: 'text', default: 'pending' })
   status!: WebhookEventStatus;
 
   @Column({ name: 'attempt_count', type: 'smallint', default: 0 })
   attemptCount!: number;
+
+  @Column({ name: 'last_response_status', type: 'smallint', nullable: true })
+  lastResponseStatus!: number | null;
+
+  @Column({ name: 'last_error', type: 'text', nullable: true })
+  lastError!: string | null;
 
   @Column({ name: 'signature_version', type: 'varchar', length: 4, default: 'v1' })
   signatureVersion!: 'v1';
