@@ -14,3 +14,16 @@ import { Column, Entity, Index, PrimaryColumn } from 'typeorm';
  * ADR 0011 forbids it in the money path.
  */
 @Entity({ name: 'processed_event' })
+export class ProcessedEvent {
+  /** The bus `EventEnvelope.id`. */
+  @PrimaryColumn({ name: 'event_id', type: 'text' })
+  eventId!: string;
+
+  /** `BaseEventConsumer.consumerName` — stable across deploys, never the class instance. */
+  @PrimaryColumn({ name: 'consumer', type: 'text' })
+  consumer!: string;
+
+  @Column({ name: 'processed_at', type: 'timestamptz', default: () => 'now()' })
+  processedAt!: Date;
+}
+
