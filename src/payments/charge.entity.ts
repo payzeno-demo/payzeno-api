@@ -60,8 +60,22 @@ export class ChargeEntity extends MerchantScopedEntity {
   @Column({ type: 'char', length: 4 })
   card_last_four: string;
 
+  @Column({ type: 'smallint' })
+  card_exp_month: number;
+
+  @Column({ type: 'smallint' })
+  card_exp_year: number;
+
   @Column({ type: 'char', length: 2, nullable: true, transformer: trimmedCharTransformer })
   card_country: string | null;
+
+  @Column({
+    type: 'enum',
+    enum: ['credit', 'debit', 'prepaid', 'unknown'],
+    enumName: 'card_funding',
+    default: 'unknown',
+  })
+  card_funding: CardFunding;
 
   @Column({ type: 'enum', enum: ['worldflow', 'nordpay'], enumName: 'acquirer' })
   acquirer: Acquirer;
@@ -74,6 +88,10 @@ export class ChargeEntity extends MerchantScopedEntity {
 
   @Column({ type: 'text', nullable: true })
   failure_message: string | null;
+
+  /** Migration 28. */
+  @Column({ type: 'jsonb', nullable: true })
+  three_d_secure: ThreeDSecureResult | null;
 
   @Column({
     type: 'enum',

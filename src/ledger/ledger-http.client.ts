@@ -114,6 +114,10 @@ export class LedgerHttpClient extends BaseHttpClient {
    * `idempotency_key` and the ledger discriminates repeats on `request_fingerprint`
    * (api-surface.md §10.2).
    */
+  listTransactions(query: TransactionListQuery): Promise<Paginated<LedgerTransaction>> {
+    return this.get<Paginated<LedgerTransaction>>('/internal/v1/transactions', { ...query });
+  }
+
   getSettlementBatch(batchId: SettlementBatchId, merchantId?: MerchantId): Promise<SettlementBatch> {
     return this.get<SettlementBatch>(`/internal/v1/settlement-batches/${encodeURIComponent(batchId)}`, {
       merchant_id: merchantId,
@@ -180,4 +184,10 @@ export class LedgerHttpClient extends BaseHttpClient {
     });
   }
 
+  protected mapTransportFailure(err: TransportError, spec: RequestSpec<unknown>): never {
+    throw new LedgerUnavailableException(
+      `payzeno-ledger ${err.kind} on ${spec.method} ${spec.path}`,
+      { failure: err.kind },
+    );
+  }
 }
