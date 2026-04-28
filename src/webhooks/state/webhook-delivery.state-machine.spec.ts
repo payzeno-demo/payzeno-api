@@ -6,6 +6,14 @@ import { WebhookDeliveryStateMachine } from 'src/webhooks/state/webhook-delivery
 describe('WebhookDeliveryStateMachine', () => {
   let fsm: WebhookDeliveryStateMachine;
 
+  beforeEach(() => {
+    fsm = new WebhookDeliveryStateMachine();
+  });
+
+  it('pending → delivering when the job picks it up', () => {
+    expect(fsm.apply('pending', 'attempt')).toBe('delivering');
+  });
+
   it('delivering → pending on a retryable failure', () => {
     expect(fsm.apply('delivering', 'retry')).toBe('pending');
   });
