@@ -24,8 +24,18 @@ export class WebhookEventEntity extends MerchantScopedEntity {
   @Column({ name: 'endpoint_id', type: 'text' })
   endpointId!: string;
 
+  @JoinColumn({ name: 'endpoint_id' })
+  endpoint!: WebhookEndpointEntity;
+
   @Column({ name: 'type', type: 'text' })
   type!: PublicEventType;
+
+  /** The bus `EventEnvelope.id` this was fanned out from. The at-least-once dedupe key. */
+  @Column({ name: 'source_event_id', type: 'text' })
+  sourceEventId!: string;
+
+  @Column({ name: 'status', type: 'text', default: 'pending' })
+  status!: WebhookEventStatus;
 
   @Column({ name: 'attempt_count', type: 'smallint', default: 0 })
   attemptCount!: number;
