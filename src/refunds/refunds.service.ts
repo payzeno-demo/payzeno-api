@@ -108,6 +108,104 @@ export class RefundsService extends BaseService<RefundEntity> {
     netsAgainstSettlement: boolean,
     scope: MerchantScope,
   ): Promise<Refund> {
+    const adapter = this.router.forAcquirer(charge.acquirer, { livemode: scope.livemode });
+
+    try {
+      const result = await adapter.refund({
+        networkTransactionId: charge.network_transaction_id ?? '',
+        amountMinor: Number(refund.amount_minor),
+        currency: refund.currency,
+        reason: refund.reason,
+        idempotencyKey: ledgerKey('refund', refund.charge_id, refund.id),
+      });
+
+      if (!result.refunded) {
+        return this.settleFailure(refund, result.failureReason ?? 'acquirer declined the refund', scope);
+      }
+
+      const succeededAt = this.clock.now();
+      await this.transactions.runInTransaction(async (manager) => {
+        this.states.apply(refund.status, 'succeed');
+        await this.refunds.markSucceeded(manager, refund.id, result.processorReference, succeededAt);
+      });
+
+      // The ledger posts the refund; a `captured` charge nets it into the open batch, a
+      // `settled` one debits the next payout. Deterministic key, so a retry is a no-op there.
+      await this.ledger.recordRefund({
+        refundId: refund.id,
+        chargeId: refund.charge_id,
+        merchantId: scope.merchantId,
+        currency: refund.currency,
+        livemode: scope.livemode,
+        amountMinor: Number(refund.amount_minor),
+      });
+
+      this.logger.info('refund_succeeded', {
+        refund_id: refund.id,
+        charge_id: refund.charge_id,
+        amount_minor: Number(refund.amount_minor),
+        nets_against_settlement: netsAgainstSettlement,
+      });
+
+      refund.status = 'succeeded';
+      refund.processor_reference = result.processorReference;
+      refund.succeeded_at = succeededAt;
+      return toRefund(refund);
+    } catch (err) {
+      // TODO(PAY-2011): this swallows the acquirer's exception class. The console shows
+      // `failure_reason` and support asks for the acquirer code every single time.
+      const message = err instanceof Error ? err.message : 'acquirer call failed';
+      return this.settleFailure(refund, message, scope);
+    }
+  }
+
+  private async settleFailure(refund: RefundEntity, reason: string, scope: MerchantScope): Promise<Refund> {
+    await this.transactions.runInTransaction(async (manager) => {
+      await this.refunds.markFailed(manager, refund.id, reason);
+      // The money is the merchant's again: undo the reservation the create transaction made.
+      await this.charges.addRefundedAmount(manager, refund.charge_id, -Number(refund.amount_minor));
+
+      await this.events.publish(
+        'refund.failed',
+        {
+          refund_id: refund.id,
+          charge_id: refund.charge_id,
+          merchant_id: scope.merchantId,
+          amount_minor: Number(refund.amount_minor),
+          currency: refund.currency,
+          failure_reason: reason,
+          failed_at: this.clock.nowIso(),
+        },
+        {
+          merchantId: scope.merchantId,
+          correlationId: refund.id,
+          causationId: null,
+          livemode: scope.livemode,
+          occurredAt: this.clock.nowIso(),
+        },
+      );
+    });
+
+    this.logger.warn('refund_failed', { refund_id: refund.id, charge_id: refund.charge_id, reason });
+
+    refund.status = 'failed';
+    refund.failure_reason = reason;
+    return toRefund(refund);
+  }
+
+  /**
+   * `ProcessorWebhookService`'s `refund_settled` branch. The acquirer's asynchronous verdict
+   * on a refund we already submitted; the synchronous response is usually right, but a
+   * reversal can still fail in the file two days later.
+   *
+   * Returns null for an unknown reference — acquirers replay refunds for merchants who have
+   * left, and there is nothing to update. Re-delivery of an already-settled refund is a no-op
+   * because both writes are guarded on `status = 'pending'`.
+   */
+  async markSettledFromWebhook(
+    processorReference: string,
+    outcome: { failed: boolean; failureReason: string },
+  ): Promise<RefundEntity | null> {
     const page = await this.paginate(query, scope, (qb) =>
       query.charge_id ? qb.andWhere('refund.charge_id = :chargeId', { chargeId: query.charge_id }) : qb,
     );
@@ -117,5 +215,6 @@ export class RefundsService extends BaseService<RefundEntity> {
 
   /** Used by the charge detail panel; not paginated because a charge has a handful. */
   async listForCharge(principal: AuthPrincipal, chargeId: ChargeId): Promise<Refund[]> {
+    const rows = await this.refunds.findAllForCharge(chargeId);
   };
 }

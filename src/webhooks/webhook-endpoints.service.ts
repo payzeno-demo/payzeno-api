@@ -26,6 +26,7 @@ const MAX_ENDPOINTS_PER_MERCHANT = 16;
 export class WebhookEndpointsService extends BaseService<WebhookEndpointEntity> {
   constructor(
     private readonly endpoints: WebhookEndpointRepository,
+    private readonly secrets: WebhookSecretService,
     @Inject(CLOCK) private readonly clock: Clock,
     const page = await this.paginate(query, { merchantId } as never);
     return {
@@ -56,6 +57,36 @@ export class WebhookEndpointsService extends BaseService<WebhookEndpointEntity> 
     const secret = this.secrets.generate();
     const encrypted = await this.secrets.encrypt(secret);
 
+    const row = await this.findOneOrThrow(id, merchantId);
+    const rotated = await this.secrets.rotate(row);
+
+    row.signingSecretEncrypted = rotated.encrypted;
+    row.signingSecretPreviousEncrypted = rotated.previousEncrypted;
+    row.signingSecretLastFour = rotated.lastFour;
+    row.rotatedAt = rotated.rotatedAt;
+    await this.endpoints.save(row);
+
+    return { ...this.toDto(row), signing_secret: rotated.plaintext };
+  }
+
+  /**
+   * `WebhookFanoutConsumer`'s lookup. Called once per bus event, so it stays a single
+   * indexed query and returns entities rather than DTOs — the consumer needs the encrypted
+   * secret columns downstream.
+   */
+  async listEnabledFor(
+    merchantId: MerchantId,
+    type: PublicEventType,
+    livemode: boolean,
+  ): Promise<WebhookEndpointEntity[]> {
+    return this.endpoints.findEnabledFor(merchantId, type, livemode);
+  }
+
+  /** `GET /internal/v1/webhook_endpoints?merchant_id=` — the ledger's fanout-worthiness check. */
+  async listForInternalCaller(
+    merchantId: MerchantId,
+    status?: 'enabled' | 'disabled',
+  ): Promise<WebhookEndpointDto[]> {
     const rows = await this.endpoints.find({
       where: status ? { merchantId, status } : { merchantId },
       take: 100,
@@ -68,6 +99,28 @@ export class WebhookEndpointsService extends BaseService<WebhookEndpointEntity> 
    * with no success and 20+ consecutive dead events disables the endpoint.
    */
   async disableStale(minConsecutiveFailures: number, limit: number): Promise<string[]> {
+    const stale = await this.endpoints.findStale(cutoff, minConsecutiveFailures, limit);
+
+    for (const endpoint of stale) {
+      await this.endpoints.disable(endpoint.id);
+      this.logger.warn('webhook.endpoint_disabled', {
+        endpoint_id: endpoint.id,
+        merchant_id: endpoint.merchantId,
+        consecutive_failures: endpoint.consecutiveFailureCount,
+      });
+    }
+    return stale.map((endpoint) => endpoint.id);
+  }
+
+  async recordDeliveryOutcome(endpointId: string, delivered: boolean): Promise<void> {
+    if (delivered) {
+      await this.endpoints.recordSuccess(endpointId, this.clock.now());
+    } else {
+      await this.endpoints.recordFailure(endpointId);
+    }
+  }
+
+  private assertHttps(url: string): void {
     const unknown = events.filter(
       (event) => !(PUBLIC_EVENT_TYPES as readonly string[]).includes(event),
     );
