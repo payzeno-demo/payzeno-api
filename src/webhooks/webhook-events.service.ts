@@ -37,6 +37,15 @@ export interface FanoutInput {
 export class WebhookEventsService {
   constructor(
     private readonly events: WebhookEventRepository,
+    @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
+  ) {}
+
+  /**
+   * The ONLY write path into `webhook_event`. Called from `WebhookFanoutConsumer` inside the
+   * claim transaction, so a duplicate bus delivery cannot produce a duplicate webhook even
+   * if the consumer crashes between the claim and the commit.
+   */
+  async fanout(tx: EntityManager, input: FanoutInput): Promise<number> {
     const rows = input.endpoints.map((endpoint) => {
       const row = new WebhookEventEntity();
       row.id = this.ids.generate(ApiIdPrefix.WEBHOOK_EVENT);
@@ -74,6 +83,16 @@ export class WebhookEventsService {
       limit + 1,
     );
 
+    const page = hasMore ? rows.slice(0, limit) : rows;
+
+    return {
+      data: page.map((row) => this.toDto(row)),
+      next_cursor: hasMore ? page[page.length - 1].id : null,
+      has_more: hasMore,
+    };
+  }
+
+  async get(merchantId: MerchantId, eventId: string): Promise<WebhookEventDto> {
     const row = await this.events.findOneBy({ merchantId, id: eventId } as never);
     if (!row) {
       throw new ResourceNotFoundException('webhook_event', eventId);

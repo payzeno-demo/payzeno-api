@@ -27,6 +27,7 @@ export class WebhookEndpointsService extends BaseService<WebhookEndpointEntity> 
   constructor(
     private readonly endpoints: WebhookEndpointRepository,
     private readonly secrets: WebhookSecretService,
+    private readonly ids: IdFactory,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(PAYZENO_LOGGER) logger: PayzenoLogger,
   ) {
@@ -63,6 +64,13 @@ export class WebhookEndpointsService extends BaseService<WebhookEndpointEntity> 
   ): Promise<WebhookEndpointDto> {
     this.assertHttps(dto.url);
     this.assertKnownEvents(dto.enabled_events);
+
+    const existing = await this.endpoints.count({ where: { merchantId } } as never);
+    if (existing >= MAX_ENDPOINTS_PER_MERCHANT) {
+      throw new ValidationException('too many webhook endpoints for this merchant', [
+        { path: 'url', code: 'limit_exceeded', message: `maximum ${MAX_ENDPOINTS_PER_MERCHANT}` },
+      ]);
+    }
 
     const secret = this.secrets.generate();
     const encrypted = await this.secrets.encrypt(secret);
@@ -168,6 +176,22 @@ export class WebhookEndpointsService extends BaseService<WebhookEndpointEntity> 
   }
 
   private assertHttps(url: string): void {
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw new ValidationException('url is not a valid absolute URL', [
+        { path: 'url', code: 'invalid_format', message: 'must be an absolute https URL' },
+      ]);
+    }
+    if (parsed.protocol !== 'https:') {
+      throw new ValidationException('webhook endpoints must be https', [
+        { path: 'url', code: 'invalid_scheme', message: 'https is required' },
+      ]);
+    }
+  }
+
+  private assertKnownEvents(events: readonly string[]): void {
     const unknown = events.filter(
       (event) => !(PUBLIC_EVENT_TYPES as readonly string[]).includes(event),
     );
