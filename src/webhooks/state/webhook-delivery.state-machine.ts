@@ -31,4 +31,24 @@ export class WebhookDeliveryStateMachine extends StateMachine<
     dead: {},
   };
 
+  readonly terminalStates: ReadonlySet<WebhookEventStatus> = new Set<WebhookEventStatus>([
+    'delivered',
+    'dead',
+  ]);
+
+  readonly entityName = 'webhook_event';
+
+  /**
+   * The one piece of policy that is genuinely a state question rather than a timing one:
+   * a delivery attempt that came back non-2xx either retries or dies, and which one it is
+   * depends on the budget, not on the response.
+   */
+  outcomeFor(exhausted: boolean): WebhookDeliveryEvent {
+    return exhausted ? 'exhaust' : 'retry';
+  }
+
+  /** True when the row is in a state a delivery attempt may start from. */
+  canDispatch(status: WebhookEventStatus): boolean {
+    return this.can(status, 'dispatch');
+  }
 }

@@ -6,8 +6,33 @@ import { WebhookDeliveryStateMachine } from 'src/webhooks/state/webhook-delivery
 describe('WebhookDeliveryStateMachine', () => {
   let fsm: WebhookDeliveryStateMachine;
 
+  beforeEach(() => {
+    fsm = new WebhookDeliveryStateMachine();
+  });
+
+  it('pending → delivering when the job picks it up', () => {
+    expect(fsm.apply('pending', 'attempt')).toBe('delivering');
+  });
+
+  it('delivering → delivered on a 2xx', () => {
+    expect(fsm.apply('delivering', 'succeed')).toBe('delivered');
+  });
+
   it('delivering → pending on a retryable failure', () => {
     expect(fsm.apply('delivering', 'retry')).toBe('pending');
+  });
+
+  it('delivering → dead once the attempts are exhausted', () => {
+    expect(fsm.apply('delivering', 'exhaust')).toBe('dead');
+  });
+
+  it('delivered → pending on an operator redelivery', () => {
+    expect(fsm.apply('delivered', 'redeliver')).toBe('pending');
+  });
+
+  it('cannot exhaust a pending event that has not been attempted', () => {
+    expect(fsm.can('pending', 'exhaust')).toBe(false);
+    expect(() => fsm.apply('pending', 'exhaust')).toThrow(InvalidStateTransitionException);
   });
 
   it('cannot succeed without attempting first', () => {

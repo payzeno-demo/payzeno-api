@@ -37,6 +37,62 @@ export interface FanoutInput {
 export class WebhookEventsService {
   constructor(
     private readonly events: WebhookEventRepository,
+    @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
+  ) {}
+
+  /**
+   * The ONLY write path into `webhook_event`. Called from `WebhookFanoutConsumer` inside the
+   * claim transaction, so a duplicate bus delivery cannot produce a duplicate webhook even
+   * if the consumer crashes between the claim and the commit.
+   */
+  async fanout(tx: EntityManager, input: FanoutInput): Promise<number> {
+    const rows = input.endpoints.map((endpoint) => {
+      const row = new WebhookEventEntity();
+      row.id = this.ids.generate(ApiIdPrefix.WEBHOOK_EVENT);
+      row.merchantId = input.merchantId;
+      row.endpointId = endpoint.id;
+      row.type = input.type;
+      row.sourceEventId = input.sourceEventId;
+      row.payload = input.payload;
+      row.status = 'pending';
+      row.attemptCount = 0;
+      // Due immediately; WebhookDeliveryJob picks it up on its next 15s tick.
+      row.nextAttemptAt = now;
+      row.lastResponseStatus = null;
+      row.lastError = null;
+      row.signatureVersion = 'v1';
+      row.livemode = input.livemode;
+      row.deliveredAt = null;
+      row.createdAt = now;
+      row.updatedAt = now;
+      return row;
+    });
+
+    return this.events.insertIgnoringSourceConflict(tx, rows);
+  }
+
+  // TODO(PAY-1866): this ignores query.cursor and always returns the newest page. The
+  // console does not paginate the events table yet so nobody has noticed.
+  async list(
+    merchantId: MerchantId,
+    query: ListQuery & { status?: WebhookEventStatus; type?: PublicEventType },
+  ): Promise<Paginated<WebhookEventDto>> {
+    const rows = await this.events.listForMerchant(
+      merchantId,
+      { status: query.status, type: query.type },
+      limit + 1,
+    );
+
+    const page = hasMore ? rows.slice(0, limit) : rows;
+
+    return {
+      data: page.map((row) => this.toDto(row)),
+      next_cursor: hasMore ? page[page.length - 1].id : null,
+      has_more: hasMore,
+    };
+  }
+
+  async get(merchantId: MerchantId, eventId: string): Promise<WebhookEventDto> {
     const row = await this.events.findOneBy({ merchantId, id: eventId } as never);
     if (!row) {
       throw new ResourceNotFoundException('webhook_event', eventId);
