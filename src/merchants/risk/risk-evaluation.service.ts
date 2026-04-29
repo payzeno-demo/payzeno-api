@@ -44,6 +44,9 @@ const PAGE_SIZE = 200;
 export class RiskEvaluationService {
   constructor(
     private readonly merchants: MerchantRepository,
+    private readonly merchantsService: MerchantsService,
+    private readonly disputes: DisputeRepository,
+    private readonly calculator: DisputeRateCalculator,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
   ) {}
