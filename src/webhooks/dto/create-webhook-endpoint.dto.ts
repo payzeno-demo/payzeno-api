@@ -18,5 +18,8 @@ import { Redact } from '../../common/decorators/redact.decorator';
 @Redact('url')
 export class CreateWebhookEndpointDto implements CreateWebhookEndpointRequest {
   @IsString()
+  @IsUrl({ protocols: ['https'], require_protocol: true, require_tld: false })
+  url!: string;
+
   @ArrayNotEmpty()
 }
