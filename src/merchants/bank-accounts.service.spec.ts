@@ -31,6 +31,16 @@ import { FixedClock } from 'test/support/fixed-clock';
  */
 describe('BankAccountsService', () => {
   const clock = new FixedClock('2026-04-10T09:00:00.000Z');
+  const scope: MerchantScope = { merchantId: TEST_MERCHANT_ID, livemode: true };
+  const request: CreateBankAccountRequest = {
+    country: 'gb',
+    currency: 'GBP',
+    scheme: 'uk_sort_code',
+    bank_account_token: 'bat_9f2c1a7e',
+    account_holder_name: '  Aurora Coffee Roasters Ltd  ',
+    is_default: true,
+  };
+
   let transactions: TransactionManager;
   beforeEach(() => {
     accounts = {
@@ -161,4 +171,19 @@ describe('BankAccountsService', () => {
     });
   });
 
+  describe('getForInternal', () => {
+    it('reads unscoped — it is the ledger’s stale-projection fallback', async () => {
+      await service.getForInternal(BANK_ACCOUNT_ID);
+
+      expect(accounts.findOne).toHaveBeenCalledWith({ where: { id: BANK_ACCOUNT_ID } });
+    });
+
+    it('404s an unknown id', async () => {
+      accounts.findOne.mockResolvedValue(null);
+
+      await expect(service.getForInternal(BANK_ACCOUNT_ID)).rejects.toBeInstanceOf(
+        ResourceNotFoundException,
+      );
+    });
+  });
 });
