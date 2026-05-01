@@ -22,4 +22,6 @@ export class CreateWebhookEndpointDto implements CreateWebhookEndpointRequest {
   url!: string;
 
   @ArrayNotEmpty()
+  @IsIn(PUBLIC_EVENT_TYPES as readonly string[], { each: true })
+  enabled_events!: PublicEventType[];
 }

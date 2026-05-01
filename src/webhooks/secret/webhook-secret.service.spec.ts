@@ -17,6 +17,8 @@ describe('WebhookSecretService', () => {
     WEBHOOK_SIGNING_KEK: 'alias/payzeno-webhook-kek',
   };
 
+  let service: WebhookSecretService;
+
   function endpoint(overrides: Partial<WebhookEndpointEntity> = {}): WebhookEndpointEntity {
     return {
       id: 'whe_1',
@@ -61,6 +63,13 @@ describe('WebhookSecretService', () => {
     expect(send.mock.calls[0][0].input.KeyId).toBe('alias/payzeno-webhook-kek');
   });
 
+  it('returns only the current secret outside a rotation overlap', async () => {
+    const material = await service.signingMaterial(endpoint(), now);
+
+    expect(material.current).toBe('plain:cipher-current');
+    expect(material.previous).toBeNull();
+  });
+
   it('returns both secrets during the overlap window', async () => {
     const material = await service.signingMaterial(
       endpoint({
@@ -86,4 +95,12 @@ describe('WebhookSecretService', () => {
     expect(material.previous).toBeNull();
   });
 
+  it('demotes the live secret to previous on rotation', async () => {
+    const rotated = await service.rotate(endpoint());
+
+    expect(rotated.previousEncrypted).toEqual(Buffer.from('cipher-current'));
+    expect(rotated.encrypted).toEqual(Buffer.from('cipher-new'));
+    expect(rotated.lastFour).toBe(rotated.plaintext.slice(-4));
+    expect(rotated.rotatedAt).toEqual(now);
+  });
 });
