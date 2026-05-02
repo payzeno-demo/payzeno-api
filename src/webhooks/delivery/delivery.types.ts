@@ -25,6 +25,8 @@ export interface SigningMaterial {
 
 /** `Payzeno-Signature: t=<unix>,v1=<hex>[,v1=<hex>]`. Tolerance five minutes. */
 export const SIGNATURE_HEADER = 'Payzeno-Signature';
+export const SIGNATURE_TOLERANCE_SECONDS = 300;
+
 export function isPermanentRejection(status: number | null): boolean {
   return status === 410;
 }
