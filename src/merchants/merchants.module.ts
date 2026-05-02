@@ -57,3 +57,22 @@ import { MerchantUsersService } from './users/users.service';
     MerchantsController,
     MerchantUsersController,
     ApiKeysController,
+    BankAccountsController,
+  ],
+  providers: [
+    MerchantRepository,
+    MerchantUserRepository,
+    ApiKeyRepository,
+    BankAccountRepository,
+    MerchantStatusStateMachine,
+    MerchantOnboardingService,
+    MerchantsService,
+    MerchantUsersService,
+    ApiKeysService,
+    BankAccountsService,
+    ApiKeyHasher,
+    DisputeRateCalculator,
+    /**
+     * `RiskEvaluationService` reaches into ChargeRepository and DisputeRepository, which live
+     * in PaymentsModule and DisputesModule — both of which import this one. It is provided
+     * here and wired by `JobsModule`, which imports all three, so the graph stays a DAG.
