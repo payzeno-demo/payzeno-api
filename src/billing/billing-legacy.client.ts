@@ -115,6 +115,25 @@ export class BillingLegacyClient extends BaseHttpClient {
     );
   }
 
+  voidInvoice(invoiceId: string): Promise<Invoice> {
+    return this.guarded(() =>
+      this.request<Invoice, Record<string, never>>({
+        method: 'POST',
+        path: `/internal/v1/invoices/${encodeURIComponent(invoiceId)}/void`,
+        body: {},
+        idempotencyKey: `invoice_void:${invoiceId}`,
+      }),
+    );
+  }
+
+  getSubscription(subscriptionId: string): Promise<LegacySubscription> {
+    return this.guarded(() =>
+      this.get<LegacySubscription>(`/internal/v1/subscriptions/${encodeURIComponent(subscriptionId)}`),
+    );
+  }
+
+  // -- deprecated surface (arc MIG) ----------------------------------------
+
   /** @deprecated migrating to the ledger — arc MIG step 4. `InvoiceController#generate`. */
   generateInvoice(req: GenerateInvoiceRequest): Promise<Invoice> {
     this.warnLegacyCall('generateInvoice', req.merchant_id);
@@ -124,6 +143,18 @@ export class BillingLegacyClient extends BaseHttpClient {
         path: '/internal/v1/invoices',
         body: req,
         idempotencyKey: `invoice_generate:${req.merchant_id}:${req.period_start}`,
+      }),
+    );
+  }
+
+  /** @deprecated since billing 2.14.0 — the ledger owns fees (`ledger_owns_fees`, on). */
+  computeFees(req: ComputeFeesRequest): Promise<ComputeFeesResponse> {
+    this.warnLegacyCall('computeFees', req.merchant_id);
+    return this.guarded(() =>
+      this.request<ComputeFeesResponse, ComputeFeesRequest>({
+        method: 'POST',
+        path: '/internal/v1/fees/compute',
+        body: req,
       }),
     );
   }

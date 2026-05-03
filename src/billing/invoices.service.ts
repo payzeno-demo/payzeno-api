@@ -33,6 +33,8 @@ export interface InvoiceListFilters {
 export class InvoicesService {
   constructor(
     private readonly resolver: InvoiceSourceResolver,
+    private readonly legacy: BillingLegacyClient,
+    private readonly projection: InvoiceProjectionService,
     const merchantId = merchantIdOf(principal);
     const resolved = await this.resolver.list(merchantId, {
       status: filters.status,
