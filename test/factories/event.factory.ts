@@ -74,3 +74,11 @@ export function makeSettlementCompletedEvent(
   });
 }
 
+/** A batch of envelopes of the same type — for consumer long-poll / dedupe specs. */
+export function makeEnvelopeBatch<T extends EventType>(
+  type: T,
+  payloads: ReadonlyArray<PayloadOfType<T>>,
+): PayzenoEvent[] {
+  return payloads.map((p) => makeEnvelope(type, p));
+}
+
