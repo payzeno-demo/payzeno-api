@@ -40,6 +40,16 @@ export class StaffGuard extends BaseAuthGuard {
   }
 
   override async canActivate(context: ExecutionContext): Promise<boolean> {
+    const required = this.reflector.getAllAndOverride<StaffRole[] | undefined>(STAFF_ONLY_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+
+    // No @StaffOnly on this handler: the guard is listed but has nothing to assert. That
+    // happens on the mixed controllers (SettlementsController is staff on one route and
+    // session on the rest) and it is not an error.
+    if (!required) return true;
+
     const activated = await super.canActivate(context);
     if (!activated) return false;
 
@@ -78,5 +88,7 @@ export class StaffGuard extends BaseAuthGuard {
     const fromQuery = request.query.merchant_id;
     if (typeof fromQuery === 'string' && fromQuery.length > 0) return fromQuery;
 
+    const fromParam = request.params.merchantId;
+    return fromParam ?? null;
   }
 }

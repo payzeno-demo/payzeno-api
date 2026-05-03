@@ -50,6 +50,14 @@ export class MerchantScopeGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    const options = this.reflector.getAllAndOverride<MerchantScopedOptions | undefined>(
+      MERCHANT_SCOPED_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+
+    // Not a merchant-scoped controller — /v1/meta, /healthz, the internal surface.
+    if (!options) return true;
+
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const principal = request.principal;
 
@@ -69,6 +77,25 @@ export class MerchantScopeGuard implements CanActivate {
   }
 
   private resolveScope(principal: AuthPrincipal, options: MerchantScopedOptions): MerchantId {
+    const merchantId = optionalMerchantIdOf(principal);
+
+    if (!merchantId) {
+      if (principal.kind === 'staff_session' && options.requireStaffMerchantId !== false) {
+        throw new PermissionDeniedException(
+          'Staff requests to a merchant-scoped route must pass ?merchant_id=',
+          { staff_id: principal.staff_id },
+        );
+      }
+      throw new PermissionDeniedException('This credential has no merchant scope', {
+        kind: principal.kind,
+      });
+    }
+
+    return merchantId;
+  }
+
+  /** 404, deliberately. See the header comment; this is the one that must never become a 403. */
+  private assertPathMatches(request: AuthenticatedRequest, merchantId: MerchantId): void {
     const pathMerchantId = request.params.merchantId;
     if (pathMerchantId && pathMerchantId !== merchantId) {
       throw new MerchantNotFoundException(pathMerchantId);
