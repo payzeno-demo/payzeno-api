@@ -36,6 +36,8 @@ export class HttpFormDeliveryStrategy implements WebhookDeliveryStrategy {
   ) {}
 
   async deliver(event: WebhookEventEntity, endpoint: WebhookEndpointEntity): Promise<DeliveryResult> {
+    const startedAt = Date.now();
+    const body = this.encode(event);
     const signatures = [this.sign(body, material.current, timestamp)];
     if (material.previous) {
       signatures.push(this.sign(body, material.previous, timestamp));

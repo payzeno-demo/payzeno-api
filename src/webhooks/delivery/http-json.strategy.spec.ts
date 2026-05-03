@@ -14,6 +14,7 @@ describe('HttpJsonDeliveryStrategy', () => {
   const now = new Date('2026-06-01T12:00:00.000Z');
   const unix = Math.floor(now.getTime() / 1000);
 
+  let secrets: { signingMaterial: jest.Mock };
   let strategy: HttpJsonDeliveryStrategy;
 
   function endpoint(overrides: Partial<WebhookEndpointEntity> = {}): WebhookEndpointEntity {
@@ -68,6 +69,23 @@ describe('HttpJsonDeliveryStrategy', () => {
     expect((options.headers as Record<string, string>)['content-type']).toBe('application/json');
   });
 
+  it('signs HMAC-SHA256 over "{timestamp}.{body}", not over the body alone', async () => {
+    const evt = event();
+    const expected = createHmac('sha256', 'whsec_a')
+      .update(`${unix}.${evt.serialize()}`)
+      .digest('hex');
+
+    await strategy.deliver(evt, endpoint());
+
+    const headers = (request.mock.calls[0][1] as { headers: Record<string, string> }).headers;
+    expect(headers[SIGNATURE_HEADER.toLowerCase()]).toBe(`t=${unix},v1=${expected}`);
+    // The naive version signed just the body, which lets anyone replay a captured request
+    // forever. The timestamp is what makes the five-minute tolerance mean anything.
+    expect(headers[SIGNATURE_HEADER.toLowerCase()]).not.toContain(
+      createHmac('sha256', 'whsec_a').update(evt.serialize()).digest('hex'),
+    );
+  });
+
   it('sends both signatures during a rotation overlap', async () => {
     secrets.signingMaterial.mockResolvedValue({ current: 'whsec_new', previous: 'whsec_old' });
     const evt = event();
@@ -110,4 +128,11 @@ describe('HttpJsonDeliveryStrategy', () => {
     expect(result.error).toBe('endpoint responded 500');
   });
 
+  it('leaves nextAttemptAt to the job', async () => {
+    respond(503);
+
+    const result = await strategy.deliver(event(), endpoint());
+
+    expect(result.nextAttemptAt).toBeNull();
+  });
 });
