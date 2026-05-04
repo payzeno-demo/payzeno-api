@@ -16,4 +16,16 @@ describe('DeadLetterConsumer', () => {
   let sent: Array<Record<string, unknown>>;
   let consumer: DeadLetterConsumer;
 
+  it('claims every event type — the DLQ has no vocabulary of its own', () => {
+    expect(consumer.handledTypes.size).toBe(EVENT_TYPES.length);
+  });
+
+  it('redrives to the origin queue recorded by the redrive policy', async () => {
+    const redriven = await consumer.runOnce();
+
+    expect(redriven).toBe(1);
+    const send = sent.find((entry) => entry.name === 'SendMessageCommand');
+    expect(send?.QueueUrl).toBe('http://localstack:4566/000000000000/payzeno-api-ledger');
+  });
+
 });
