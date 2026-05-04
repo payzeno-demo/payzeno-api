@@ -115,4 +115,9 @@ export class PaymentIntentRepository extends PayzenoRepository<PaymentIntentEnti
     await this.updateScoped(merchantId, id, { metadata } as never);
   }
 
+  countByStatus(merchantId: MerchantId, status: PaymentIntentStatus): Promise<number> {
+    return this.count({
+      where: { merchant_id: merchantId, status } as FindOptionsWhere<PaymentIntentEntity>,
+    });
+  }
 }

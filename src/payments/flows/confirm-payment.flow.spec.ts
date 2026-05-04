@@ -21,6 +21,7 @@ import { makePaymentIntent } from 'test/factories/payment-intent.factory';
  */
 describe('ConfirmPaymentFlow', () => {
   let flow: ConfirmPaymentFlow;
+  let auth: jest.Mocked<ChargeAuthorizationService>;
   let repo: jest.Mocked<PaymentIntentRepository>;
   let merchants: jest.Mocked<MerchantsService>;
 
@@ -98,6 +99,18 @@ describe('ConfirmPaymentFlow', () => {
 
     expect(result.status).toBe('requires_action');
     expect(result.next_action).not.toBeNull();
+  });
+
+  it('records the latest charge id on the intent', async () => {
+    const charge = makeCharge({ status: 'captured' });
+    auth.authorize.mockResolvedValue(charge as never);
+
+    await flow.execute(makePaymentIntent(), {});
+
+    expect(repo.updateScoped).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ latest_charge_id: charge.id }),
+    );
   });
 
   it('refuses to confirm an intent that is not confirmable', async () => {

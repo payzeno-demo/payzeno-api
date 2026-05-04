@@ -43,6 +43,7 @@ export class PaymentIntentsService extends BaseService<PaymentIntentEntity> {
   constructor(
     private readonly intents: PaymentIntentRepository,
     private readonly confirmFlow: ConfirmPaymentFlow,
+    private readonly captureFlow: CapturePaymentFlow,
     private readonly cancelFlow: CancelPaymentFlow,
     private readonly transactions: TransactionManager,
     private readonly ids: IdFactory,
@@ -115,6 +116,27 @@ export class PaymentIntentsService extends BaseService<PaymentIntentEntity> {
   }
 
   async list(principal: AuthPrincipal, query: PaymentIntentListQuery): Promise<Paginated<PaymentIntent>> {
+    const page = await this.paginate(query, scopeFrom(principal), (qb) => {
+      let builder = qb;
+      if (query.status) {
+        builder = builder.andWhere('payment_intent.status = :status', { status: query.status });
+      }
+      if (query.customer_reference) {
+        builder = builder.andWhere('payment_intent.customer_reference = :ref', {
+          ref: query.customer_reference,
+        });
+      }
+      return builder;
+    });
+
+    return { ...page, data: page.data.map(toPaymentIntent) };
+  }
+
+  async confirm(
+    principal: AuthPrincipal,
+    id: PaymentIntentId,
+    request: ConfirmPaymentIntentRequest,
+  ): Promise<PaymentIntent> {
     const intent = await this.findOneOrThrow(id, scopeFrom(principal));
     return toPaymentIntent(await this.captureFlow.execute(intent, request));
   }
