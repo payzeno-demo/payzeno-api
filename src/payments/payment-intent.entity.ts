@@ -33,6 +33,18 @@ export class PaymentIntentEntity extends MerchantScopedEntity {
   @Column({ type: 'char', length: 3, transformer: currencyTransformer })
   currency: CurrencyCode;
 
+  @Column({ type: 'enum', enum: [
+    'requires_payment_method',
+    'requires_confirmation',
+    'processing',
+    'requires_action',
+    'requires_capture',
+    'succeeded',
+    'failed',
+    'canceled',
+  ], enumName: 'payment_intent_status' })
+  status: PaymentIntentStatus;
+
   @Column({ type: 'enum', enum: ['automatic', 'manual'], enumName: 'capture_method', default: 'automatic' })
   capture_method: CaptureMethod;
 
@@ -52,6 +64,13 @@ export class PaymentIntentEntity extends MerchantScopedEntity {
   /** No FK: the charge references the intent, not the reverse (data-model §1.5). */
   @Column({ type: 'text', nullable: true })
   latest_charge_id: ChargeId | null;
+
+  @Column({ type: 'text' })
+  client_secret: string;
+
+  /** Migration 28. Set exactly when `status === 'requires_action'`. */
+  @Column({ type: 'jsonb', nullable: true })
+  next_action: NextAction | null;
 
   @Column({ type: 'jsonb', default: () => "'{}'::jsonb" })
   metadata: Metadata;

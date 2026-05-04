@@ -62,6 +62,17 @@ export class ConfirmPaymentFlow extends PaymentFlow<ConfirmPaymentIntentRequest>
       ]);
     }
 
+    // Step 1 — guard, then park the intent in `processing` before anything leaves the process.
+    const processing = this.nextStatus(intent, 'confirm');
+    await this.transactions.runInTransaction(async (manager) => {
+      const affected = await this.transition(manager, intent, processing);
+      if (affected === 0) {
+        throw new ValidationException('This payment intent is already being confirmed', [
+          { path: 'status', code: 'conflict', message: 'concurrent confirm' },
+        ]);
+      }
+    });
+
     // getById returns the entity; the services below take the contracts type, and the
     // mapping lives in exactly one place (merchants.service.ts).
     const merchant = toMerchantResponse(await this.merchants.getById(intent.merchantId));
@@ -127,6 +138,41 @@ export class ConfirmPaymentFlow extends PaymentFlow<ConfirmPaymentIntentRequest>
     returnUrl: string | null,
     chargeId: string,
   ): Promise<PaymentIntentEntity> {
+    const nextAction: NextAction = {
+      type: 'redirect_to_url',
+      url: `https://3ds.payzeno.example/challenge/${encodeURIComponent(chargeId)}`,
+      sdk_payload: returnUrl ? { return_url: returnUrl } : undefined,
+    };
+
+    const status = this.states.apply('processing', 'require_action');
+
+    await this.transactions.runInTransaction(async (manager) => {
+      await this.intents.transitionStatus(manager, intent.id, 'processing', status, {
+        latest_charge_id: chargeId,
+        next_action: nextAction,
+      });
+    });
+
+    intent.status = status;
+    intent.next_action = nextAction;
+    intent.latest_charge_id = chargeId;
+
+    this.logger.info('payment_intent_requires_action', {
+      payment_intent_id: intent.id,
+      charge_id: chargeId,
+      has_return_url: Boolean(returnUrl),
+    });
+
+    return intent;
+  }
+
+  /**
+   * A retryable decline sends the buyer back for another card (`requires_payment_method`); a
+   * non-retryable one terminates the intent. The distinction is the FSM's, not this file's —
+   * see the `decline` vs `fail` edges out of `processing`.
+   */
+  private async landOnFailure(intent: PaymentIntentEntity, err: unknown): Promise<void> {
+    const retryable = err instanceof CardDeclinedException && isRetryableDecline(err.declineCode);
     const event: PaymentIntentEvent = retryable ? 'decline' : 'fail';
     const status = this.states.apply('processing', event);
 

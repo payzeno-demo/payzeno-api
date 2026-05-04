@@ -121,3 +121,21 @@ export class ChargesService extends BaseService<ChargeEntity> {
       mark.settlementBatchId,
       new Date(mark.settledAt),
     );
+
+    if (marked !== chargeIds.length) {
+      // Not an error: the difference is charges an earlier delivery already settled. It IS
+      // worth a line, because a persistent gap means the ledger and we disagree about which
+      // charges belong to the batch — which is exactly what PAY-2054's nightly audit checks.
+      this.logger.info('settlement_mark_partial', {
+        batch_id: mark.settlementBatchId,
+        requested: chargeIds.length,
+        marked,
+      });
+    }
+
+    return marked;
+  }
+
+  /**
+   * `POST /internal/v1/charges/:chargeId/settled`. The out-of-band single-orphan path, used
+   * during the PAY-2041 remediation when a settlement event was never going to arrive.
