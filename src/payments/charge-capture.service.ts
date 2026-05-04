@@ -99,3 +99,15 @@ export class ChargeCaptureService {
         acquirer: charge.acquirer,
         // The ledger will issue POST /v2/authorizations/{ntid}/captures when the acquirer's
         // settlement file lands. Nothing in payzeno-api touches the acquirer for this charge.
+        network_transaction_id: charge.network_transaction_id,
+      });
+    }
+
+    await this.transactions.runInTransaction(async (manager) => {
+      const affected = await this.charges.markCaptured(manager, charge.id, {
+        capturedAmountMinor: amountMinor,
+        processorReference,
+        capturedAt,
+      });
+      if (affected === 0) {
+        // Someone else captured between our read and this write. The acquirer honoured the

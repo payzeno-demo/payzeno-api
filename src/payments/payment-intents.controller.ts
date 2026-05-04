@@ -80,6 +80,7 @@ export class PaymentIntentsController extends BaseController {
   }
 
   @Get(':paymentIntentId')
+  @ApiVersion('2026-01-15')
   @RequiredScopes('payment_intents:read')
   get(
     @CurrentPrincipal() principal: AuthPrincipal,
@@ -98,9 +99,30 @@ export class PaymentIntentsController extends BaseController {
   @Idempotent()
   @RateLimit(300, 60)
   @RequiredScopes('payment_intents:write')
+  @AuditLog('payment_intent.confirm', { resourceType: 'payment_intent', idParam: 'paymentIntentId' })
+  confirm(
+    @CurrentPrincipal() principal: AuthPrincipal,
+    @Param('paymentIntentId') paymentIntentId: PaymentIntentId,
+    @Body() dto: ConfirmPaymentIntentDto,
+  ): Promise<PaymentIntent> {
+    return this.intents.confirm(principal, paymentIntentId, dto);
+  }
+
   @Post(':paymentIntentId/capture')
   @Idempotent()
+  @RequiredScopes('payment_intents:write')
+  @AuditLog('payment_intent.capture', { resourceType: 'payment_intent', idParam: 'paymentIntentId' })
+  capture(
+    @CurrentPrincipal() principal: AuthPrincipal,
+    @Param('paymentIntentId') paymentIntentId: PaymentIntentId,
+    @Body() dto: CapturePaymentIntentDto,
+  ): Promise<PaymentIntent> {
+    this.assertScope(principal, 'payment_intents:write');
+    return this.intents.capture(principal, paymentIntentId, dto);
+  }
+
   @Post(':paymentIntentId/cancel')
+  @Idempotent()
   @RequiredScopes('payment_intents:write')
   @AuditLog('payment_intent.cancel', { resourceType: 'payment_intent', idParam: 'paymentIntentId' })
   cancel(
