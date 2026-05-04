@@ -31,15 +31,75 @@ import { FixedClock } from 'test/support/fixed-clock';
 describe('MerchantsService', () => {
   const clock = new FixedClock('2026-03-14T09:21:07.412Z');
 
+  function row(overrides: Record<string, unknown> = {}) {
+    return {
+      id: TEST_MERCHANT_ID,
+      legalName: 'Aurora Coffee Roasters Ltd',
+      displayName: 'Aurora Coffee',
+      country: 'GB',
+      defaultCurrency: 'GBP',
+      status: 'active',
+      mcc: '5812',
+      riskTier: 'standard',
+      payoutSchedule: 'daily',
+      pricingModel: 'blended',
+      reserveBps: 0,
+      reserveHoldDays: 0,
+      platformFeeBps: 290,
+      platformFeeFixedMinor: 30,
+      payoutDelayDays: 2,
+      settlementToleranceMinor: 100,
+      captureAtSettlement: false,
+      statementDescriptor: 'AURORA COFFEE',
+      livemode: true,
+      metadata: {},
+      toIsoCreatedAt: () => '2026-01-02T08:00:00.000Z',
+      toIsoUpdatedAt: () => '2026-03-14T09:21:07.412Z',
+      ...overrides,
+    };
+  }
+
   let merchants: {
     findById: jest.Mock;
     applyPatch: jest.Mock;
     transitionStatus: jest.Mock;
     listForStaff: jest.Mock;
   };
+  let onboarding: { onboard: jest.Mock };
   let transactions: TransactionManager;
   let events: { publish: jest.Mock };
   let service: MerchantsService;
+
+  beforeEach(() => {
+    merchants = {
+      findById: jest.fn().mockResolvedValue(row()),
+      applyPatch: jest.fn().mockResolvedValue(1),
+      transitionStatus: jest.fn().mockResolvedValue(1),
+      listForStaff: jest.fn().mockResolvedValue({ data: [row()], has_more: false, next_cursor: null }),
+    };
+    onboarding = { onboard: jest.fn().mockResolvedValue(row({ status: 'pending_review' })) };
+    events = { publish: jest.fn().mockResolvedValue(undefined) };
+
+    transactions = {
+      runInTransaction: jest.fn(async (cb: (m: EntityManager) => Promise<unknown>) =>
+        cb({} as EntityManager),
+      ),
+    } as unknown as TransactionManager;
+
+    service = new MerchantsService(
+      merchants as unknown as MerchantRepository,
+      onboarding as unknown as MerchantOnboardingService,
+      new MerchantStatusStateMachine(),
+      transactions,
+      events as unknown as EventPublisher,
+      clock,
+      new NoopLogger(),
+    );
+  });
+
+  it('names the aggregate for the 404 message and audit_log.resource_type', () => {
+    expect(service.entityName).toBe('merchant');
+  });
 
   describe('create', () => {
     it('delegates the whole multi-aggregate write to the onboarding service', async () => {

@@ -50,6 +50,15 @@ export class MerchantsController extends BaseController {
 
   /** Staff-only platform list. `?merchant_id=` does not apply — this IS the merchant list. */
   @Get()
+  @StaffOnly('risk', 'support')
+  async list(
+    @Query() query: ListQueryDto,
+    @Query('status') status?: MerchantStatus,
+  ): Promise<Paginated<Merchant>> {
+    return this.merchants.listForStaff(query, status);
+  }
+
+  @Post()
   @StaffOnly('risk')
   @AuditLog('merchant.create', { resourceType: 'merchant' })
   async create(
@@ -59,6 +68,16 @@ export class MerchantsController extends BaseController {
     return this.merchants.create(body, livemodeOf(principal), describePrincipal(principal));
   }
 
+  async get(@Param('merchantId') merchantId: MerchantId): Promise<Merchant> {
+    return this.merchants.get(merchantId);
+  }
+
+  /**
+   * `admin | staff`. The staff-only field check is here rather than in the DTO because
+   * class-validator has no principal — and a silent drop would show the merchant a reserve
+   * percentage they set and we ignored.
+   */
+  @Roles('owner', 'admin')
   @Idempotent()
   /** Staff (risk). Emits `merchant.status_changed`; the ledger and the legacy biller consume it. */
   @Post(':merchantId/status')
