@@ -16,6 +16,37 @@ one idempotency backend, job locks) and SQS/SNS.
 It is **not** the ledger. Money movement is posted by payzeno-ledger from events we emit. If a
 balance looks wrong, the answer is almost never in this service.
 
+## 2. Scheduled jobs
+
+All nine extend `ScheduledJob`, all nine hold a Redis lease through `@JobLock(name, ttlSeconds)`,
+all nine emit `job.started` / `job.finished` with the same field set (`src/jobs/job.types.ts`).
+The CloudWatch metric filters in payzeno-infrastructure are one expression because of that. If
+you add a field to `JobResult`, add it here at the same time.
+
+| Job | Schedule | Lease | If it stops |
+|---|---|---|---|
+| `outbox-drain` | every 5s | 30s | **Page.** Events stop reaching the ledger. See §5. |
+| `webhook-delivery` | every 15s | 60s | Merchant webhooks stall. See `webhook-delivery.md`. |
+| `charge-expiry` | hourly | 900s | Authorisations expire at the acquirer without our `auth_release` posting. |
+| `idempotency-retention` | hourly | 900s | Table grows. Not urgent. |
+| `dispute-deadline-reminder` | daily 07:00 | 600s | Merchants miss evidence deadlines. Same-day fix. |
+| `processed-event-retention` | daily 03:00 | 1800s | Table grows. Not urgent. |
+| `risk-evaluation` | daily 04:00 | 1800s | Merchant risk tiers go stale. Same-day fix. |
+| `unsettled-charge-sweep` | every 6h | 1800s | See §4. |
+
+**A job that is not running looks exactly like a job that is running and finding nothing.**
+That is what `job.finished` is for: it is emitted on every run, with `processed: 0` when there
+was nothing to do. Alarm on the *absence* of `job.finished`, not on error rate.
+
+### The lease is not a mutex
+
+`@JobLock` is `SET NX PX` in Redis. If a job overruns its lease, a second instance can start
+while the first is still running. Every job is written to tolerate that — batch claims are
+`SELECT … FOR UPDATE SKIP LOCKED` or conditional updates — but if you see two overlapping
+`job.started` for the same name, raise the lease rather than assuming corruption.
+
+---
+
 ### What you do
 
 1. **Scope it.** Query `support_task` for `type = 'duplicate_settlement'` opened in the window.
