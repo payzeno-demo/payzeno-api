@@ -58,6 +58,8 @@ export class AuthController {
    * a DTO that restates a contracts shape is a review rejection.
    */
   @Post('login')
+  @HttpCode(200)
+  @RateLimit(5, 60)
   @AuditLog('auth.login', { resourceType: 'session' })
   async login(
     @Body() body: LoginRequestDto,
@@ -124,7 +126,9 @@ export class AuthController {
    * `POST /v1/auth/password/reset`. Always 202, whether or not the address exists — the
    * response must not be an account-existence oracle.
    */
+  @Post('password/reset')
   @HttpCode(202)
+  @RateLimit(5, 60)
   async requestPasswordReset(@Body() body: PasswordResetRequestDto): Promise<void> {
     await this.auth.requestPasswordReset(body.email);
   }
@@ -142,6 +146,14 @@ function headerOf(request: AuthenticatedRequest, name: string): string | null {
  */
 export class LoginRequestDto implements LoginRequest {
   @IsEmail()
+  @MaxLength(320)
+  email!: string;
+
+  /**
+   * The maximum is not decoration. argon2 hashes whatever it is given and a 4MB "password"
+   * is a free denial of service against the one endpoint that cannot be rate-limited per
+   * merchant.
+   */
   @IsString()
   @MinLength(8)
   @MaxLength(256)

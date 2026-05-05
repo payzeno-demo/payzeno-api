@@ -40,6 +40,7 @@ export interface CsrfCookieOptions {
 @Injectable()
 export class CsrfService {
   private readonly cookieName: string;
+  private readonly ttlSec: number;
   private readonly secureCookies: boolean;
 
   constructor(@Inject(API_CONFIG) config: ApiConfig) {
