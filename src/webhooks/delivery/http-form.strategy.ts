@@ -31,9 +31,102 @@ export class HttpFormDeliveryStrategy implements WebhookDeliveryStrategy {
 
   constructor(
     private readonly secrets: WebhookSecretService,
+    @Inject(CLOCK) private readonly clock: Clock,
     @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
   ) {}
 
   async deliver(event: WebhookEventEntity, endpoint: WebhookEndpointEntity): Promise<DeliveryResult> {
+    const startedAt = Date.now();
+    const body = this.encode(event);
+    const timestamp = Math.floor(this.clock.now().getTime() / 1000);
+
+    const signatures = [this.sign(body, material.current, timestamp)];
+    if (material.previous) {
+      signatures.push(this.sign(body, material.previous, timestamp));
+    }
+
+    try {
+      const response = await request(endpoint.url, {
+        method: 'POST',
+        body,
+        headers: {
+          'content-type': 'application/x-www-form-urlencoded',
+          'user-agent': 'Payzeno/1.0 (+https://payzeno.com/docs/webhooks)',
+          [SIGNATURE_HEADER.toLowerCase()]: formatSignatureHeader(timestamp, signatures),
+          'payzeno-event-id': event.id,
+          'payzeno-event-type': event.type,
+        },
+        headersTimeout: DELIVERY_TIMEOUT_MS,
+        bodyTimeout: DELIVERY_TIMEOUT_MS,
+      });
+
+      await response.body.text();
+
+      return {
+        delivered: isSuccessStatus(response.statusCode),
+        responseStatus: response.statusCode,
+        error: isSuccessStatus(response.statusCode)
+          ? null
+          : `endpoint responded ${response.statusCode}`,
+        durationMs: Date.now() - startedAt,
+        nextAttemptAt: null,
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn('webhook.delivery_transport_error', {
+        webhook_event_id: event.id,
+        endpoint_id: endpoint.id,
+        strategy: this.name,
+        error: message,
+      });
+      return {
+        delivered: false,
+        responseStatus: null,
+        error: message,
+        durationMs: Date.now() - startedAt,
+        nextAttemptAt: null,
+      };
+    }
+  }
+
+  sign(body: string, secret: string, timestamp: number): string {
+    return createHmac('sha256', secret).update(`${timestamp}.${body}`).digest('hex');
+  }
+
+  /**
+   * Flatten to dotted keys. Arrays become indexed keys (`lines.0.amount_minor`) because the
+   * two remaining integrations both parse that shape — it is what PHP's `http_build_query`
+   * produces and that is what they were written against.
+   */
+  private encode(event: WebhookEventEntity): string {
+    const flat: Record<string, string> = {
+      id: event.id,
+      type: event.type,
+      livemode: String(event.livemode),
+      created: String(Math.floor(event.createdAt.getTime() / 1000)),
+    };
+    this.flatten('data.object', event.payload, flat);
+
+    return Object.entries(flat)
+      .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+      .join('&');
+  }
+
+  private flatten(prefix: string, value: unknown, out: Record<string, string>): void {
+    if (value === null || value === undefined) {
+      out[prefix] = '';
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach((item, index) => this.flatten(`${prefix}.${index}`, item, out));
+      return;
+    }
+    if (typeof value === 'object') {
+      for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+        this.flatten(`${prefix}.${key}`, nested, out);
+      }
+      return;
+    }
+    out[prefix] = String(value);
   }
 }
