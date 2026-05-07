@@ -85,6 +85,19 @@ describe('PostgresIdempotencyStore', () => {
       }
     });
 
+    it('never reports zero or a negative value', async () => {
+      await store.begin(TEST_MERCHANT_ID, 'k1', 'fp1');
+      harness.clock.advanceSeconds(29.9);
+
+      const result = await store.begin(TEST_MERCHANT_ID, 'k1', 'fp1');
+
+      if (result.outcome === 'in_progress') {
+        expect(result.retryAfterSec).toBeGreaterThanOrEqual(1);
+      }
+    });
+  });
+
+  describe('complete', () => {
     it('stores the status and body for replay', async () => {
       await store.begin(TEST_MERCHANT_ID, 'k1', 'fp1');
       await store.complete(TEST_MERCHANT_ID, 'k1', 201, { id: 'pi_1', object: 'payment_intent' });
@@ -95,6 +108,25 @@ describe('PostgresIdempotencyStore', () => {
       if (isReplay(replayed)) {
         expect(replayed.body).toEqual({ id: 'pi_1', object: 'payment_intent' });
       }
+    });
+
+    it('serialises the body rather than passing an object to the driver', async () => {
+      await store.begin(TEST_MERCHANT_ID, 'k1', 'fp1');
+
+      await expect(
+        store.complete(TEST_MERCHANT_ID, 'k1', 200, { nested: { deep: [1, 2, 3] } }),
+      ).resolves.toBeUndefined();
+    });
+  });
+
+  describe('fail', () => {
+    it('releases the key for a retry', async () => {
+      await store.begin(TEST_MERCHANT_ID, 'k1', 'fp1');
+      await store.fail(TEST_MERCHANT_ID, 'k1');
+
+      await expect(store.begin(TEST_MERCHANT_ID, 'k1', 'fp1')).resolves.toEqual({
+        outcome: 'proceed',
+      });
     });
 
     it('still refuses a different body after a failure', async () => {

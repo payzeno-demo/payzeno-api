@@ -85,8 +85,40 @@ export class IdempotencyInterceptor implements NestInterceptor {
       );
     }
 
+    const path = req.originalUrl ?? req.url;
     const print = fingerprint(req.method, stripQuery(path), req.body);
 
+    const begin = await store.begin(merchantId, key, print);
+
+    switch (begin.outcome) {
+      case 'fingerprint_mismatch':
+        throw new IdempotencyKeyReuseException(key);
+      case 'in_progress':
+        res.setHeader('Retry-After', String(begin.retryAfterSec));
+        throw new IdempotencyInProgressException(key, begin.retryAfterSec);
+      case 'replay':
+        this.logger.info('idempotent replay', { merchant_id: merchantId, path });
+        res.setHeader(IDEMPOTENT_REPLAY_HEADER, 'true');
+        res.status(begin.status);
+        return of(begin.body);
+      case 'proceed':
+        break;
+    }
+
+    return next.handle().pipe(
+      tap({
+        next: (body) => {
+          void store.complete(merchantId, key, res.statusCode, body);
+        },
+      }),
+      catchError((err: unknown) => {
+        void store.fail(merchantId, key);
+        return throwError(() => err);
+      }),
+    );
+  }
+
+  private storeFor(options: IdempotentOptions): IdempotencyStore {
   }
 }
 

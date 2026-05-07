@@ -17,6 +17,8 @@ import type { IdempotencyHarness } from 'test/support/idempotency-harness';
  */
 describe('RedisIdempotencyStore', () => {
   let harness: IdempotencyHarness;
+  let store: RedisIdempotencyStore;
+
   beforeEach(() => {
     harness = buildRedisIdempotencyStore();
     store = harness.store as RedisIdempotencyStore;
@@ -26,6 +28,14 @@ describe('RedisIdempotencyStore', () => {
     await expect(store.begin(TEST_MERCHANT_ID, 'k1', 'fp1')).resolves.toEqual({
       outcome: 'proceed',
     });
+  });
+
+  it('reports in_progress for a concurrent caller', async () => {
+    await store.begin(TEST_MERCHANT_ID, 'k1', 'fp1');
+
+    const second = await store.begin(TEST_MERCHANT_ID, 'k1', 'fp1');
+
+    expect(second.outcome).toBe('in_progress');
   });
 
   it('replays a completed response', async () => {
@@ -77,6 +87,10 @@ describe('RedisIdempotencyStore', () => {
     await expect(store.begin(TEST_MERCHANT_ID, 'k1', 'fp-anything')).resolves.toEqual({
       outcome: 'proceed',
     });
+  });
+
+  it('fail() on an unknown key is a no-op, not a write', async () => {
+    await expect(store.fail(TEST_MERCHANT_ID, 'never-seen')).resolves.toBeUndefined();
   });
 
   it('lets the lease expire naturally and re-claims the key', async () => {
