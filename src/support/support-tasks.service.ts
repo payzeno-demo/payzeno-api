@@ -48,6 +48,8 @@ export interface OpenSupportTaskInput {
 export class SupportTasksService {
   constructor(
     private readonly dataSource: DataSource,
+    const task = this.build(input);
+
     const now = this.clock.now();
 
     task.id = this.ids.opaque('sup_');
@@ -72,5 +74,10 @@ export class SupportTasksService {
   private async findBySourceEvent(input: OpenSupportTaskInput): Promise<string | null> {
     if (!input.sourceEventId) return null;
 
+    const existing = await this.dataSource.getRepository(SupportTaskEntity).findOne({
+      where: { kind: input.kind, sourceEventId: input.sourceEventId },
+    });
+
+    return existing?.id ?? null;
   }
 }
