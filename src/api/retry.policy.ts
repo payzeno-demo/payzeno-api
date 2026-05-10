@@ -23,6 +23,31 @@ export interface RetryDecisionContext {
 
 export interface RetryPolicy {
   readonly name: string;
+  readonly maxAttempts: number;
+  shouldRetry(ctx: RetryDecisionContext): boolean;
+  /** Backoff before the next attempt, in milliseconds. */
+  delayMs(attempt: number): number;
+}
+
+const IDEMPOTENT_VERBS: ReadonlySet<HttpMethod> = new Set<HttpMethod>(['GET', 'DELETE']);
+
+export const RETRYABLE_STATUSES: ReadonlySet<number> = new Set([502, 503, 504]);
+
+/**
+ * The production policy for `LedgerHttpClient`, `VaultClient` and `AcquirerHttpClient`.
+ *
+ * A POST is retried only when it carries an `Idempotency-Key` — which is why
+ * `postTransaction` is safe to retry and `POST /v2/authorizations` without a key is not.
+ */
+export class IdempotentRetryPolicy implements RetryPolicy {
+  readonly name = 'idempotent';
+
+  constructor(
+    readonly maxAttempts: number = 3,
+    private readonly baseDelayMs: number = 100,
+    private readonly jitterRatio: number = 0.2,
+  ) {}
+
   shouldRetry(ctx: RetryDecisionContext): boolean {
     if (ctx.attempt >= this.maxAttempts) {
       return false;
@@ -41,6 +66,24 @@ export interface RetryPolicy {
     return ctx.status !== undefined && RETRYABLE_STATUSES.has(ctx.status);
   }
 
+  private isReplayable(ctx: RetryDecisionContext): boolean {
+    if (IDEMPOTENT_VERBS.has(ctx.method)) {
+      return true;
+    }
+    // A connect timeout never reached the upstream, so even an unkeyed POST is free to replay.
+    if (ctx.error?.definitelyNotDelivered) {
+      return true;
+    }
+    return ctx.hasIdempotencyKey;
+  }
+}
+
+/**
+ * Used by `BillingLegacyClient`: the Java service is fronted by an opossum breaker and retrying
+ * through a half-open circuit just spends the probe. Also used by the acquirer adapters for
+ * `void`, which the schemes do not make idempotent.
+ */
+export class NoRetryPolicy implements RetryPolicy {
   shouldRetry(): boolean {
     return false;
   }
