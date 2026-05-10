@@ -70,6 +70,10 @@ export class WebhookEndpointRepository extends PayzenoRepository<WebhookEndpoint
       .getMany();
   }
 
+  async disable(id: string): Promise<void> {
+    await this.update({ id } as never, { status: 'disabled' });
+  }
+
   /** Endpoints whose rotation overlap has expired and whose previous secret can be dropped. */
   async findRotationsToFinalise(before: Date): Promise<WebhookEndpointEntity[]> {
     return this.find({

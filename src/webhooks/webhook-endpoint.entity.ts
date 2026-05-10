@@ -51,8 +51,22 @@ export class WebhookEndpointEntity extends MerchantScopedEntity {
   @Column({ name: 'last_success_at', type: 'timestamptz', nullable: true })
   lastSuccessAt!: Date | null;
 
+  @OneToMany(() => WebhookEventEntity, (event) => event.endpoint)
+  events!: WebhookEventEntity[];
+
   isEnabled(): boolean {
     return this.status === 'enabled';
   }
 
+  accepts(type: PublicEventType): boolean {
+    return this.isEnabled() && this.enabledEvents.includes(type);
+  }
+
+  /** True while the previous secret must still be signed with (24h overlap). */
+  isInRotationOverlap(now: Date): boolean {
+    if (!this.rotatedAt || !this.signingSecretPreviousEncrypted) {
+      return false;
+    }
+    return now.getTime() - this.rotatedAt.getTime() < 24 * 60 * 60 * 1000;
+  }
 }

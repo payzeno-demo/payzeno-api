@@ -47,12 +47,22 @@ export class WebhookEndpointsController extends BaseController {
     return this.endpoints.list(this.merchantIdOf(principal), query as ListQuery);
   }
 
+  @Get(':endpointId')
+  @RequiredScopes('webhooks:read')
+  async get(
+    @CurrentPrincipal() principal: AuthPrincipal,
+    @Param('endpointId') endpointId: string,
+  ): Promise<WebhookEndpointDto> {
+    return this.endpoints.get(this.merchantIdOf(principal), endpointId);
+  }
+
   /** The signing secret is in this response and in no other. */
   @Post()
   @HttpCode(201)
   @Roles('owner', 'admin')
   @UseGuards(RolesGuard)
   @Idempotent()
+  @AuditLog('webhook_endpoint.create')
   @RequiredScopes('webhooks:write')
   async create(
     @CurrentPrincipal() principal: AuthPrincipal,
@@ -67,6 +77,7 @@ export class WebhookEndpointsController extends BaseController {
 
   @Post(':endpointId/rotate_secret')
   @Roles('owner', 'admin')
+  @UseGuards(RolesGuard)
   @Idempotent()
   @AuditLog('webhook_endpoint.rotate_secret')
   @RequiredScopes('webhooks:write')
@@ -80,6 +91,14 @@ export class WebhookEndpointsController extends BaseController {
   @Delete(':endpointId')
   @HttpCode(204)
   @Roles('owner', 'admin')
+  @UseGuards(RolesGuard)
   @Idempotent()
   @AuditLog('webhook_endpoint.delete')
+  @RequiredScopes('webhooks:write')
+  async remove(
+    @CurrentPrincipal() principal: AuthPrincipal,
+    @Param('endpointId') endpointId: string,
+  ): Promise<void> {
+    await this.endpoints.delete(this.merchantIdOf(principal), endpointId);
+  }
 }
