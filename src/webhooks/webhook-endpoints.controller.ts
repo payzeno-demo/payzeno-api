@@ -47,6 +47,10 @@ export class WebhookEndpointsController extends BaseController {
     return this.endpoints.list(this.merchantIdOf(principal), query as ListQuery);
   }
 
+  /** The signing secret is in this response and in no other. */
+  @Post()
+  @HttpCode(201)
+  @Roles('owner', 'admin')
   @UseGuards(RolesGuard)
   @Idempotent()
   @RequiredScopes('webhooks:write')
@@ -61,7 +65,10 @@ export class WebhookEndpointsController extends BaseController {
     );
   }
 
+  @Post(':endpointId/rotate_secret')
   @Roles('owner', 'admin')
+  @Idempotent()
+  @AuditLog('webhook_endpoint.rotate_secret')
   @RequiredScopes('webhooks:write')
   async rotateSecret(
     @CurrentPrincipal() principal: AuthPrincipal,
