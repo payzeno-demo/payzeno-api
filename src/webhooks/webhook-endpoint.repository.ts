@@ -32,6 +32,14 @@ export class WebhookEndpointRepository extends PayzenoRepository<WebhookEndpoint
     return this.findOneBy({ merchantId, id } as never);
   }
 
+  /** Delivery outcome bookkeeping. Kept here so the job never touches a query builder. */
+  async recordSuccess(id: string, at: Date): Promise<void> {
+    await this.update({ id } as never, {
+      consecutiveFailureCount: 0,
+      lastSuccessAt: at,
+    });
+  }
+
   async recordFailure(id: string): Promise<number> {
     await this.createQueryBuilder()
       .update(WebhookEndpointEntity)
@@ -60,6 +68,10 @@ export class WebhookEndpointRepository extends PayzenoRepository<WebhookEndpoint
       .andWhere('(e.last_success_at is null or e.last_success_at < :olderThan)', { olderThan })
       .limit(limit)
       .getMany();
+  }
+
+  async disable(id: string): Promise<void> {
+    await this.update({ id } as never, { status: 'disabled' });
   }
 
   /** Endpoints whose rotation overlap has expired and whose previous secret can be dropped. */
