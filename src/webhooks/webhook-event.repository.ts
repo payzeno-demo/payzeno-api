@@ -108,3 +108,31 @@ export class WebhookEventRepository extends PayzenoRepository<WebhookEventEntity
       lastResponseStatus: responseStatus,
       lastError: error?.slice(0, 2000) ?? null,
     });
+  }
+
+  /** Console list, `ix_webhook_event_merchant_created`. */
+  async listForMerchant(
+    merchantId: MerchantId,
+    filters: { status?: WebhookEventStatus; type?: PublicEventType },
+    limit: number,
+  ): Promise<WebhookEventEntity[]> {
+    const qb = this.createQueryBuilder('w')
+      .where('w.merchant_id = :merchantId', { merchantId })
+      .orderBy('w.created_at', 'DESC')
+      .limit(limit);
+
+    if (filters.status) {
+      qb.andWhere('w.status = :status', { status: filters.status });
+    }
+    if (filters.type) {
+      qb.andWhere('w.type = :type', { type: filters.type });
+    }
+    return qb.getMany();
+  }
+
+  async countDead(merchantId: MerchantId, endpointId: string): Promise<number> {
+    return this.count({
+      where: { merchantId, endpointId, status: 'dead' as WebhookEventStatus },
+    } as never);
+  }
+}

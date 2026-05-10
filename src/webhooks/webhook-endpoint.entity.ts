@@ -27,6 +27,13 @@ export class WebhookEndpointEntity extends MerchantScopedEntity {
   @Column({ name: 'signing_secret_encrypted', type: 'bytea' })
   signingSecretEncrypted!: Buffer;
 
+  /** Kept for the rotation overlap: during it Payzeno signs with both secrets. */
+  @Column({ name: 'signing_secret_previous_encrypted', type: 'bytea', nullable: true })
+  signingSecretPreviousEncrypted!: Buffer | null;
+
+  @Column({ name: 'signing_secret_last_four', type: 'char', length: 4 })
+  signingSecretLastFour!: string;
+
   @Column({ name: 'rotated_at', type: 'timestamptz', nullable: true })
   rotatedAt!: Date | null;
 
@@ -43,5 +50,9 @@ export class WebhookEndpointEntity extends MerchantScopedEntity {
 
   @Column({ name: 'last_success_at', type: 'timestamptz', nullable: true })
   lastSuccessAt!: Date | null;
+
+  isEnabled(): boolean {
+    return this.status === 'enabled';
+  }
 
 }
