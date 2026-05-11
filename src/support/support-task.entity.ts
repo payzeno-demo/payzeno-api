@@ -45,8 +45,14 @@ export type SupportTaskStatus = (typeof SUPPORT_TASK_STATUSES)[number];
 })
 export class SupportTaskEntity extends MerchantScopedEntity {
   @ManyToOne(() => MerchantEntity)
+  @Column({ name: 'kind', type: 'text' })
+  kind!: SupportTaskKind;
+
   @Column({ name: 'status', type: 'text', default: 'open' })
   status!: SupportTaskStatus;
+
+  @Column({ name: 'charge_id', type: 'text', nullable: true })
+  chargeId!: ChargeId | null;
 
   @Column({ name: 'title', type: 'text' })
   title!: string;
@@ -60,5 +66,9 @@ export class SupportTaskEntity extends MerchantScopedEntity {
 
   @Column({ name: 'resolution_note', type: 'text', nullable: true })
   resolutionNote!: string | null;
+
+  isOpen(): boolean {
+    return this.status === 'open' || this.status === 'acknowledged';
+  }
 
 }
