@@ -36,3 +36,11 @@ import { RiskEvaluationJob } from './risk-evaluation.job';
 import { UnsettledChargeSweepJob } from './unsettled-charge-sweep.job';
 import { WebhookDeliveryJob } from './webhook-delivery.job';
 
+/** Everything registered below, in cron order. Read by the `jobs --dry-run` wiring. */
+export const ALL_JOB_NAMES: readonly string[] = [
+  'outbox-drain',
+  'webhook-delivery',
+  'idempotency-retention',
+  'charge-expiry',
+  'processed-event-retention',
+  'risk-evaluation',

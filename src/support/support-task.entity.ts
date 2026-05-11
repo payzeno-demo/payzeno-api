@@ -45,11 +45,20 @@ export type SupportTaskStatus = (typeof SUPPORT_TASK_STATUSES)[number];
 })
 export class SupportTaskEntity extends MerchantScopedEntity {
   @ManyToOne(() => MerchantEntity)
+  @Column({ name: 'status', type: 'text', default: 'open' })
+  status!: SupportTaskStatus;
+
   @Column({ name: 'title', type: 'text' })
   title!: string;
 
   /** Free text, and it is what the support agent actually reads. Keep the facts in it. */
   @Column({ name: 'body', type: 'text' })
   body!: string;
+
+  @Column({ name: 'resolved_at', type: 'timestamptz', nullable: true })
+  resolvedAt!: Date | null;
+
+  @Column({ name: 'resolution_note', type: 'text', nullable: true })
+  resolutionNote!: string | null;
 
 }

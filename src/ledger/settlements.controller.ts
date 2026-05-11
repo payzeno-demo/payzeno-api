@@ -50,6 +50,20 @@ export class SettlementsController {
   @Get()
   list(
     @CurrentPrincipal() principal: AuthPrincipal,
+    @Query('currency') currency?: MerchantSettlementBatch['currency'],
+    @Query('limit') limit?: number,
+  ): Promise<Paginated<MerchantSettlementBatch>> {
+    return this.readThrough.listSettlementBatches(merchantIdOf(principal), {
+      currency,
+      status,
+      cursor,
+      limit,
+    });
+  }
+
+  @Get(':batchId')
+  @ApiVersion('2026-01-15')
+  get(
     @Param('batchId') batchId: string,
     @Query('limit') limit?: number,
   ): Promise<Paginated<ReconciliationItem>> {
@@ -71,6 +85,7 @@ export class SettlementsController {
   @Idempotent()
   @AuditLog('settlement.item.retry')
   retryItem(
+    @CurrentPrincipal() principal: AuthPrincipal,
     @Param('itemId') itemId: string,
   }
 }
