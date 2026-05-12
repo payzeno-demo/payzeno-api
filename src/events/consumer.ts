@@ -87,3 +87,26 @@ export abstract class BaseEventConsumer {
         await this.pause(2000);
         continue;
       }
+
+      for (const message of messages) {
+        if (signal.aborted) {
+          break;
+        }
+        await this.processMessage(message);
+      }
+    }
+
+    this.logger.info('consumer.stopped', { consumer: this.consumerName });
+  }
+
+  /**
+   * One message, end to end. Deletes the message on success or on a deliberate drop;
+   * leaves it on the queue on failure so SQS's own redelivery + DLQ policy takes over.
+   */
+  async processMessage(message: Message): Promise<void> {
+    const event = this.parse(message);
+    if (!event) {
+      // Unparseable body. Nothing downstream can help; let the redrive policy DLQ it.
+      this.logger.error('consumer.unparseable_message', null, {
+        consumer: this.consumerName,
+        message_id: message.MessageId ?? 'unknown',
