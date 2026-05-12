@@ -45,6 +45,9 @@ export type SupportTaskStatus = (typeof SUPPORT_TASK_STATUSES)[number];
 })
 export class SupportTaskEntity extends MerchantScopedEntity {
   @ManyToOne(() => MerchantEntity)
+  @JoinColumn({ name: 'merchant_id' })
+  merchant?: MerchantEntity;
+
   @Column({ name: 'kind', type: 'text' })
   kind!: SupportTaskKind;
 
@@ -61,6 +64,9 @@ export class SupportTaskEntity extends MerchantScopedEntity {
   @Column({ name: 'body', type: 'text' })
   body!: string;
 
+  @Column({ name: 'assigned_to', type: 'text', nullable: true })
+  assignedTo!: string | null;
+
   @Column({ name: 'resolved_at', type: 'timestamptz', nullable: true })
   resolvedAt!: Date | null;
 
@@ -71,4 +77,26 @@ export class SupportTaskEntity extends MerchantScopedEntity {
     return this.status === 'open' || this.status === 'acknowledged';
   }
 
+  /** What the staff console lists. Deliberately not a contracts type — this is internal. */
+  toSummary(): {
+    id: string;
+    merchant_id: MerchantId;
+    kind: SupportTaskKind;
+    severity: SupportTaskSeverity;
+    status: SupportTaskStatus;
+    charge_id: ChargeId | null;
+    title: string;
+    created_at: string;
+  } {
+    return {
+      id: this.id,
+      merchant_id: this.merchantId,
+      kind: this.kind,
+      severity: this.severity,
+      status: this.status,
+      charge_id: this.chargeId,
+      title: this.title,
+      created_at: this.toIsoCreatedAt(),
+    };
+  }
 }
