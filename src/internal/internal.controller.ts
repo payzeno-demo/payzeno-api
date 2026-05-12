@@ -71,8 +71,18 @@ export class MarkChargeSettledDto implements MarkChargeSettledInput {
   settlement_batch_id!: string;
 
   @IsString()
+  @MaxLength(20_000)
+  body!: string;
+
+  /**
+   * The bus `EventEnvelope.id` this task was opened from. `SupportTasksService` dedupes on it,
+   * which is what stops an at-least-once `settlement.duplicate_detected` opening the same task
+   * twice for the same charge.
+   */
   @Post('charges/:chargeId/settled')
   @InternalOnly('payzeno-ledger')
+  /** The ledger's fanout-worthiness check. Never served from a projection. */
+  @Get('webhook_endpoints')
   @InternalOnly('payzeno-ledger', 'payzeno-billing-legacy')
   async listWebhookEndpoints(
     @Query('merchant_id') merchantId: MerchantId,
@@ -86,6 +96,7 @@ export class MarkChargeSettledDto implements MarkChargeSettledInput {
    * arc INC — the ledger's `settlement.duplicate_detected` branch, and the legacy biller's
    * dunning escalations. `the-incident.md` §8.
    */
+  @Post('support-tasks')
   @HttpCode(201)
   /** Fallback for a stale `bank_account_projection`. Token only, never the number. */
   @Get('bank-accounts/:bankAccountId')
