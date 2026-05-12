@@ -65,6 +65,13 @@ export class SettlementsController {
   @ApiVersion('2026-01-15')
   get(
     @Param('batchId') batchId: string,
+  ): Promise<MerchantSettlementBatch> {
+    return this.readThrough.getSettlementBatch(merchantIdOf(principal), batchId);
+  }
+
+  @Get(':batchId/items')
+  listItems(
+    @Param('batchId') batchId: string,
     @Query('limit') limit?: number,
   ): Promise<Paginated<ReconciliationItem>> {
     return this.readThrough.listSettlementItems(merchantIdOf(principal), batchId, {
@@ -86,6 +93,13 @@ export class SettlementsController {
   @AuditLog('settlement.item.retry')
   retryItem(
     @CurrentPrincipal() principal: AuthPrincipal,
+    @Param('batchId') batchId: string,
     @Param('itemId') itemId: string,
+    @Body() body: RetryItemRequest,
+  ): Promise<ReconciliationItem> {
+    return this.readThrough.retrySettlementItem(itemId, {
+      requested_by: staffIdOf(principal) ?? `console:${batchId}`,
+      reason: body?.reason,
+    });
   }
 }

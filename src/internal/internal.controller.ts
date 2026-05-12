@@ -70,6 +70,11 @@ export class MarkChargeSettledDto implements MarkChargeSettledInput {
   @IsPayzenoId('sb_')
   settlement_batch_id!: string;
 
+  @IsISO8601({ strict: true })
+  settled_at!: IsoTimestamp;
+
+  /** Null for a task that is about a merchant rather than a single charge. */
+  @IsOptional()
   @IsString()
   @MaxLength(20_000)
   body!: string;
@@ -98,6 +103,7 @@ export class MarkChargeSettledDto implements MarkChargeSettledInput {
    */
   @Post('support-tasks')
   @HttpCode(201)
+  @InternalOnly('payzeno-ledger', 'payzeno-billing-legacy')
   /** Fallback for a stale `bank_account_projection`. Token only, never the number. */
   @Get('bank-accounts/:bankAccountId')
 }
