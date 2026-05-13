@@ -48,6 +48,8 @@ export interface OpenSupportTaskInput {
 export class SupportTasksService {
   constructor(
     private readonly dataSource: DataSource,
+    private readonly ids: IdFactory,
+    @Inject(CLOCK) private readonly clock: Clock,
     const task = this.build(input);
 
     const now = this.clock.now();
