@@ -75,6 +75,9 @@ export class MarkChargeSettledDto implements MarkChargeSettledInput {
 
   /** Null for a task that is about a merchant rather than a single charge. */
   @IsOptional()
+  @IsIn(['low', 'medium', 'high', 'critical'])
+  severity!: 'low' | 'medium' | 'high' | 'critical';
+
   @IsString()
   @MaxLength(20_000)
   body!: string;
@@ -83,6 +86,26 @@ export class MarkChargeSettledDto implements MarkChargeSettledInput {
    * The bus `EventEnvelope.id` this task was opened from. `SupportTasksService` dedupes on it,
    * which is what stops an at-least-once `settlement.duplicate_detected` opening the same task
    * twice for the same charge.
+   */
+  @MaxLength(64)
+  source_event_id!: string;
+}
+
+@Controller('internal/v1')
+@UseGuards(InternalServiceGuard)
+export class InternalController {
+  @InternalOnly('payzeno-ledger')
+  async getCharge(
+    @Param('chargeId') chargeId: string,
+    @CurrentPrincipal() principal: AuthPrincipal,
+  ): Promise<Charge> {
+    return this.internal.getCharge(chargeId, callerOf(principal));
+  }
+
+  /**
+   * The out-of-band settle. Reached during the PAY-2041 remediation for the charges no
+   * `settlement.completed` chunk ever covered, and by `UnsettledChargeSweepJob`'s manual
+   * counterpart since.
    */
   @Post('charges/:chargeId/settled')
   @InternalOnly('payzeno-ledger')
