@@ -25,6 +25,23 @@ export class SettlementCompletion {
    * A re-run of reconciliation against the same batch emits a fresh set of chunks. Keying
    * on batch alone would make the second run look like duplicate chunks of the first.
    */
+  @Column({ name: 'chunk_count', type: 'smallint' })
+  chunkCount!: number;
+
+  /** Every index in 0..chunkCount-1 has arrived. */
+  hasAllChunks(): boolean {
+    if (this.chunkCount <= 0) {
+      return false;
+    }
+    const seen = new Set(this.chunksSeen);
+    for (let i = 0; i < this.chunkCount; i += 1) {
+      if (!seen.has(i)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   /** The chunk indices we are still waiting on. Logged by the sweep job when it alarms. */
   missingChunks(): number[] {
     const seen = new Set(this.chunksSeen);

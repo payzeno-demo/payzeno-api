@@ -17,6 +17,14 @@ describe('LedgerEventsConsumer', () => {
     SQS_LEDGER_QUEUE_URL: 'http://localstack:4566/000000000000/payzeno-api-ledger',
   };
 
+  const logger = {
+    debug: jest.fn(),
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    child: jest.fn(),
+  };
+
   let charges: { markSettledFromBatch: jest.Mock };
   let merchants: { findInternal: jest.Mock };
   let supportTasks: { open: jest.Mock };
@@ -81,6 +89,18 @@ describe('LedgerEventsConsumer', () => {
     consumer.onModuleInit();
   });
 
+  it('subscribes to exactly the api-surface §14 type set', () => {
+    expect([...consumer.handledTypes].sort()).toEqual([
+      'ledger.imbalance_detected',
+      'payout.failed',
+      'payout.paid',
+      'payout.returned',
+      'settlement.completed',
+      'settlement.duplicate_detected',
+      'settlement.variance_detected',
+    ]);
+  });
+
   it('marks the chunk’s charges settled and records the chunk', async () => {
     await consumer.handle(completedEvent(), tx as unknown as EntityManager);
 
@@ -91,6 +111,29 @@ describe('LedgerEventsConsumer', () => {
     expect(tx.query).toHaveBeenCalledWith(
       expect.stringContaining('insert into settlement_completion'),
       ['sbt_1', 'rec_1', 2, 0, 2],
+    );
+  });
+
+  it('does not complete the batch while a chunk is missing (PAY-2052)', async () => {
+    await consumer.handle(completedEvent(), tx as unknown as EntityManager);
+
+    expect(tx.update).not.toHaveBeenCalled();
+    expect(logger.info).toHaveBeenCalledWith(
+      'settlement.chunk_recorded',
+      expect.objectContaining({ missing: '1' }),
+    );
+  });
+
+  it('audits every duplicate and opens a task for capture-at-settlement merchants', async () => {
+    await consumer.handle(duplicateEvent(), tx as unknown as EntityManager);
+
+    expect(audit.record).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({ action: 'settlement.duplicate_detected', resourceId: 'ch_9' }),
+    );
+    expect(supportTasks.open).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({ kind: 'duplicate_settlement', severity: 'high' }),
     );
   });
 

@@ -91,3 +91,45 @@ where our view and the ledger's view disagree. Take it to the ledger on-call wit
 
 ---
 
+## 7. Config drift
+
+Every environment variable has to exist in **three** places:
+
+1. `.env.example`
+2. `src/config/config.schema.ts` (class-validator over all 41)
+3. `src/config/api-config.type.ts` (the `ApiConfig` shape)
+
+Adding a var without all three is a review rejection. `process.env` is read in exactly one file,
+`src/config/configuration.ts`, and `.eslintrc.cjs` bans it everywhere else with an override for
+that file.
+
+Two failure modes that look like application bugs:
+
+- **A numeric var that arrives as a string.** The schema coerces and validates. A number stored
+  as a string is how `port + 1` became `"30001"` in the sidecar wiring. If you see string
+  concatenation where you expected arithmetic, the var is not going through the schema.
+- **A var that validates but is never read.** The schema is the gate, `ApiConfig` is the shape,
+  and a var present in the first but absent from the second is silently dropped. `configuration.spec.ts`
+  asserts the mapping.
+
+Boot fails loudly on invalid config — `ConfigValidationError` lists every failing var at once,
+not the first one. That is intentional: fixing config one restart at a time is how a ten-minute
+deploy becomes an hour.
+
+---
+
+## 9. Database
+
+`synchronize` is false and stays false. The schema is owned by `src/migrations/` and the
+bookkeeping table is `payzeno_migrations` — the same name in `src/config/database.config.ts` and
+`src/migrations/data-source.ts`. If those two ever disagree, the app boots believing the schema
+is empty.
+
+`idle_in_transaction_session_timeout` is 30s. Postgres kills a wedged transaction rather than
+letting it hold locks through a settlement window. A query that dies at exactly 30s inside a
+transaction is this setting, working.
+
+Reads and writes both go to the primary. There is no replica routing and
+`assertNoReplicaRouting()` will throw if somebody adds it: the idempotency interceptor commits a
+`completed` row and the serializer then re-reads the entity, so read-your-writes is required
+across the whole request.

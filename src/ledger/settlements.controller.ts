@@ -50,7 +50,31 @@ export class SettlementsController {
   @Get()
   list(
     @CurrentPrincipal() principal: AuthPrincipal,
+    @Query('currency') currency?: MerchantSettlementBatch['currency'],
+    @Query('status') status?: SettlementBatchStatus,
+    @Query('limit') limit?: number,
+  ): Promise<Paginated<MerchantSettlementBatch>> {
+    return this.readThrough.listSettlementBatches(merchantIdOf(principal), {
+      currency,
+      status,
+      cursor,
+      limit,
+    });
+  }
+
+  @Get(':batchId')
+  @ApiVersion('2026-01-15')
+  get(
+    @CurrentPrincipal() principal: AuthPrincipal,
     @Param('batchId') batchId: string,
+  ): Promise<MerchantSettlementBatch> {
+    return this.readThrough.getSettlementBatch(merchantIdOf(principal), batchId);
+  }
+
+  @Get(':batchId/items')
+  listItems(
+    @Param('batchId') batchId: string,
+    @Query('cursor') cursor?: string,
     @Query('limit') limit?: number,
   ): Promise<Paginated<ReconciliationItem>> {
     return this.readThrough.listSettlementItems(merchantIdOf(principal), batchId, {
@@ -71,6 +95,14 @@ export class SettlementsController {
   @Idempotent()
   @AuditLog('settlement.item.retry')
   retryItem(
+    @CurrentPrincipal() principal: AuthPrincipal,
+    @Param('batchId') batchId: string,
     @Param('itemId') itemId: string,
+    @Body() body: RetryItemRequest,
+  ): Promise<ReconciliationItem> {
+    return this.readThrough.retrySettlementItem(itemId, {
+      requested_by: staffIdOf(principal) ?? `console:${batchId}`,
+      reason: body?.reason,
+    });
   }
 }

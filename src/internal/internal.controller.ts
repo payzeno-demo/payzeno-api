@@ -70,9 +70,47 @@ export class MarkChargeSettledDto implements MarkChargeSettledInput {
   @IsPayzenoId('sb_')
   settlement_batch_id!: string;
 
+  @IsISO8601({ strict: true })
+  settled_at!: IsoTimestamp;
+
+  /** Null for a task that is about a merchant rather than a single charge. */
+  @IsOptional()
+  @IsIn(['low', 'medium', 'high', 'critical'])
+  severity!: 'low' | 'medium' | 'high' | 'critical';
+
   @IsString()
+  @MaxLength(20_000)
+  body!: string;
+
+  /**
+   * The bus `EventEnvelope.id` this task was opened from. `SupportTasksService` dedupes on it,
+   * which is what stops an at-least-once `settlement.duplicate_detected` opening the same task
+   * twice for the same charge.
+   */
+  @MaxLength(64)
+  source_event_id!: string;
+}
+
+@Controller('internal/v1')
+@UseGuards(InternalServiceGuard)
+export class InternalController {
+  @InternalOnly('payzeno-ledger')
+  async getCharge(
+    @Param('chargeId') chargeId: string,
+    @CurrentPrincipal() principal: AuthPrincipal,
+  ): Promise<Charge> {
+    return this.internal.getCharge(chargeId, callerOf(principal));
+  }
+
+  /**
+   * The out-of-band settle. Reached during the PAY-2041 remediation for the charges no
+   * `settlement.completed` chunk ever covered, and by `UnsettledChargeSweepJob`'s manual
+   * counterpart since.
+   */
   @Post('charges/:chargeId/settled')
   @InternalOnly('payzeno-ledger')
+  /** The ledger's fanout-worthiness check. Never served from a projection. */
+  @Get('webhook_endpoints')
   @InternalOnly('payzeno-ledger', 'payzeno-billing-legacy')
   async listWebhookEndpoints(
     @Query('merchant_id') merchantId: MerchantId,
@@ -86,7 +124,9 @@ export class MarkChargeSettledDto implements MarkChargeSettledInput {
    * arc INC — the ledger's `settlement.duplicate_detected` branch, and the legacy biller's
    * dunning escalations. `the-incident.md` §8.
    */
+  @Post('support-tasks')
   @HttpCode(201)
+  @InternalOnly('payzeno-ledger', 'payzeno-billing-legacy')
   /** Fallback for a stale `bank_account_projection`. Token only, never the number. */
   @Get('bank-accounts/:bankAccountId')
 }
