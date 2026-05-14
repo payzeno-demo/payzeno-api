@@ -29,6 +29,24 @@ describe('RolesGuard', () => {
     return new RolesGuard(makeReflector(required ? { [ROLES_KEY]: required } : {}));
   }
 
+  it('is a no-op on a handler with no @Roles', () => {
+    const { context } = guardContext({ principal: makeSessionPrincipalWithRole('viewer') });
+
+    expect(guardWith().canActivate(context)).toBe(true);
+  });
+
+  it('names the required roles in the 403 so the console can render something useful', () => {
+    const { context } = guardContext({ principal: makeSessionPrincipalWithRole('viewer') });
+
+    try {
+      guardWith(['owner', 'admin']).canActivate(context);
+      throw new Error('expected a PermissionDeniedException');
+    } catch (err) {
+      expect(err).toBeInstanceOf(PermissionDeniedException);
+      expect((err as PermissionDeniedException).message).toContain('owner or admin');
+    }
+  });
+
   it('lets a staff operator through — they outrank every merchant role by construction', () => {
     const { context } = guardContext({ principal: makeStaffPrincipal({ role: 'support' }) });
 

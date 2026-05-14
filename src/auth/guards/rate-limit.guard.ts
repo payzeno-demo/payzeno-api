@@ -57,6 +57,15 @@ export class RateLimitGuard implements CanActivate {
   }
 
   private async hit(bucket: string, spec: RateLimitSpec): Promise<BucketResult> {
+    const window = Math.floor(Date.now() / 1000 / spec.windowSec);
+    const key = redisKey('rateLimit', bucket, String(window));
+
+    const [[, count]] = (await this.redis
+      .multi()
+      .incr(key)
+      .expire(key, spec.windowSec)
+      .exec()) as Array<[Error | null, number]>;
+
     const elapsed = Math.floor(Date.now() / 1000) % spec.windowSec;
 
     return { count, limit: spec.limit, resetInSec: spec.windowSec - elapsed };
