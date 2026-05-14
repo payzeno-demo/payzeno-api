@@ -36,6 +36,15 @@ describe('StaffGuard', () => {
     );
   }
 
+  it('does nothing on a handler with no @StaffOnly — mixed controllers are legitimate', async () => {
+    const { context, request } = guardContext({ cookies });
+
+    await expect(guardWith().canActivate(context)).resolves.toBe(true);
+
+    expect(sessions.resolveStaff).not.toHaveBeenCalled();
+    expect(request.principal).toBeUndefined();
+  });
+
   it('refuses finance on a risk-only route — the roles are peers, not a ladder', async () => {
     sessions.resolveStaff.mockResolvedValue(makeFinanceStaffPrincipal(null));
     const { context } = guardContext({ cookies });
@@ -49,4 +58,54 @@ describe('StaffGuard', () => {
     expect(err.toResponse('req_1').error.details).toMatchObject({ required_roles: 'risk' });
   });
 
+  it("refuses a merchant's own admin session — this is the un-suspend-yourself hole", async () => {
+    sessions.resolveStaff.mockResolvedValue(null);
+    const { context } = guardContext({ cookies, principal: makeSessionPrincipal({ role: 'admin' }) });
+
+    await rejectsWith(guardWith(['risk']).canActivate(context), PermissionDeniedException);
+  });
+
+  describe('acting merchant resolution', () => {
+    it('prefers ?merchant_id= — the required parameter on staff-marked scoped reads', async () => {
+      const { context } = guardContext({ cookies, query: { merchant_id: TEST_MERCHANT_ID } });
+
+      await guardWith(['support']).canActivate(context);
+
+      expect(sessions.resolveStaff).toHaveBeenCalledWith(
+        'sess_staff',
+        'GET',
+        undefined,
+        TEST_MERCHANT_ID,
+      );
+    });
+
+    it('falls back to the path parameter for /v1/merchants/:merchantId routes', async () => {
+      const { context } = guardContext({ cookies, params: { merchantId: TEST_MERCHANT_ID } });
+
+      await guardWith(['risk']).canActivate(context);
+
+      expect(sessions.resolveStaff).toHaveBeenCalledWith(
+        'sess_staff',
+        'GET',
+        undefined,
+        TEST_MERCHANT_ID,
+      );
+    });
+
+    it('passes null on the platform-wide routes — POST /v1/merchants has no merchant yet', async () => {
+      const { context } = guardContext({ cookies, method: 'POST', url: '/v1/merchants' });
+
+      await guardWith(['risk']).canActivate(context);
+
+      expect(sessions.resolveStaff).toHaveBeenCalledWith('sess_staff', 'POST', undefined, null);
+    });
+
+    it('ignores an empty ?merchant_id= rather than scoping to the empty string', async () => {
+      const { context } = guardContext({ cookies, query: { merchant_id: '' } });
+
+      await guardWith(['support']).canActivate(context);
+
+      expect(sessions.resolveStaff).toHaveBeenCalledWith('sess_staff', 'GET', undefined, null);
+    });
+  });
 });

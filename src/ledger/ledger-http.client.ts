@@ -114,6 +114,15 @@ export class LedgerHttpClient extends BaseHttpClient {
    * `idempotency_key` and the ledger discriminates repeats on `request_fingerprint`
    * (api-surface.md §10.2).
    */
+  postTransaction(req: PostTransactionRequest): Promise<LedgerTransaction> {
+    return this.request<LedgerTransaction, PostTransactionRequest>({
+      method: 'POST',
+      path: '/internal/v1/transactions',
+      body: req,
+      idempotencyKey: req.idempotency_key,
+    });
+  }
+
   listTransactions(query: TransactionListQuery): Promise<Paginated<LedgerTransaction>> {
     return this.get<Paginated<LedgerTransaction>>('/internal/v1/transactions', { ...query });
   }
