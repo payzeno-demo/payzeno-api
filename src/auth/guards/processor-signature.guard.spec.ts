@@ -44,6 +44,40 @@ describe('ProcessorSignatureGuard', () => {
     expect(verifier.assertValid).not.toHaveBeenCalled();
   });
 
+  it('rejects a missing signature header', () => {
+    const { context } = guardContext({ method: 'POST', params: { acquirer: 'worldflow' }, rawBody });
+
+    expect(() => guard.canActivate(context)).toThrow(AuthenticationRequiredException);
+    expect(verifier.assertValid).not.toHaveBeenCalled();
+  });
+
+  it('refuses rather than verifying a re-serialised body when rawBody is absent', () => {
+    const { context } = guardContext({
+      method: 'POST',
+      params: { acquirer: 'worldflow' },
+      headers: { [SIGNATURE_HEADER]: 't=1767225600,v1=deadbeef' },
+      body: { event: 'authorization.approved' },
+    });
+
+    expect(() => guard.canActivate(context)).toThrow(/Raw body unavailable/);
+    expect(verifier.assertValid).not.toHaveBeenCalled();
+  });
+
+  it('lets the verifier own the rejection when the HMAC does not match', () => {
+    verifier.assertValid.mockImplementation(() => {
+      throw new AuthenticationRequiredException('acquirer signature mismatch');
+    });
+
+    const { context } = guardContext({
+      method: 'POST',
+      params: { acquirer: 'worldflow' },
+      headers: { [SIGNATURE_HEADER]: 't=1767225600,v1=0000' },
+      rawBody,
+    });
+
+    expect(() => guard.canActivate(context)).toThrow(AuthenticationRequiredException);
+  });
+
   it('attaches no principal — nothing downstream is scoped by the caller', () => {
     const { context, request } = guardContext({
       method: 'POST',

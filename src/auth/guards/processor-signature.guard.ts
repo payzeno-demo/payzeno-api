@@ -35,4 +35,6 @@ export class ProcessorSignatureGuard implements CanActivate, OnModuleInit {
   /** Resolved late: `PaymentsModule` owns the verifier and consumes this guard. ADR 0009. */
   private verifier!: ProcessorSignatureVerifier;
 
+  constructor(private readonly moduleRef: ModuleRef) {}
+
 }
