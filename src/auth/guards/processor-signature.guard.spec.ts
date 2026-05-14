@@ -20,6 +20,30 @@ describe('ProcessorSignatureGuard', () => {
   let verifier: { assertValid: jest.Mock };
   const rawBody = Buffer.from('{"event":"authorization.approved"}');
 
+  it('accepts the second acquirer too', () => {
+    const { context } = guardContext({
+      method: 'POST',
+      params: { acquirer: 'nordpay' },
+      headers: { [SIGNATURE_HEADER]: 't=1767225600,v1=cafe' },
+      rawBody,
+    });
+
+    expect(guard.canActivate(context)).toBe(true);
+    expect(verifier.assertValid).toHaveBeenCalledWith('nordpay', rawBody, 't=1767225600,v1=cafe');
+  });
+
+  it('rejects an unknown acquirer before looking at the signature', () => {
+    const { context } = guardContext({
+      method: 'POST',
+      params: { acquirer: 'not-an-acquirer' },
+      headers: { [SIGNATURE_HEADER]: 't=1,v1=x' },
+      rawBody,
+    });
+
+    expect(() => guard.canActivate(context)).toThrow(AuthenticationRequiredException);
+    expect(verifier.assertValid).not.toHaveBeenCalled();
+  });
+
   it('attaches no principal — nothing downstream is scoped by the caller', () => {
     const { context, request } = guardContext({
       method: 'POST',
