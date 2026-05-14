@@ -32,4 +32,23 @@ describe('SessionGuard', () => {
     expect(sessions.resolve).toHaveBeenCalledWith('sess_abcdef', 'PATCH', 'first-token');
   });
 
+  it('declines the request when there is no session cookie, so ApiKeyGuard can win instead', async () => {
+    const { context } = guardContext({ headers: { authorization: 'Bearer sk_live_x' } });
+
+    await rejectsWith(guard.canActivate(context), AuthenticationRequiredException);
+    expect(sessions.resolve).not.toHaveBeenCalled();
+  });
+
+  it('leaves an already-attached principal alone', async () => {
+    const existing = makeSessionPrincipal({ role: 'viewer' });
+    const { context, request } = guardContext({
+      cookies: { [SESSION_COOKIE]: 'sess_abcdef' },
+      principal: existing,
+    });
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+
+    expect(sessions.resolve).not.toHaveBeenCalled();
+    expect(request.principal).toEqual(existing);
+  });
 });
