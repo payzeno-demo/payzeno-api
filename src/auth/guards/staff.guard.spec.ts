@@ -28,6 +28,8 @@ import { guardContext, makeReflector, rejectsWith } from 'test/support/guard-con
  */
 describe('StaffGuard', () => {
   let sessions: { resolveStaff: jest.Mock };
+  let staffUsers: { resolveActive: jest.Mock };
+
   function guardWith(required?: StaffRole[]): StaffGuard {
     return new StaffGuard(
       sessions as unknown as SessionService,
@@ -45,6 +47,13 @@ describe('StaffGuard', () => {
 
     expect(sessions.resolveStaff).not.toHaveBeenCalled();
     expect(request.principal).toBeUndefined();
+  });
+
+  it('admits admin against any requirement', async () => {
+    sessions.resolveStaff.mockResolvedValue(makeStaffPrincipalWithRole('admin', null));
+    const { context } = guardContext({ cookies });
+
+    await expect(guardWith(['finance']).canActivate(context)).resolves.toBe(true);
   });
 
   it('refuses finance on a risk-only route — the roles are peers, not a ladder', async () => {
@@ -65,6 +74,13 @@ describe('StaffGuard', () => {
     const { context } = guardContext({ cookies, principal: makeSessionPrincipal({ role: 'admin' }) });
 
     await rejectsWith(guardWith(['risk']).canActivate(context), PermissionDeniedException);
+  });
+
+  it('401s when no session cookie is presented', async () => {
+    const { context } = guardContext();
+
+    await rejectsWith(guardWith(['support']).canActivate(context), AuthenticationRequiredException);
+    expect(sessions.resolveStaff).not.toHaveBeenCalled();
   });
 
   it('rechecks the staff row: a disabled operator keeps a live cookie until it expires', async () => {
