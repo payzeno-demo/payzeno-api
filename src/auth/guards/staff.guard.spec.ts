@@ -36,6 +36,8 @@ describe('StaffGuard', () => {
     );
   }
 
+  const cookies = { [SESSION_COOKIE]: 'sess_staff' };
+
   it('does nothing on a handler with no @StaffOnly — mixed controllers are legitimate', async () => {
     const { context, request } = guardContext({ cookies });
 
@@ -61,6 +63,16 @@ describe('StaffGuard', () => {
   it("refuses a merchant's own admin session — this is the un-suspend-yourself hole", async () => {
     sessions.resolveStaff.mockResolvedValue(null);
     const { context } = guardContext({ cookies, principal: makeSessionPrincipal({ role: 'admin' }) });
+
+    await rejectsWith(guardWith(['risk']).canActivate(context), PermissionDeniedException);
+  });
+
+  it('rechecks the staff row: a disabled operator keeps a live cookie until it expires', async () => {
+    staffUsers.resolveActive.mockRejectedValue(
+      new PermissionDeniedException('staff account is disabled or unknown'),
+    );
+
+    const { context } = guardContext({ cookies });
 
     await rejectsWith(guardWith(['risk']).canActivate(context), PermissionDeniedException);
   });

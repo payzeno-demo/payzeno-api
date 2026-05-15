@@ -53,6 +53,12 @@ describe('MerchantScopeGuard', () => {
   });
 
   it('401s when no auth guard attached a principal', async () => {
+    const { context } = guardContext();
+
+    await rejectsWith(guardWith(scoped).canActivate(context), AuthenticationRequiredException);
+  });
+
+  it('admits a session principal reading its own merchant', async () => {
     const { context } = guardContext({
       principal: makeSessionPrincipal(),
       params: { merchantId: TEST_MERCHANT_ID },
@@ -62,6 +68,11 @@ describe('MerchantScopeGuard', () => {
   });
 
   it('returns 404, not 403, for a path merchant that is not the principal’s', async () => {
+    const { context } = guardContext({
+      principal: makeSessionPrincipal(),
+      params: { merchantId: TEST_OTHER_MERCHANT_ID },
+    });
+
     const err = await rejectsWith(
       guardWith(scoped).canActivate(context),
       MerchantNotFoundException,
@@ -81,6 +92,12 @@ describe('MerchantScopeGuard', () => {
   });
 
   it('403s an internal-service principal reaching a /v1 route', async () => {
+    const { context } = guardContext({ principal: makeInternalPrincipal() });
+
+    await rejectsWith(guardWith(scoped).canActivate(context), PermissionDeniedException);
+  });
+
+  describe('@LivemodeOnly', () => {
     const livemodeOnly = { ...scoped, [LIVEMODE_ONLY_KEY]: true };
 
     it('admits a live API key', async () => {
