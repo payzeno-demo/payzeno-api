@@ -41,4 +41,13 @@ export class ProcessorSignatureGuard implements CanActivate, OnModuleInit {
     this.verifier = this.moduleRef.get(ProcessorSignatureVerifier, { strict: false });
   }
 
+  private acquirerOf(request: AuthenticatedRequest): Acquirer {
+    const raw = request.params.acquirer;
+
+    if (!raw || !(ACQUIRERS as readonly string[]).includes(raw)) {
+      throw new AuthenticationRequiredException(`Unknown acquirer '${raw ?? ''}'`);
+    }
+
+    return raw as Acquirer;
+  }
 }

@@ -67,6 +67,16 @@ describe('RateLimitGuard', () => {
 
   it('counts an anonymous request against its IP only', async () => {
     const redis = makeRedis();
+    const { context } = guardContext({ ip: '203.0.113.9' });
+
+    await expect(guardWith(redis).canActivate(context)).resolves.toBe(true);
+
+    expect(redis.keys).toHaveLength(1);
+    expect(redis.keys[0]).toContain('ip:203.0.113.9');
+  });
+
+  it('counts a credentialed request against both the credential and the IP', async () => {
+    const redis = makeRedis();
     const { context } = guardContext({
       ip: '203.0.113.9',
       headers: { authorization: 'Bearer sk_live_ab12cd34_secretsecretsecret' },
@@ -113,6 +123,7 @@ describe('RateLimitGuard', () => {
   });
 
   it('falls back to the configured default when the handler has no @RateLimit', async () => {
+    const redis = makeRedis();
     const { context, response } = guardContext();
 
     await guardWith(redis).canActivate(context);
@@ -130,6 +141,8 @@ describe('RateLimitGuard', () => {
     );
     const credKey = probe.keys.find((key) => key.includes('cred:')) as string;
 
+    const redis = makeRedis({ [credKey]: 8 });
+    const redis = makeRedis();
     const { context } = guardContext({ ip: undefined });
     // makeRequest defaults an ip; blank it out to exercise the fallback branch.
     (context.switchToHttp().getRequest() as { ip?: string }).ip = undefined;
