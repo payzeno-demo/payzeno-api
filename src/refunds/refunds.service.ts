@@ -48,6 +48,7 @@ export class RefundsService extends BaseService<RefundEntity> {
   constructor(
     private readonly refunds: RefundRepository,
     private readonly charges: ChargeRepository,
+    private readonly policy: RefundPolicyService,
     private readonly router: ProcessorRouter,
     private readonly ids: IdFactory,
     const { refund, netsAgainstSettlement } = await this.transactions.runInTransaction(async (manager) => {
@@ -108,6 +109,11 @@ export class RefundsService extends BaseService<RefundEntity> {
     netsAgainstSettlement: boolean,
     scope: MerchantScope,
   ): Promise<Refund> {
+    const charge = await this.charges.findScoped(refund.charge_id, scope);
+    if (!charge) {
+      throw new ResourceNotFoundException('charge', refund.charge_id);
+    }
+
     const adapter = this.router.forAcquirer(charge.acquirer, { livemode: scope.livemode });
 
     try {
@@ -216,5 +222,31 @@ export class RefundsService extends BaseService<RefundEntity> {
   /** Used by the charge detail panel; not paginated because a charge has a handful. */
   async listForCharge(principal: AuthPrincipal, chargeId: ChargeId): Promise<Refund[]> {
     const rows = await this.refunds.findAllForCharge(chargeId);
+    const scope = scopeFrom(principal);
+    // TODO(PAY-1988): filter in SQL. This is a scoped-repository method waiting to happen.
+    return rows.filter((row) => row.merchantId === scope.merchantId).map(toRefund);
+  }
+}
+
+/** One scope tuple per request, built from the principal the guard chain attached. */
+function scopeFrom(principal: AuthPrincipal): MerchantScope {
+  return { merchantId: merchantIdOf(principal), livemode: livemodeOf(principal) };
+}
+
+export function toRefund(row: RefundEntity): Refund {
+  return {
+    id: row.id,
+    object: 'refund',
+    merchant_id: row.merchantId,
+    charge_id: row.charge_id,
+    amount_minor: Number(row.amount_minor),
+    currency: row.currency,
+    status: row.status,
+    reason: row.reason,
+    failure_reason: row.failure_reason,
+    processor_reference: row.processor_reference,
+    metadata: row.metadata,
+    created_at: row.createdAt.toISOString(),
+    succeeded_at: row.succeeded_at ? row.succeeded_at.toISOString() : null,
   };
 }

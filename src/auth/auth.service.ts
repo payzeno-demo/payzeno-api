@@ -57,6 +57,7 @@ export class AuthService {
   constructor(
     private readonly users: MerchantUserRepository,
     private readonly staff: StaffUsersService,
+    @Inject(CLOCK) private readonly clock: Clock,
     const merchant = await this.merchants.findById(user.merchantId);
 
     if (!merchant) throw new MerchantNotFoundException(user.merchantId);
@@ -74,6 +75,10 @@ export class AuthService {
 
   /** `GET /v1/auth/me` — the console bootstrap call. Also refreshes `pz_csrf`. */
   async describeSession(sessionId: string): Promise<{ body: SessionResponse; csrfToken: string }> {
+    const merchant = await this.merchants.findById(record.merchantId);
+
+    if (!user || !merchant) throw new AuthenticationRequiredException('Session subject no longer exists');
+
     const candidates = await this.users.findLoginCandidates(email.trim().toLowerCase());
 
     for (const user of candidates) {

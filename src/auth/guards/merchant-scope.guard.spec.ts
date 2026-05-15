@@ -53,6 +53,26 @@ describe('MerchantScopeGuard', () => {
   });
 
   it('401s when no auth guard attached a principal', async () => {
+    const { context } = guardContext();
+
+    await rejectsWith(guardWith(scoped).canActivate(context), AuthenticationRequiredException);
+  });
+
+  it('admits a session principal reading its own merchant', async () => {
+    const { context } = guardContext({
+      principal: makeSessionPrincipal(),
+      params: { merchantId: TEST_MERCHANT_ID },
+    });
+
+    await expect(guardWith(scoped).canActivate(context)).resolves.toBe(true);
+  });
+
+  it('returns 404, not 403, for a path merchant that is not the principal’s', async () => {
+    const { context } = guardContext({
+      principal: makeSessionPrincipal(),
+      params: { merchantId: TEST_OTHER_MERCHANT_ID },
+    });
+
     const err = await rejectsWith(
       guardWith(scoped).canActivate(context),
       MerchantNotFoundException,
@@ -63,6 +83,8 @@ describe('MerchantScopeGuard', () => {
   });
 
   it('403s a staff request that named no merchant — there would be no scope to check', async () => {
+    const { context } = guardContext({ principal: makeStaffPrincipal({ acting_merchant_id: null }) });
+
     const { context } = guardContext({
       principal: makeStaffPrincipal({ acting_merchant_id: TEST_MERCHANT_ID }),
       params: { merchantId: TEST_MERCHANT_ID },
@@ -72,6 +94,39 @@ describe('MerchantScopeGuard', () => {
   });
 
   it('403s an internal-service principal reaching a /v1 route', async () => {
+    const { context } = guardContext({ principal: makeInternalPrincipal() });
+
+    await rejectsWith(guardWith(scoped).canActivate(context), PermissionDeniedException);
+  });
+
+  describe('@LivemodeOnly', () => {
+    const livemodeOnly = { ...scoped, [LIVEMODE_ONLY_KEY]: true };
+
+    it('admits a live API key', async () => {
+      const { context } = guardContext({ principal: makeApiKeyPrincipal({ mode: 'live' }) });
+
+      await expect(guardWith(livemodeOnly).canActivate(context)).resolves.toBe(true);
+    });
+
+    it('403s a test-mode API key', async () => {
+      const { context } = guardContext({ principal: makeApiKeyPrincipal({ mode: 'test' }) });
+
+      const err = await rejectsWith(
+        guardWith(livemodeOnly).canActivate(context),
+        PermissionDeniedException,
+      );
+
+      expect(err.message).toContain('test mode');
+    });
+
+    it('allows a write for a restricted merchant — restricted blocks payouts, not charging', async () => {
+      merchants.findById.mockResolvedValue({ id: TEST_MERCHANT_ID, status: 'restricted' });
+
+      const { context } = guardContext({ method: 'POST', principal: makeSessionPrincipal() });
+
+      await expect(guardWith(scoped).canActivate(context)).resolves.toBe(true);
+    });
+
     it('404s a write whose merchant row has disappeared', async () => {
       merchants.findById.mockResolvedValue(null);
 

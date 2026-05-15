@@ -46,6 +46,49 @@ export class RateLimitGuard implements CanActivate {
 
   constructor(
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
+    @Inject(API_CONFIG) config: ApiConfig,
+    private readonly reflector: Reflector,
+  ) {
+    this.defaultLimit = config.limits.rateLimitDefaultRpm;
+  }
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const spec = this.reflector.getAllAndOverride<RateLimitSpec | undefined>(RATE_LIMIT_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]) ?? { limit: this.defaultLimit, windowSec: 60 };
+
+    const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
+    const response = context.switchToHttp().getResponse<RateLimitedResponse>();
+
+    const buckets = await Promise.all(
+      this.bucketKeysFor(request).map((key) => this.hit(key, spec)),
+    );
+
+    // Whichever bucket is tightest decides, and its numbers are the ones reported.
+    const tightest = buckets.reduce((worst, b) =>
+      b.limit - b.count < worst.limit - worst.count ? b : worst,
+    );
+
+    this.applyHeaders(response, tightest);
+
+    if (tightest.count > tightest.limit) {
+      throw new RateLimitedException(tightest.resetInSec, {
+        limit: tightest.limit,
+        window_sec: spec.windowSec,
+      });
+    }
+
+    return true;
+  }
+
+  /**
+   * The credential bucket comes first so that, when both exist, `reduce` reports the
+   * credential-keyed numbers on a tie — that is what api-surface.md §1.3 promises the
+   * `X-RateLimit-*` headers mean.
+   */
+  private bucketKeysFor(request: AuthenticatedRequest): string[] {
+    const keys: string[] = [];
     const authorization = headerValue(request.headers.authorization);
 
     if (authorization) {
@@ -57,6 +100,15 @@ export class RateLimitGuard implements CanActivate {
   }
 
   private async hit(bucket: string, spec: RateLimitSpec): Promise<BucketResult> {
+    const window = Math.floor(Date.now() / 1000 / spec.windowSec);
+    const key = redisKey('rateLimit', bucket, String(window));
+
+    const [[, count]] = (await this.redis
+      .multi()
+      .incr(key)
+      .expire(key, spec.windowSec)
+      .exec()) as Array<[Error | null, number]>;
+
     const elapsed = Math.floor(Date.now() / 1000) % spec.windowSec;
 
     return { count, limit: spec.limit, resetInSec: spec.windowSec - elapsed };

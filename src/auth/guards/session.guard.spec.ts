@@ -20,6 +20,39 @@ import { guardContext, rejectsWith } from 'test/support/guard-context';
  */
 describe('SessionGuard', () => {
   let sessions: { resolve: jest.Mock };
+  let guard: SessionGuard;
+
+  const principal = makeSessionPrincipal();
+
+  beforeEach(() => {
+    sessions = { resolve: jest.fn().mockResolvedValue(principal) };
+    guard = new SessionGuard(sessions as unknown as SessionService);
+  });
+
+  it('resolves the pz_session cookie and attaches a dashboard_session principal', async () => {
+    const { context, request } = guardContext({
+      method: 'GET',
+      cookies: { [SESSION_COOKIE]: 'sess_abcdef' },
+    });
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+
+    expect(sessions.resolve).toHaveBeenCalledWith('sess_abcdef', 'GET', undefined);
+    expect(request.principal).toEqual(principal);
+  });
+
+  it('forwards the request method so the service can decide CSRF applies', async () => {
+    const { context } = guardContext({
+      method: 'POST',
+      cookies: { [SESSION_COOKIE]: 'sess_abcdef' },
+      headers: { [CSRF_HEADER]: 'csrf-token-value' },
+    });
+
+    await guard.canActivate(context);
+
+    expect(sessions.resolve).toHaveBeenCalledWith('sess_abcdef', 'POST', 'csrf-token-value');
+  });
+
   it('collapses a repeated CSRF header to its first value', async () => {
     const { context } = guardContext({
       method: 'PATCH',
@@ -32,4 +65,39 @@ describe('SessionGuard', () => {
     expect(sessions.resolve).toHaveBeenCalledWith('sess_abcdef', 'PATCH', 'first-token');
   });
 
+  it('declines the request when there is no session cookie, so ApiKeyGuard can win instead', async () => {
+    const { context } = guardContext({ headers: { authorization: 'Bearer sk_live_x' } });
+
+    await rejectsWith(guard.canActivate(context), AuthenticationRequiredException);
+    expect(sessions.resolve).not.toHaveBeenCalled();
+  });
+
+  it('propagates the 403 the CSRF check raises without turning it into a 401', async () => {
+    sessions.resolve.mockRejectedValue(
+      new PermissionDeniedException('Missing X-Payzeno-CSRF header', {
+        reason: 'csrf_header_absent',
+      }),
+    );
+
+    const { context } = guardContext({
+      method: 'DELETE',
+      cookies: { [SESSION_COOKIE]: 'sess_abcdef' },
+    });
+
+    const err = await rejectsWith(guard.canActivate(context), PermissionDeniedException);
+    expect(err.httpStatus).toBe(403);
+  });
+
+  it('leaves an already-attached principal alone', async () => {
+    const existing = makeSessionPrincipal({ role: 'viewer' });
+    const { context, request } = guardContext({
+      cookies: { [SESSION_COOKIE]: 'sess_abcdef' },
+      principal: existing,
+    });
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+
+    expect(sessions.resolve).not.toHaveBeenCalled();
+    expect(request.principal).toEqual(existing);
+  });
 });

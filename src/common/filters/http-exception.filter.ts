@@ -62,3 +62,13 @@ export class HttpExceptionFilter implements ExceptionFilter {
     if (exception instanceof LedgerRejectedException) {
       return { status: exception.httpStatus, body: exception.toResponse(requestId) };
     }
+
+    if (exception instanceof ValidationException) {
+      return { status: 422, body: exception.toResponse(requestId) };
+    }
+
+    if (exception instanceof ApiException) {
+      return { status: exception.httpStatus, body: exception.toResponse(requestId) };
+    }
+
+    // Contracts-level errors thrown by shared money/id helpers, which know nothing of Nest.

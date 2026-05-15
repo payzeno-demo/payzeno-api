@@ -76,6 +76,14 @@ function aws(env: ConfigSchema): AwsConfig {
   };
 }
 
+function idempotency(env: ConfigSchema): IdempotencyConfig {
+  return {
+    backend: env.IDEMPOTENCY_BACKEND as IdempotencyBackend,
+    ttlHours: env.IDEMPOTENCY_TTL_HOURS,
+    leaseSeconds: env.IDEMPOTENCY_LEASE_SECONDS,
+  };
+}
+
 function limits(env: ConfigSchema): LimitsConfig {
   return {
     rateLimitDefaultRpm: env.RATE_LIMIT_DEFAULT_RPM,

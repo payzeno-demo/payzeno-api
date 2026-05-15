@@ -35,4 +35,19 @@ export class ProcessorSignatureGuard implements CanActivate, OnModuleInit {
   /** Resolved late: `PaymentsModule` owns the verifier and consumes this guard. ADR 0009. */
   private verifier!: ProcessorSignatureVerifier;
 
+  constructor(private readonly moduleRef: ModuleRef) {}
+
+  onModuleInit(): void {
+    this.verifier = this.moduleRef.get(ProcessorSignatureVerifier, { strict: false });
+  }
+
+  private acquirerOf(request: AuthenticatedRequest): Acquirer {
+    const raw = request.params.acquirer;
+
+    if (!raw || !(ACQUIRERS as readonly string[]).includes(raw)) {
+      throw new AuthenticationRequiredException(`Unknown acquirer '${raw ?? ''}'`);
+    }
+
+    return raw as Acquirer;
+  }
 }

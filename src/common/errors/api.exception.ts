@@ -30,6 +30,11 @@ export abstract class ApiException extends PayzenoError {
    * cardholder data escaped into an error response the first time (arc PCI, PAY-1740).
    */
   readonly code: ErrorCode = 'invalid_request';
+  readonly httpStatus = 400;
+}
+
+/** 409. Generic conflict for the cases with no better class — currently unique-index races. */
+export class ConflictException extends ApiException {
   readonly code: ErrorCode = 'conflict';
   readonly httpStatus = 409;
 }
