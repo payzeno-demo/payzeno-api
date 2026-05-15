@@ -91,12 +91,31 @@ describe('RateLimitGuard', () => {
 
   it('never puts the raw credential in a Redis key', async () => {
     const redis = makeRedis();
+    const { context } = guardContext({
+      headers: { authorization: 'Bearer sk_live_ab12cd34_secretsecretsecret' },
+    });
+
+    await guardWith(redis).canActivate(context);
+
+    for (const key of redis.keys) {
+      expect(key).not.toContain('secretsecretsecret');
+      expect(key).not.toContain('sk_live_');
+    }
+  });
+
+  it('is stable per credential — the same token hashes to the same bucket', async () => {
     const redis = makeRedis();
+    const header = 'Bearer sk_live_ab12cd34_secretsecretsecret';
+
+    await guardWith(redis).canActivate(guardContext({ headers: { authorization: header } }).context);
+    await guardWith(redis).canActivate(guardContext({ headers: { authorization: header } }).context);
+
     const credKeys = redis.keys.filter((key) => key.includes('cred:'));
     expect(credKeys[0]).toBe(credKeys[1]);
   });
 
   it('publishes X-RateLimit-* headers on a request that is allowed', async () => {
+    const redis = makeRedis();
     const { context, response } = guardContext({ ip: '203.0.113.9' });
 
     await guardWith(redis, { limit: 5, windowSec: 60 }).canActivate(context);
@@ -108,6 +127,7 @@ describe('RateLimitGuard', () => {
 
   it('throws 429 once the count passes the handler’s limit', async () => {
     const redis = makeRedis();
+    const spec = { limit: 2, windowSec: 60 };
     const guard = guardWith(redis, spec);
 
     await guard.canActivate(guardContext({ ip: '203.0.113.9' }).context);
@@ -142,6 +162,18 @@ describe('RateLimitGuard', () => {
     const credKey = probe.keys.find((key) => key.includes('cred:')) as string;
 
     const redis = makeRedis({ [credKey]: 8 });
+    const { context, response } = guardContext({
+      ip: '203.0.113.9',
+      headers: { authorization: 'Bearer sk_live_ab12cd34_secretsecretsecret' },
+    });
+
+    await guardWith(redis, { limit: 10, windowSec: 60 }).canActivate(context);
+
+    // 9 of 10 used on the credential, 1 of 10 on the IP — the credential's numbers win.
+    expect(response.headers['X-RateLimit-Remaining']).toBe('1');
+  });
+
+  it('marks the IP bucket with the caller’s address even when it is unknown', async () => {
     const redis = makeRedis();
     const { context } = guardContext({ ip: undefined });
     // makeRequest defaults an ip; blank it out to exercise the fallback branch.

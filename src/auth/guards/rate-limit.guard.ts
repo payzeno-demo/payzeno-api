@@ -52,10 +52,36 @@ export class RateLimitGuard implements CanActivate {
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
+    const response = context.switchToHttp().getResponse<RateLimitedResponse>();
+
     const buckets = await Promise.all(
       this.bucketKeysFor(request).map((key) => this.hit(key, spec)),
     );
 
+    // Whichever bucket is tightest decides, and its numbers are the ones reported.
+    const tightest = buckets.reduce((worst, b) =>
+      b.limit - b.count < worst.limit - worst.count ? b : worst,
+    );
+
+    this.applyHeaders(response, tightest);
+
+    if (tightest.count > tightest.limit) {
+      throw new RateLimitedException(tightest.resetInSec, {
+        limit: tightest.limit,
+        window_sec: spec.windowSec,
+      });
+    }
+
+    return true;
+  }
+
+  /**
+   * The credential bucket comes first so that, when both exist, `reduce` reports the
+   * credential-keyed numbers on a tie — that is what api-surface.md §1.3 promises the
+   * `X-RateLimit-*` headers mean.
+   */
+  private bucketKeysFor(request: AuthenticatedRequest): string[] {
     const keys: string[] = [];
     const authorization = headerValue(request.headers.authorization);
 
