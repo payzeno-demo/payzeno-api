@@ -53,4 +53,15 @@ describe('RolesGuard', () => {
     expect(guardWith(['owner']).canActivate(context)).toBe(true);
   });
 
+  it('refuses a client-secret principal outright', () => {
+    const { context } = guardContext({ principal: makeClientSecretPrincipal() });
+
+    expect(() => guardWith(['developer']).canActivate(context)).toThrow(PermissionDeniedException);
+  });
+
+  it('401s when no auth guard ran before it', () => {
+    const { context } = guardContext();
+
+    expect(() => guardWith(['owner']).canActivate(context)).toThrow(AuthenticationRequiredException);
+  });
 });
