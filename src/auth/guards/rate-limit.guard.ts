@@ -46,12 +46,18 @@ export class RateLimitGuard implements CanActivate {
 
   constructor(
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
+    @Inject(API_CONFIG) config: ApiConfig,
     private readonly reflector: Reflector,
   ) {
     this.defaultLimit = config.limits.rateLimitDefaultRpm;
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    const spec = this.reflector.getAllAndOverride<RateLimitSpec | undefined>(RATE_LIMIT_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]) ?? { limit: this.defaultLimit, windowSec: 60 };
+
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const response = context.switchToHttp().getResponse<RateLimitedResponse>();
 

@@ -35,6 +35,35 @@ describe('RolesGuard', () => {
     expect(guardWith().canActivate(context)).toBe(true);
   });
 
+  it('is a no-op on an empty @Roles list', () => {
+    const { context } = guardContext({ principal: makeSessionPrincipalWithRole('viewer') });
+
+    expect(guardWith([]).canActivate(context)).toBe(true);
+  });
+
+  describe.each<[UserRole, UserRole[], boolean]>([
+    ['owner', ['owner'], true],
+    ['owner', ['admin'], true],
+    ['admin', ['owner', 'admin'], true],
+    ['admin', ['owner'], false],
+    ['developer', ['developer'], true],
+    ['developer', ['admin'], false],
+    ['viewer', ['developer'], false],
+    ['viewer', ['owner', 'admin'], false],
+  ])('a %s session against @Roles(%s)', (role, required, allowed) => {
+    it(allowed ? 'passes' : 'is denied with 403', () => {
+      const { context } = guardContext({ principal: makeSessionPrincipalWithRole(role) });
+      const guard = guardWith(required);
+
+      if (allowed) {
+        expect(guard.canActivate(context)).toBe(true);
+        return;
+      }
+
+      expect(() => guard.canActivate(context)).toThrow(PermissionDeniedException);
+    });
+  });
+
   it('names the required roles in the 403 so the console can render something useful', () => {
     const { context } = guardContext({ principal: makeSessionPrincipalWithRole('viewer') });
 
