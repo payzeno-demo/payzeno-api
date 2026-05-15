@@ -20,6 +20,20 @@ import { guardContext, rejectsWith } from 'test/support/guard-context';
  */
 describe('SessionGuard', () => {
   let sessions: { resolve: jest.Mock };
+  let guard: SessionGuard;
+
+  it('forwards the request method so the service can decide CSRF applies', async () => {
+    const { context } = guardContext({
+      method: 'POST',
+      cookies: { [SESSION_COOKIE]: 'sess_abcdef' },
+      headers: { [CSRF_HEADER]: 'csrf-token-value' },
+    });
+
+    await guard.canActivate(context);
+
+    expect(sessions.resolve).toHaveBeenCalledWith('sess_abcdef', 'POST', 'csrf-token-value');
+  });
+
   it('collapses a repeated CSRF header to its first value', async () => {
     const { context } = guardContext({
       method: 'PATCH',

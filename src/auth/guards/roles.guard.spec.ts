@@ -53,8 +53,20 @@ describe('RolesGuard', () => {
     expect(guardWith(['owner']).canActivate(context)).toBe(true);
   });
 
+  it('lets an API key through — a key is not a person and ApiKeyGuard checked its scopes', () => {
+    const { context } = guardContext({ principal: makeApiKeyPrincipal() });
+
+    expect(guardWith(['owner']).canActivate(context)).toBe(true);
+  });
+
   it('refuses a client-secret principal outright', () => {
     const { context } = guardContext({ principal: makeClientSecretPrincipal() });
+
+    expect(() => guardWith(['developer']).canActivate(context)).toThrow(PermissionDeniedException);
+  });
+
+  it('refuses an internal-service principal on a /v1 role-gated route', () => {
+    const { context } = guardContext({ principal: makeInternalPrincipal() });
 
     expect(() => guardWith(['developer']).canActivate(context)).toThrow(PermissionDeniedException);
   });
