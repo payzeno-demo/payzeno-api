@@ -22,6 +22,13 @@ describe('SessionGuard', () => {
   let sessions: { resolve: jest.Mock };
   let guard: SessionGuard;
 
+  const principal = makeSessionPrincipal();
+
+  beforeEach(() => {
+    sessions = { resolve: jest.fn().mockResolvedValue(principal) };
+    guard = new SessionGuard(sessions as unknown as SessionService);
+  });
+
   it('resolves the pz_session cookie and attaches a dashboard_session principal', async () => {
     const { context, request } = guardContext({
       method: 'GET',

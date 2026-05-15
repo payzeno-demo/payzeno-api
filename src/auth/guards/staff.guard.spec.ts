@@ -40,6 +40,13 @@ describe('StaffGuard', () => {
 
   const cookies = { [SESSION_COOKIE]: 'sess_staff' };
 
+  beforeEach(() => {
+    sessions = {
+      resolveStaff: jest.fn().mockResolvedValue(makeStaffPrincipalWithRole('risk', null)),
+    };
+    staffUsers = { resolveActive: jest.fn().mockResolvedValue(undefined) };
+  });
+
   it('does nothing on a handler with no @StaffOnly — mixed controllers are legitimate', async () => {
     const { context, request } = guardContext({ cookies });
 
@@ -47,6 +54,15 @@ describe('StaffGuard', () => {
 
     expect(sessions.resolveStaff).not.toHaveBeenCalled();
     expect(request.principal).toBeUndefined();
+  });
+
+  it('admits an operator whose role is exactly what the handler asked for', async () => {
+    const { context, request } = guardContext({ cookies });
+
+    await expect(guardWith(['risk']).canActivate(context)).resolves.toBe(true);
+
+    expect(request.principal).toMatchObject({ kind: 'staff_session', role: 'risk' });
+    expect(staffUsers.resolveActive).toHaveBeenCalled();
   });
 
   it('admits admin against any requirement', async () => {
