@@ -6,3 +6,12 @@
 #
 # One approval required (org default). Last matching pattern wins — that is a GitHub
 # rule, not ours, so ordering below is deliberate: broad first, specific last.
+
+*                                   @payzeno/platform
+
+# --- the whole service ---------------------------------------------------------
+/src/                               @payzeno/platform
+/test/                              @payzeno/platform
+
+# --- runtime and on-call surfaces: Infrastructure co-owns ----------------------
+# Every job in here has a runbook and a pager rule attached to it. apager reviews

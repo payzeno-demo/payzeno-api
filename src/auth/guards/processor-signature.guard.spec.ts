@@ -20,6 +20,14 @@ describe('ProcessorSignatureGuard', () => {
   let verifier: { assertValid: jest.Mock };
   const rawBody = Buffer.from('{"event":"authorization.approved"}');
 
+  beforeEach(() => {
+    verifier = { assertValid: jest.fn() };
+    guard = new ProcessorSignatureGuard({
+      get: () => verifier as unknown as ProcessorSignatureVerifier,
+    } as unknown as ModuleRef);
+    guard.onModuleInit();
+  });
+
   it('accepts the second acquirer too', () => {
     const { context } = guardContext({
       method: 'POST',
@@ -42,6 +50,12 @@ describe('ProcessorSignatureGuard', () => {
 
     expect(() => guard.canActivate(context)).toThrow(AuthenticationRequiredException);
     expect(verifier.assertValid).not.toHaveBeenCalled();
+  });
+
+  it('rejects a request with no :acquirer path parameter', () => {
+    const { context } = guardContext({ method: 'POST', headers: { [SIGNATURE_HEADER]: 'x' }, rawBody });
+
+    expect(() => guard.canActivate(context)).toThrow(AuthenticationRequiredException);
   });
 
   it('rejects a missing signature header', () => {

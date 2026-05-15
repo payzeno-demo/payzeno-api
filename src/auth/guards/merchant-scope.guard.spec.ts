@@ -83,6 +83,8 @@ describe('MerchantScopeGuard', () => {
   });
 
   it('403s a staff request that named no merchant — there would be no scope to check', async () => {
+    const { context } = guardContext({ principal: makeStaffPrincipal({ acting_merchant_id: null }) });
+
     const { context } = guardContext({
       principal: makeStaffPrincipal({ acting_merchant_id: TEST_MERCHANT_ID }),
       params: { merchantId: TEST_MERCHANT_ID },
@@ -104,6 +106,25 @@ describe('MerchantScopeGuard', () => {
       const { context } = guardContext({ principal: makeApiKeyPrincipal({ mode: 'live' }) });
 
       await expect(guardWith(livemodeOnly).canActivate(context)).resolves.toBe(true);
+    });
+
+    it('403s a test-mode API key', async () => {
+      const { context } = guardContext({ principal: makeApiKeyPrincipal({ mode: 'test' }) });
+
+      const err = await rejectsWith(
+        guardWith(livemodeOnly).canActivate(context),
+        PermissionDeniedException,
+      );
+
+      expect(err.message).toContain('test mode');
+    });
+
+    it('allows a write for a restricted merchant — restricted blocks payouts, not charging', async () => {
+      merchants.findById.mockResolvedValue({ id: TEST_MERCHANT_ID, status: 'restricted' });
+
+      const { context } = guardContext({ method: 'POST', principal: makeSessionPrincipal() });
+
+      await expect(guardWith(scoped).canActivate(context)).resolves.toBe(true);
     });
 
     it('404s a write whose merchant row has disappeared', async () => {
