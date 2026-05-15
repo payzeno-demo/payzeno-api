@@ -37,4 +37,8 @@ export class ProcessorSignatureGuard implements CanActivate, OnModuleInit {
 
   constructor(private readonly moduleRef: ModuleRef) {}
 
+  onModuleInit(): void {
+    this.verifier = this.moduleRef.get(ProcessorSignatureVerifier, { strict: false });
+  }
+
 }

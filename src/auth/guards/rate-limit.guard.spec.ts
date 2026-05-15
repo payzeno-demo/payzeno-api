@@ -81,11 +81,28 @@ describe('RateLimitGuard', () => {
 
   it('never puts the raw credential in a Redis key', async () => {
     const redis = makeRedis();
+    const redis = makeRedis();
     const credKeys = redis.keys.filter((key) => key.includes('cred:'));
     expect(credKeys[0]).toBe(credKeys[1]);
   });
 
   it('publishes X-RateLimit-* headers on a request that is allowed', async () => {
+    const { context, response } = guardContext({ ip: '203.0.113.9' });
+
+    await guardWith(redis, { limit: 5, windowSec: 60 }).canActivate(context);
+
+    expect(response.headers['X-RateLimit-Limit']).toBe('5');
+    expect(response.headers['X-RateLimit-Remaining']).toBe('4');
+    expect(Number(response.headers['X-RateLimit-Reset'])).toBeGreaterThan(0);
+  });
+
+  it('throws 429 once the count passes the handler’s limit', async () => {
+    const redis = makeRedis();
+    const guard = guardWith(redis, spec);
+
+    await guard.canActivate(guardContext({ ip: '203.0.113.9' }).context);
+    await guard.canActivate(guardContext({ ip: '203.0.113.9' }).context);
+
     const err = await rejectsWith(
       guard.canActivate(guardContext({ ip: '203.0.113.9' }).context),
       RateLimitedException,
@@ -111,6 +128,8 @@ describe('RateLimitGuard', () => {
       guardContext({ headers: { authorization: 'Bearer sk_live_ab12cd34_secretsecretsecret' } })
         .context,
     );
+    const credKey = probe.keys.find((key) => key.includes('cred:')) as string;
+
     const { context } = guardContext({ ip: undefined });
     // makeRequest defaults an ip; blank it out to exercise the fallback branch.
     (context.switchToHttp().getRequest() as { ip?: string }).ip = undefined;

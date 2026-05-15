@@ -42,8 +42,13 @@ export class ConfigSchema {
 
   @IsOptional()
   @Type(() => Number)
+  @IsInt()
   @Min(2)
   DATABASE_POOL_SIZE?: number;
+
+  // --- payzeno-ledger -------------------------------------------------------
+  @IsUrl(URL_OPTS)
+  LEDGER_BASE_URL!: string;
 
   @IsString()
   @IsString()
@@ -73,6 +78,7 @@ export class ConfigSchema {
   @IsNotEmpty()
   CSRF_COOKIE_NAME!: string;
 
+  @IsString()
   @MinLength(8)
   API_KEY_PEPPER!: string;
 
@@ -84,6 +90,10 @@ export class ConfigSchema {
   @Min(1)
   WEBHOOK_RETRY_WINDOW_HOURS!: number;
 
+  @IsNotEmpty()
+  AWS_REGION!: string;
+
+  @IsOptional()
   @IsString()
   @IsString()
   @IsString()
@@ -95,6 +105,10 @@ export class ConfigSchema {
   SQS_CONSOLE_NOTIFICATIONS_URL!: string;
 
   @IsString()
+  // --- idempotency ----------------------------------------------------------
+  @IsIn(['postgres', 'redis'])
+  IDEMPOTENCY_BACKEND!: string;
+
   @IsInt()
   @IsInt()
   @Min(5)
@@ -110,6 +124,10 @@ export class ConfigSchema {
   @Max(730)
   REFUND_WINDOW_DAYS!: number;
 
+  // --- flags ----------------------------------------------------------------
+  @IsBooleanString()
+  FLAG_LEDGER_OWNS_INVOICES!: string;
+
   @IsBooleanString()
   FLAG_LEDGER_OWNS_FEES!: string;
 
@@ -118,4 +136,16 @@ export class ConfigSchema {
 }
 
 export class ConfigValidationError extends Error {
+  constructor(readonly failures: string[]) {
+    super(`payzeno-api config is invalid:\n  - ${failures.join('\n  - ')}`);
+    this.name = 'ConfigValidationError';
+  }
+}
+
+/**
+ * Validates a raw env bag and returns the coerced schema instance.
+ * Throws `ConfigValidationError` listing every failure, not just the first — a half-configured
+ * environment should be fixed in one pass.
+ */
+export function validateEnv(raw: Record<string, unknown>): ConfigSchema {
 }
