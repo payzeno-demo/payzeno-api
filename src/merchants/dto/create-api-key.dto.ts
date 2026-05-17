@@ -20,6 +20,7 @@ export class CreateApiKeyDto implements CreateApiKeyRequest {
   @MaxLength(80)
   name!: string;
 
+  @IsOptional()
   @ArrayUnique()
   @ArrayMaxSize(API_KEY_SCOPES.length)
   @IsIn([...API_KEY_SCOPES], { each: true })

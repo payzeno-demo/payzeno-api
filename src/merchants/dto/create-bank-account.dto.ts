@@ -24,6 +24,8 @@ export class CreateBankAccountDto implements CreateBankAccountRequest {
   @IsISO31661Alpha2()
   country!: string;
 
+  @IsString()
+  @MinLength(2)
   @MaxLength(140)
   account_holder_name!: string;
 
