@@ -26,6 +26,7 @@ describe('MerchantOnboardingService', () => {
   const clock = new FixedClock('2026-02-01T10:00:00.000Z');
 
   let ledger: { bootstrapAccounts: jest.Mock };
+  let transactions: TransactionManager;
   let service: MerchantOnboardingService;
 
   beforeEach(() => {
@@ -60,6 +61,14 @@ describe('MerchantOnboardingService', () => {
     expect(merchant.country).toBe('GB');
   });
 
+  it('starts every merchant in pending_review with the standard risk tier', async () => {
+    const merchant = await service.onboard(request, true, 'stf_operator');
+
+    expect(merchant.status).toBe('pending_review');
+    expect(merchant.riskTier).toBe('standard');
+    expect(merchant.captureAtSettlement).toBe(false);
+  });
+
   it('applies the data-model column defaults for a merchant nobody has priced', async () => {
     const merchant = await service.onboard(request, true, 'stf_operator');
 
@@ -68,6 +77,18 @@ describe('MerchantOnboardingService', () => {
     expect(merchant.payoutDelayDays).toBe(2);
     expect(merchant.settlementToleranceMinor).toBe(100);
     expect(merchant.reserveBps).toBe(0);
+  });
+
+  it('mints a prefixed merchant id', async () => {
+    const merchant = await service.onboard(request, true, 'stf_operator');
+
+    expect(merchant.id).toMatch(/^mch_/);
+  });
+
+  it('bootstraps the ledger chart for the merchant’s default currency', async () => {
+    const merchant = await service.onboard(request, true, 'stf_operator');
+
+    expect(ledger.bootstrapAccounts).toHaveBeenCalledWith(merchant.id, 'GBP', true);
   });
 
   describe('duplicate detection', () => {

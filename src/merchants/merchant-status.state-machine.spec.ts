@@ -63,6 +63,22 @@ describe('MerchantStatusStateMachine', () => {
     }
   });
 
+  it('leaves every terminal state with no outgoing event', () => {
+    for (const status of machine.terminalStates) {
+      const events: MerchantStatusEvent[] = [
+        'approve',
+        'reject',
+        'restrict',
+        'reinstate',
+        'suspend',
+        'close',
+      ];
+      for (const event of events) {
+        expect(() => machine.apply(status, event)).toThrow(InvalidMerchantTransitionException);
+      }
+    }
+  });
+
   describe('eventFor', () => {
     it('translates the console’s "put this merchant in state X" into the event', () => {
       expect(machine.eventFor('active', 'restricted')).toBe('restrict');
