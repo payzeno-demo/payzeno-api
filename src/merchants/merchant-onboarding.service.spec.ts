@@ -26,6 +26,7 @@ describe('MerchantOnboardingService', () => {
   const clock = new FixedClock('2026-02-01T10:00:00.000Z');
 
   let ledger: { bootstrapAccounts: jest.Mock };
+  let events: { publish: jest.Mock };
   let transactions: TransactionManager;
   let service: MerchantOnboardingService;
 
@@ -79,10 +80,44 @@ describe('MerchantOnboardingService', () => {
     expect(merchant.reserveBps).toBe(0);
   });
 
+  it('defaults the payout schedule to daily and honours an explicit one', async () => {
+    await expect(service.onboard(request, true, 'stf_op')).resolves.toMatchObject({
+      payoutSchedule: 'daily',
+    });
+
+    await expect(
+      service.onboard({ ...request, payout_schedule: 'weekly' }, true, 'stf_op'),
+    ).resolves.toMatchObject({ payoutSchedule: 'weekly' });
+  });
+
   it('mints a prefixed merchant id', async () => {
     const merchant = await service.onboard(request, true, 'stf_operator');
 
     expect(merchant.id).toMatch(/^mch_/);
+  });
+
+  it('carries the livemode flag onto the row', async () => {
+    await expect(service.onboard(request, false, 'stf_op')).resolves.toMatchObject({
+      livemode: false,
+    });
+  });
+
+  it('emits merchant.created with the pricing fields the ledger projection needs', async () => {
+    await service.onboard(request, true, 'stf_operator');
+
+    const [type, payload, context] = events.publish.mock.calls[0];
+
+    expect(type).toBe('merchant.created');
+    expect(payload).toMatchObject({
+      legal_name: 'Aurora Coffee Roasters Ltd',
+      country: 'GB',
+      default_currency: 'GBP',
+      status: 'pending_review',
+      capture_at_settlement: false,
+      platform_fee_bps: 290,
+      settlement_tolerance_minor: 100,
+    });
+    expect(context).toMatchObject({ livemode: true, causationId: null });
   });
 
   it('bootstraps the ledger chart for the merchant’s default currency', async () => {
