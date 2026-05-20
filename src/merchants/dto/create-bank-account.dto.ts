@@ -24,7 +24,19 @@ export class CreateBankAccountDto implements CreateBankAccountRequest {
   @IsISO31661Alpha2()
   country!: string;
 
+  @IsIn([...CURRENCIES])
+  currency!: CurrencyCode;
+
+  /**
+   * The rail this account can carry. `aba` → ACH, `iban` → SEPA, `uk_sort_code` → Faster
+   * Payments. `BankAccountsService` re-checks the scheme against the currency, because a GBP
+   * account on the SEPA rail is a payout that will be returned three days later.
+   */
+  @IsString()
+  @MinLength(2)
   @MaxLength(140)
   account_holder_name!: string;
 
+  @IsBoolean()
+  is_default?: boolean;
 }
