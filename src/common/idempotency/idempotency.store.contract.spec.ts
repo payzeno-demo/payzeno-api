@@ -26,9 +26,17 @@ const backends: Array<{ name: string; build: () => IdempotencyHarness }> = [
 describe('IdempotencyStore contract', () => {
   describe.each(backends)('$name', ({ build }) => {
     let harness: IdempotencyHarness;
+    let store: IdempotencyStore;
+
     beforeEach(() => {
       harness = build();
       store = harness.store;
+    });
+
+    it('lets the first caller proceed', async () => {
+      await expect(store.begin(TEST_MERCHANT_ID, 'k1', 'fp1')).resolves.toEqual({
+        outcome: 'proceed',
+      });
     });
 
     it('reports in_progress while the first caller holds the lease', async () => {
