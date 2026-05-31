@@ -27,6 +27,7 @@ import { TEST_MERCHANT_ID } from 'test/factories/ids';
  */
 describe('IdempotencyInterceptor', () => {
   let reflector: Reflector;
+  let postgres: jest.Mocked<IdempotencyStore>;
   let redis: jest.Mocked<IdempotencyStore>;
   let interceptor: IdempotencyInterceptor;
   let response: { statusCode: number; headers: Record<string, string>; status: jest.Mock; setHeader: jest.Mock };
@@ -55,6 +56,37 @@ describe('IdempotencyInterceptor', () => {
       }),
     } as unknown as ExecutionContext;
   }
+
+  function handler(body: unknown = { id: 'pi_1' }): CallHandler {
+    return { handle: () => of(body) };
+  }
+
+  const baseRequest = {
+    method: 'POST',
+    url: '/v1/payment_intents',
+    originalUrl: '/v1/payment_intents?expand=charge',
+    body: { amount_minor: 4_500, currency: 'GBP' },
+    headers: { 'idempotency-key': 'k-0001' },
+    principal: makeApiKeyPrincipal(),
+  };
+
+  beforeEach(() => {
+    reflector = new Reflector();
+    postgres = store();
+    redis = store();
+    response = {
+      statusCode: 200,
+      headers: {},
+      status: jest.fn(function status(this: unknown, code: number) {
+        response.statusCode = code;
+        return response;
+      }),
+      setHeader: jest.fn((name: string, value: string) => {
+        response.headers[name.toLowerCase()] = value;
+      }),
+    };
+    interceptor = new IdempotencyInterceptor(reflector, config, postgres, redis, new NoopLogger());
+  });
 
   it('passes through entirely when the handler is not decorated', async () => {
     const observable = await interceptor.intercept(context(baseRequest, undefined), handler());
@@ -155,6 +187,36 @@ describe('IdempotencyInterceptor', () => {
       IdempotencyInProgressException,
     );
     expect(response.headers['retry-after']).toBe('12');
+  });
+
+  describe('replay', () => {
+    beforeEach(() => {
+      postgres.begin.mockResolvedValue({ outcome: 'replay', status: 201, body: { id: 'pi_original' } });
+    });
+
+    it('returns the original body without invoking the handler', async () => {
+      const next = handler({ id: 'pi_new' });
+      const spy = jest.spyOn(next, 'handle');
+
+      const observable = await interceptor.intercept(context(baseRequest), next);
+
+      await expect(firstValueFrom(observable)).resolves.toEqual({ id: 'pi_original' });
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('restores the ORIGINAL status code', async () => {
+      await interceptor.intercept(context(baseRequest), handler());
+
+      // A replay that answers 200 for a call that first answered 201 breaks every client
+      // that keys off the status.
+      expect(response.status).toHaveBeenCalledWith(201);
+    });
+
+    it('sets Idempotent-Replay: true', async () => {
+      await interceptor.intercept(context(baseRequest), handler());
+
+      expect(response.headers['idempotent-replay']).toBe('true');
+    });
   });
 
   describe('completion', () => {
