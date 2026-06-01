@@ -111,3 +111,16 @@ export class ChargeCaptureService {
       });
       if (affected === 0) {
         // Someone else captured between our read and this write. The acquirer honoured the
+        // idempotency key, so no second capture happened — but we must not emit a second event.
+        throw new ChargeNotCapturableException(charge.id, charge.status);
+      }
+
+      await this.events.publish(
+        'payment.captured',
+        {
+          charge_id: charge.id,
+          payment_intent_id: charge.payment_intent_id,
+          merchant_id: merchant.id,
+          captured_amount_minor: amountMinor,
+          authorized_amount_minor: Number(charge.amount_minor),
+          currency: charge.currency,

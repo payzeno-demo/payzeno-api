@@ -139,3 +139,21 @@ export class ChargesService extends BaseService<ChargeEntity> {
   /**
    * `POST /internal/v1/charges/:chargeId/settled`. The out-of-band single-orphan path, used
    * during the PAY-2041 remediation when a settlement event was never going to arrive.
+   * Idempotent by design: settling into the batch it is already in is a no-op, not a 409.
+   */
+  async markSettledOutOfBand(
+    manager: EntityManager,
+    chargeId: ChargeId,
+    mark: SettlementMark,
+  ): Promise<Charge> {
+    const charge = await this.charges.findOne({ where: { id: chargeId } });
+    if (!charge) {
+      throw new ChargeNotFoundException(chargeId);
+    }
+
+    if (charge.status === 'settled' && charge.settlement_batch_id === mark.settlementBatchId) {
+      return toCharge(charge);
+    }
+
+    const marked = await this.markSettledFromBatch(manager, [chargeId], mark);
+    if (marked === 0) {

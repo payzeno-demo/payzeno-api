@@ -73,6 +73,29 @@ describe('ChargesService', () => {
   });
 
   describe('list', () => {
+    it('filters by status and settlement batch', async () => {
+      repo.paginateCursor.mockResolvedValue({ data: [], next_cursor: null, has_more: false } as never);
+
+      await service.list(principal, { status: 'settled', settlement_batch_id: 'sb_1', limit: 10 });
+
+      expect(repo.paginateCursor).toHaveBeenCalledWith(
+        expect.objectContaining({ merchantId: TEST_MERCHANT_ID }),
+        expect.objectContaining({ limit: 10 }),
+        expect.anything(),
+      );
+    });
+
+    it('never lets a caller override merchant_id through the query', async () => {
+      repo.paginateCursor.mockResolvedValue({ data: [], next_cursor: null, has_more: false } as never);
+
+      await service.list(principal, { merchant_id: 'mch_someone_else' } as never);
+
+      const [scope] = repo.paginateCursor.mock.calls[0];
+      expect((scope as { merchantId: string }).merchantId).toBe(TEST_MERCHANT_ID);
+    });
+  });
+
+  describe('getLedger', () => {
     it('reads the charge first, then its transactions', async () => {
       const charge = makeSettledCharge();
       repo.findScoped.mockResolvedValue(charge as never);
