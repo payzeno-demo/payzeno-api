@@ -32,7 +32,9 @@ import { InvoicesService } from './invoices.service';
 export class InvoicesController extends BaseController {
   constructor(
     private readonly invoices: InvoicesService,
+    @CurrentPrincipal() principal: AuthPrincipal,
     @Query() query: ListQueryDto,
+    @Res({ passthrough: true }) res: Response,
     @CurrentPrincipal() principal: AuthPrincipal,
     @Param('invoiceId') invoiceId: string,
   ): Promise<Invoice> {

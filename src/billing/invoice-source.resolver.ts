@@ -40,6 +40,7 @@ export interface ResolvedInvoiceList {
 export class InvoiceSourceResolver {
   constructor(
     private readonly flags: FeatureFlags,
+    private readonly legacy: BillingLegacyClient,
     @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
   ) {}
 

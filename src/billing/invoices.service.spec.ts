@@ -17,8 +17,11 @@ import { makeApiKeyPrincipal } from 'test/factories/principal.factory';
  */
 describe('InvoicesService', () => {
   let service: InvoicesService;
+  let resolver: jest.Mocked<InvoiceSourceResolver>;
   let legacy: jest.Mocked<BillingLegacyClient>;
   let projection: jest.Mocked<InvoiceProjectionService>;
+
+  const principal = makeApiKeyPrincipal({ merchant_id: 'mch_test01' });
 
   function invoice(overrides: Record<string, unknown> = {}) {
     return {
@@ -45,6 +48,23 @@ describe('InvoicesService', () => {
       expect(resolver.list).toHaveBeenCalledWith(
         'mch_test01',
         expect.objectContaining({ status: 'open' }),
+      );
+    });
+  });
+
+  describe('get', () => {
+    it('returns an invoice that belongs to the principal', async () => {
+      await expect(service.get(principal, 'inv_1')).resolves.toMatchObject({ id: 'inv_1' });
+    });
+
+    it('404s an invoice belonging to another merchant', async () => {
+      resolver.get.mockResolvedValue({
+        source: 'billing-legacy',
+        invoice: invoice({ merchant_id: 'mch_someone_else' }),
+      } as never);
+
+      await expect(service.get(principal, 'inv_other')).rejects.toBeInstanceOf(
+        ResourceNotFoundException,
       );
     });
   });

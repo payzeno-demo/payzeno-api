@@ -11,3 +11,6 @@ export const FLAG_NAMES = {
    * Flipping it moves `invoice_projection`'s writer from InvoiceProjectionConsumer /
    * BillingLegacyClient to LedgerHttpClient. The ledger arm of InvoiceSourceResolver
    * compiles and is covered by one spec; it has never been taken in production.
+   * docs/adr/0012-invoice-cutover.md.
+   */
+  LEDGER_OWNS_INVOICES: 'ledger_owns_invoices',
