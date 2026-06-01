@@ -61,6 +61,10 @@ export class ChargeRepository extends PayzenoRepository<ChargeEntity> {
     });
   }
 
+  async findScopedById(merchantId: MerchantId, chargeId: ChargeId): Promise<ChargeEntity | null> {
+    return this.findOneScoped(merchantId, chargeId);
+  }
+
   async list(merchantId: MerchantId, query: ChargeListQuery): Promise<Paginated<ChargeEntity>> {
     const where: FindOptionsWhere<ChargeEntity> = { merchant_id: merchantId } as FindOptionsWhere<ChargeEntity>;
     if (query.status) {
@@ -82,6 +86,11 @@ export class ChargeRepository extends PayzenoRepository<ChargeEntity> {
       where: { payment_intent_id: paymentIntentId } as FindOptionsWhere<ChargeEntity>,
       order: { created_at: 'DESC' },
     });
+  }
+
+  /** `SELECT … FOR UPDATE`. `RefundPolicyService` holds this while it sums the refunds. */
+  lockCharge(manager: EntityManager, chargeId: ChargeId): Promise<ChargeEntity | null> {
+    return this.lockForUpdate(manager, chargeId);
   }
 
   async addRefundedAmount(manager: EntityManager, chargeId: ChargeId, amountMinor: number): Promise<void> {
