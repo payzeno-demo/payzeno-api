@@ -43,6 +43,10 @@ export class DisputeEntity extends MerchantScopedEntity {
   @Column({ type: 'bigint', transformer: requiredMinorUnitsTransformer })
   amount_minor: number;
 
+  /** Looked up, never defaulted. See DisputeFeeService. */
+  @Column({ type: 'bigint', transformer: requiredMinorUnitsTransformer })
+  fee_minor: number;
+
   @Column({ type: 'char', length: 3, transformer: currencyTransformer })
   currency: CurrencyCode;
 
@@ -60,9 +64,27 @@ export class DisputeEntity extends MerchantScopedEntity {
   })
   status: DisputeStatus;
 
+  @Column({
+    type: 'enum',
+    enum: [
+      'fraudulent',
+      'product_not_received',
+      'product_unacceptable',
+      'duplicate',
+      'subscription_canceled',
+      'credit_not_processed',
+      'general',
+    ],
+    enumName: 'dispute_reason',
+  })
+  reason: DisputeReason;
+
   /** The raw scheme code (`10.4`, `13.1`, …). Kept verbatim; the enum above is our mapping. */
   @Column({ type: 'varchar', length: 8 })
   network_reason_code: string;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  evidence_due_by: Date | null;
 
   @Column({ type: 'jsonb', default: () => "'{}'::jsonb" })
   evidence: DisputeEvidence;
@@ -75,10 +97,20 @@ export class DisputeEntity extends MerchantScopedEntity {
   liability_shifted: boolean;
 
   @Column({ type: 'timestamptz', nullable: true })
+  submitted_at: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
   resolved_at: Date | null;
 
   isOpen(): boolean {
     return this.status === 'needs_response' || this.status === 'under_review';
+  }
+
+  /** How many evidence fields the merchant actually filled — carried on the bus event. */
+  evidenceFieldCount(): number {
+    return Object.values(this.evidence ?? {}).filter(
+      (value) => typeof value === 'string' && value.trim().length > 0,
+    ).length;
   }
 
   /** The issuer already ate the loss; the console says so instead of asking for evidence. */

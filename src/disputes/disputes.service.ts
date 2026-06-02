@@ -63,7 +63,9 @@ export interface OpenDisputeCommand {
 export class DisputesService extends BaseService<DisputeEntity> {
   constructor(
     private readonly disputes: DisputeRepository,
+    private readonly charges: ChargeRepository,
     private readonly evidence: DisputeEvidenceService,
+    private readonly states: DisputeStateMachine,
     private readonly transactions: TransactionManager,
     @Inject(EVENT_PUBLISHER) private readonly events: EventPublisher,
     @Inject(CLOCK) private readonly clock: Clock,
@@ -92,6 +94,49 @@ export class DisputesService extends BaseService<DisputeEntity> {
 
     const status: DisputeStatus = command.isWarning ? 'warning_needs_response' : 'needs_response';
     const scope = scopeFrom(principal);
+    const submittedAt = submit ? this.clock.now() : null;
+
+    if (submit) {
+      this.states.apply(dispute.status, 'submit_evidence');
+    }
+
+    await this.transactions.runInTransaction(async (manager) => {
+      const affected = await this.disputes.saveEvidence(manager, disputeId, merged, submittedAt);
+      if (affected === 0) {
+        // Someone closed it between our read and this write — the deadline job, usually.
+        throw new DisputeNotFoundException(disputeId);
+      }
+
+      if (submit) {
+        await this.events.publish(
+          'dispute.evidence_submitted',
+          {
+            dispute_id: disputeId,
+            merchant_id: scope.merchantId,
+            submitted_at: (submittedAt as Date).toISOString(),
+            evidence_field_count: this.evidence.fieldCount(merged),
+          },
+          {
+            merchantId: scope.merchantId,
+            correlationId,
+            causationId: null,
+            livemode: scope.livemode,
+            occurredAt: (submittedAt as Date).toISOString(),
+          },
+        );
+      }
+    });
+
+    dispute.evidence = merged;
+    if (submit) {
+      dispute.status = 'under_review';
+      dispute.submitted_at = submittedAt;
+    }
+    return toDispute(dispute);
+  }
+
+  /** `POST /v1/disputes/:id/accept` — @StaffOnly('risk'). The merchant concedes. */
+  async accept(principal: AuthPrincipal, disputeId: DisputeId, correlationId: string): Promise<Dispute> {
     const scope = scopeFrom(principal);
     const dispute = await this.findOneOrThrow(disputeId, scope);
     const next = this.states.apply(dispute.status, 'accept');
@@ -189,5 +234,44 @@ export class DisputesService extends BaseService<DisputeEntity> {
     principal: AuthPrincipal,
     query: ListQuery & { status?: DisputeStatus },
   ): Promise<Paginated<Dispute>> {
+    const page = await this.paginate(query, scopeFrom(principal), (qb) =>
+      query.status ? qb.andWhere('dispute.status = :status', { status: query.status }) : qb,
+    );
+    return { ...page, data: page.data.map(toDispute) };
+  }
+
+  /** DisputeDeadlineReminderJob's input. Not scoped: it runs for every merchant. */
+  // TODO(PAY-2019): this returns entities and the job then reaches into `merchantId` to decide
+  // who to notify, which is a service handing persistence rows across a layer boundary. It
+  // wants to be a projection type. Left because the job is the only caller and the reviewer
+  // and I ran out of the argument before we ran out of the sprint.
+  findPastDeadline(limit: number): Promise<DisputeEntity[]> {
+    return this.disputes.findPastEvidenceDeadline(this.clock.now(), limit);
+  }
+}
+
+function scopeFrom(principal: AuthPrincipal): MerchantScope {
+  return { merchantId: merchantIdOf(principal), livemode: livemodeOf(principal) };
+}
+
+export function toDispute(row: DisputeEntity): Dispute {
+  return {
+    id: row.id,
+    object: 'dispute',
+    merchant_id: row.merchantId,
+    charge_id: row.charge_id,
+    amount_minor: Number(row.amount_minor),
+    fee_minor: Number(row.fee_minor),
+    currency: row.currency,
+    status: row.status,
+    reason: row.reason,
+    network_reason_code: row.network_reason_code,
+    evidence_due_by: row.evidence_due_by ? row.evidence_due_by.toISOString() : null,
+    evidence: row.evidence ?? {},
+    is_charge_refundable: row.is_charge_refundable,
+    liability_shifted: row.liability_shifted,
+    submitted_at: row.submitted_at ? row.submitted_at.toISOString() : null,
+    resolved_at: row.resolved_at ? row.resolved_at.toISOString() : null,
+    created_at: row.createdAt.toISOString(),
   };
 }

@@ -7,6 +7,14 @@ import { DisputeStateMachine } from 'src/disputes/state/dispute.state-machine';
 describe('DisputeStateMachine', () => {
   let fsm: DisputeStateMachine;
 
+  beforeEach(() => {
+    fsm = new DisputeStateMachine();
+  });
+
+  it('needs_response → under_review when evidence is submitted', () => {
+    expect(fsm.apply('needs_response', 'submit_evidence')).toBe('under_review');
+  });
+
   it('needs_response → lost when the merchant accepts liability', () => {
     expect(fsm.apply('needs_response', 'accept')).toBe('lost');
   });
@@ -26,6 +34,17 @@ describe('DisputeStateMachine', () => {
 
   it('warning_needs_response → warning_closed', () => {
     expect(fsm.apply('warning_needs_response', 'close')).toBe('warning_closed');
+  });
+
+  it('cannot submit evidence twice', () => {
+    expect(fsm.can('under_review', 'submit_evidence')).toBe(false);
+    expect(() => fsm.apply('under_review', 'submit_evidence')).toThrow(
+      InvalidStateTransitionException,
+    );
+  });
+
+  it('cannot accept a dispute that is already under review with the network', () => {
+    expect(fsm.can('under_review', 'accept')).toBe(false);
   });
 
   it('cannot reopen a won dispute', () => {

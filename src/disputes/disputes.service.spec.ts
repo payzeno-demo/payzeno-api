@@ -159,6 +159,16 @@ describe('DisputesService', () => {
       await expect(service.openFromWebhook(openCommand())).rejects.toBeInstanceOf(ChargeNotFoundException);
     });
 
+    it('looks the fee up per acquirer and currency', async () => {
+      await service.openFromWebhook(openCommand());
+
+      expect(fees.feeFor).toHaveBeenCalledWith('worldflow', 'GBP');
+      expect(disputes.insertDispute).toHaveBeenCalledWith(
+        manager,
+        expect.objectContaining({ feeMinor: 1_500, status: 'needs_response' }),
+      );
+    });
+
     it(`gives the merchant ${EVIDENCE_WINDOW_DAYS} days to respond`, async () => {
       await service.openFromWebhook(openCommand());
 
@@ -195,6 +205,19 @@ describe('DisputesService', () => {
       );
     });
 
+    it('posts the liability and the fee to the ledger, after the transaction', async () => {
+      await service.openFromWebhook(openCommand());
+
+      expect(ledger.recordDispute).toHaveBeenCalledWith(
+        expect.objectContaining({
+          disputeId: DISPUTE_ID,
+          chargeId: TEST_CHARGE_ID,
+          amountMinor: 12_000,
+          feeMinor: 1_500,
+        }),
+      );
+    });
+
     it('translates a 23505 on uq_dispute_charge_open into DuplicateDisputeException', async () => {
       // The acquirer redelivers its whole file after an outage. Insert-first means the unique
       // index — not a racy SELECT — is what tells us we already have this one.
@@ -211,6 +234,26 @@ describe('DisputesService', () => {
       await expect(service.openFromWebhook(openCommand())).rejects.toThrow('connection terminated');
     });
 
+    describe('early-warning alerts (RDR/Ethoca)', () => {
+      it('opens as warning_needs_response with no fee and no deadline', async () => {
+        await service.openFromWebhook(openCommand({ isWarning: true }));
+
+        expect(fees.feeFor).not.toHaveBeenCalled();
+        expect(disputes.insertDispute).toHaveBeenCalledWith(
+          manager,
+          expect.objectContaining({ status: 'warning_needs_response', feeMinor: 0, evidenceDueBy: null }),
+        );
+      });
+
+      it('moves no money', async () => {
+        await service.openFromWebhook(openCommand({ isWarning: true }));
+
+        expect(ledger.recordDispute).not.toHaveBeenCalled();
+      });
+    });
+  });
+
+  describe('submitEvidence', () => {
     function dto(overrides: Partial<SubmitDisputeEvidenceDto> = {}): SubmitDisputeEvidenceDto {
       return Object.assign(new SubmitDisputeEvidenceDto(), {
         evidence: Object.assign(new DisputeEvidenceDto(), {
@@ -227,6 +270,19 @@ describe('DisputesService', () => {
       await service.submitEvidence(principal, DISPUTE_ID, dto(), 'corr_2');
 
       expect(evidence.assertSubmittable).toHaveBeenCalled();
+    });
+
+    it('merges onto what is already there rather than replacing it', async () => {
+      disputes.findScoped.mockResolvedValue(
+        disputeRow({ evidence: { customer_name: 'an earlier draft' } }) as never,
+      );
+
+      await service.submitEvidence(principal, DISPUTE_ID, dto(), 'corr_2');
+
+      expect(evidence.normalise).toHaveBeenCalledWith(
+        { customer_name: 'an earlier draft' },
+        expect.objectContaining({ receipt_file_id: 'file_01HQZZRECEIPT' }),
+      );
     });
 
     it('moves the dispute to under_review and emits dispute.evidence_submitted', async () => {
@@ -286,6 +342,14 @@ describe('DisputesService', () => {
       expect(result).toMatchObject({ status: 'lost', resolved_at: clock.nowIso() });
     });
 
+    it('will not accept a dispute that is already terminal', async () => {
+      disputes.findScoped.mockResolvedValue(disputeRow({ status: 'won' }) as never);
+
+      await expect(service.accept(principal, DISPUTE_ID, 'corr_3')).rejects.toBeInstanceOf(
+        InvalidStateTransitionException,
+      );
+    });
+
     it('throws a 404 when the compare-and-swap on status finds nothing', async () => {
       disputes.transitionStatus.mockResolvedValue(0 as never);
 
@@ -301,6 +365,19 @@ describe('DisputesService', () => {
 
       await expect(service.closeFromWebhook(TEST_CHARGE_ID, 'won', 'corr_4')).resolves.toBeNull();
       expect(events.publish).not.toHaveBeenCalled();
+    });
+
+    it('closes an under_review dispute as won', async () => {
+      disputes.findOpenForCharge.mockResolvedValue(disputeRow({ status: 'under_review' }) as never);
+
+      const result = await service.closeFromWebhook(TEST_CHARGE_ID, 'won', 'corr_4');
+
+      expect(result).toMatchObject({ status: 'won' });
+      expect(events.publish).toHaveBeenCalledWith(
+        'dispute.closed',
+        expect.objectContaining({ outcome: 'won' }),
+        expect.anything(),
+      );
     });
 
     it('rejects a `won` verdict for a dispute the merchant never responded to', async () => {
@@ -324,5 +401,22 @@ describe('DisputesService', () => {
       );
     });
 
+    it('paginates and maps rows onto the contracts shape', async () => {
+      disputes.paginateCursor.mockResolvedValue({
+        data: [disputeRow()],
+        next_cursor: null,
+        has_more: false,
+      } as never);
+
+      const page = await service.list(principal, { limit: 25, status: 'needs_response' });
+
+      expect(page.data[0]).toMatchObject({ object: 'dispute', id: DISPUTE_ID, fee_minor: 1_500 });
+    });
+
+    it('hands the deadline job everything past its evidence window, unscoped', async () => {
+      await service.findPastDeadline(200);
+
+      expect(disputes.findPastEvidenceDeadline).toHaveBeenCalledWith(clock.now(), 200);
+    });
   });
 });
