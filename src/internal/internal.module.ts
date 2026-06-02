@@ -12,3 +12,11 @@ import { AuditModule } from '../audit/audit.module';
 import { AuthModule } from '../auth/auth.module';
 import { CommonModule } from '../common/common.module';
 import { MerchantsModule } from '../merchants/merchants.module';
+import { PaymentsModule } from '../payments/payments.module';
+import { SupportModule } from '../support/support.module';
+import { WebhooksModule } from '../webhooks/webhooks.module';
+
+import { InternalController } from './internal.controller';
+import { InternalService } from './internal.service';
+
+@Module({
