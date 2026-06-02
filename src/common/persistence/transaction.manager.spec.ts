@@ -14,6 +14,16 @@ import { SQLSTATE } from 'src/common/persistence/typeorm-error.mapper';
 describe('TransactionManager', () => {
   let transaction: jest.Mock;
   let dataSource: DataSource;
+  beforeEach(() => {
+    transaction = jest
+      .fn()
+      .mockImplementation(async (fn: (m: EntityManager) => Promise<unknown>) =>
+        fn({ id: 'outer' } as unknown as EntityManager),
+      );
+    dataSource = { transaction, manager: { id: 'root' } } as unknown as DataSource;
+    manager = new TransactionManager(dataSource);
+  });
+
   it('opens a transaction and hands the callback its manager', async () => {
     const seen: unknown[] = [];
 
@@ -46,6 +56,77 @@ describe('TransactionManager', () => {
 
     expect(transaction).not.toHaveBeenCalled();
     expect(received).toBe(existing);
+  });
+
+  describe('retries', () => {
+    it('does not retry by default', async () => {
+      transaction.mockRejectedValue(serializationFailure());
+
+      await expect(manager.runInTransaction(async () => undefined)).rejects.toThrow();
+      expect(transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('retries a serialization failure up to the configured count', async () => {
+      transaction
+        .mockRejectedValueOnce(serializationFailure())
+        .mockRejectedValueOnce(serializationFailure())
+        .mockImplementationOnce(async (fn: (m: EntityManager) => Promise<unknown>) =>
+          fn({} as EntityManager),
+        );
+
+      await expect(
+        manager.runInTransaction(async () => 'ok', undefined, { retries: 2, retryBaseDelayMs: 1 }),
+      ).resolves.toBe('ok');
+      expect(transaction).toHaveBeenCalledTimes(3);
+    });
+
+    it('gives up after the retry budget', async () => {
+      transaction.mockRejectedValue(serializationFailure());
+
+      await expect(
+        manager.runInTransaction(async () => undefined, undefined, {
+          retries: 2,
+          retryBaseDelayMs: 1,
+        }),
+      ).rejects.toThrow();
+      expect(transaction).toHaveBeenCalledTimes(3);
+    });
+
+    it('never retries a business exception', async () => {
+      transaction.mockRejectedValue(new Error('refund window closed'));
+
+      await expect(
+        manager.runInTransaction(async () => undefined, undefined, {
+          retries: 3,
+          retryBaseDelayMs: 1,
+        }),
+      ).rejects.toThrow('refund window closed');
+      expect(transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('backs off between attempts', async () => {
+      transaction
+        .mockRejectedValueOnce(serializationFailure())
+        .mockImplementationOnce(async (fn: (m: EntityManager) => Promise<unknown>) =>
+          fn({} as EntityManager),
+        );
+
+      const started = Date.now();
+      await manager.runInTransaction(async () => 'ok', undefined, {
+        retries: 1,
+        retryBaseDelayMs: 20,
+      });
+
+      expect(Date.now() - started).toBeGreaterThanOrEqual(15);
+    });
+  });
+
+  it('maps a driver error through typeorm-error.mapper on the way out', async () => {
+    transaction.mockRejectedValue(
+      Object.assign(new Error('duplicate key'), { code: SQLSTATE.UNIQUE_VIOLATION }),
+    );
+
+    await expect(manager.runInTransaction(async () => undefined)).rejects.toBeInstanceOf(Error);
   });
 
   describe('runInReadTransaction', () => {
