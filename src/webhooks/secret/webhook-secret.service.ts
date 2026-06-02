@@ -74,6 +74,32 @@ export class WebhookSecretService {
     if (!result.Plaintext) {
       throw new Error('KMS returned no plaintext for the webhook signing secret');
     }
+    const value = Buffer.from(result.Plaintext).toString('utf8');
+
+    if (cacheKey) {
+      this.plaintextCache.set(cacheKey, {
+        value,
+        expiresAt: this.clock.now().getTime() + 5 * 60 * 1000,
+      });
+    }
+    return value;
+  }
+
+  /**
+   * What the delivery strategies sign with. During the 24h overlap after a rotation both
+   * secrets are returned and both signatures go out, so a merchant can cut over without
+   * dropping deliveries.
+   */
+  async signingMaterial(endpoint: WebhookEndpointEntity, now: Date): Promise<SigningMaterial> {
+    const current = await this.decrypt(endpoint.signingSecretEncrypted, `cur:${endpoint.id}`);
+
+    if (!endpoint.signingSecretPreviousEncrypted || !endpoint.rotatedAt) {
+      return { current, previous: null };
+    }
+    if (now.getTime() - endpoint.rotatedAt.getTime() >= ROTATION_OVERLAP_MS) {
+      return { current, previous: null };
+    }
+
     const previous = await this.decrypt(
       endpoint.signingSecretPreviousEncrypted,
       `prev:${endpoint.id}`,

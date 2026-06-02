@@ -19,6 +19,9 @@ export interface WebhookDeliveryStrategy {
   sign(body: string, secret: string, timestamp: number): string;
 }
 
+/** Nest multi-provider token: `WebhookDeliveryJob` injects the whole array and picks. */
+export const WEBHOOK_DELIVERY_STRATEGIES = Symbol('WEBHOOK_DELIVERY_STRATEGIES');
+
 export type DeliveryStrategyName = WebhookDeliveryStrategy['name'];
 
 /**

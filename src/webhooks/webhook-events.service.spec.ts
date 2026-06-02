@@ -5,7 +5,33 @@ describe('WebhookEventsService', () => {
   const now = new Date('2026-05-02T12:00:00.000Z');
   const tx = {} as EntityManager;
 
+  let repo: {
+    insertIgnoringSourceConflict: jest.Mock;
+    listForMerchant: jest.Mock;
+    findOneBy: jest.Mock;
+    markRetrying: jest.Mock;
+    countDead: jest.Mock;
+  };
   let service: WebhookEventsService;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    sequence = 0;
+    repo = {
+      insertIgnoringSourceConflict: jest.fn(async (_tx, rows: unknown[]) => rows.length),
+      listForMerchant: jest.fn(async () => []),
+      findOneBy: jest.fn(async () => null),
+      markRetrying: jest.fn(async () => undefined),
+      countDead: jest.fn(async () => 3),
+    };
+
+    service = new WebhookEventsService(
+      repo as never,
+      { generate: () => `evt_${(sequence += 1)}` } as never,
+      { now: () => now } as never,
+      { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn(), child: jest.fn() } as never,
+    );
+  });
 
   it('creates rows pending and immediately due', async () => {
     await service.fanout(tx, {

@@ -33,10 +33,12 @@ export class HttpJsonDeliveryStrategy implements WebhookDeliveryStrategy {
 
   constructor(
     private readonly secrets: WebhookSecretService,
+    @Inject(CLOCK) private readonly clock: Clock,
     @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
   ) {}
 
   async deliver(event: WebhookEventEntity, endpoint: WebhookEndpointEntity): Promise<DeliveryResult> {
+    const startedAt = Date.now();
     const body = event.serialize();
     const timestamp = Math.floor(this.clock.now().getTime() / 1000);
 
