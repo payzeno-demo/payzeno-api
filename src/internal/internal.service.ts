@@ -66,6 +66,88 @@ export class InternalService {
     private readonly webhookEndpoints: WebhookEndpointsService,
     private readonly audit: AuditService,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
+  ) {}
+
+  /** `GET /internal/v1/merchants/:merchantId`. Ledger config reads and the legacy profile sync. */
+  async getMerchant(merchantId: MerchantId, caller: InternalCallerName): Promise<Merchant> {
+    const charge = await this.charges.findInternal(chargeId);
+
+    if (!charge) {
+      throw new ChargeNotFoundException(chargeId);
+    }
+
+    this.logger.debug('internal.charge_read', { charge_id: chargeId, caller });
+    return charge;
+  }
+
+  /**
+   * `POST /internal/v1/charges/:chargeId/settled`.
+   *
+   * The out-of-band settle. `settlement.completed` is the normal driver of
+   * `captured -> settled`; this exists for the single orphan resolved by hand, and for the
+   * charges `UnsettledChargeSweepJob` finds that no chunk ever covered. It reuses the same
+   * write path as the event branch so the two can never diverge — one code path, two
+   * triggers.
+   */
+  async markChargeSettled(
+    chargeId: string,
+    input: MarkChargeSettledInput,
+    caller: InternalCallerName,
+  ): Promise<Charge> {
+    return this.transactions.runInTransaction(async (tx) => {
+      const marked = await this.charges.markSettledFromBatch(tx, [chargeId], {
+        settlementBatchId: input.settlement_batch_id,
+        settledAt: input.settled_at,
+      });
+
+      if (marked === 0) {
+        // Already settled, or never captured. Both are no-ops for the caller, but the second
+        // is worth an audit row: the ledger believes it settled something we never captured.
+        this.logger.warn('internal.charge_settle_noop', {
+          charge_id: chargeId,
+          batch_id: input.settlement_batch_id,
+          caller,
+        });
+      }
+
+      await this.audit.record(tx, {
+        merchantId: null,
+        actorType: 'internal_service',
+        actorId: caller,
+        action: 'charge.settled.out_of_band',
+        resourceType: 'charge',
+        resourceId: chargeId,
+        before: null,
+        after: {
+          settlement_batch_id: input.settlement_batch_id,
+          transaction_id: input.transaction_id,
+          settled_at: input.settled_at,
+          rows_affected: marked,
+        },
+        livemode: true,
+      });
+
+      const charge = await this.charges.findInternal(chargeId);
+      if (!charge) {
+        throw new ChargeNotFoundException(chargeId);
+      }
+      return charge;
+    });
+  }
+
+  /**
+   * `GET /internal/v1/webhook_endpoints?merchant_id=`.
+   *
+   * The ledger asks this before it bothers publishing a merchant-facing event. It is a
+   * fanout-worthiness check, so it must not be served from a projection that could be an
+   * hour stale — a merchant who just added an endpoint would silently miss the next event.
+   */
+  async listWebhookEndpoints(
+    merchantId: MerchantId,
+    status: 'enabled' | 'disabled' | undefined,
+    caller: InternalCallerName,
+  ): Promise<{ data: WebhookEndpoint[]; has_more: boolean }> {
     const endpoints = await this.webhookEndpoints.listForInternalCaller(merchantId, status);
 
     this.logger.debug('internal.webhook_endpoints_read', {
