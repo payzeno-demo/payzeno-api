@@ -49,19 +49,57 @@ describe('webhooks e2e', () => {
   it('returns the signing secret exactly once, at creation', async () => {
     expect(signingSecret).toEqual(expect.any(String));
 
+    const list = await request(ctx.app.getHttpServer())
+      .get('/v1/webhook_endpoints')
+      .set('Authorization', bearer(seeded));
+
     const endpoint = list.body.data.find((e: { id: string }) => e.id === endpointId);
     expect(endpoint.signing_secret).toBeUndefined();
     expect(endpoint.signing_secret_last_four).toEqual(expect.any(String));
   });
 
   it('fans a bus event out to one webhook_event per subscribed endpoint', async () => {
+    const consumer = ctx.app.get(WebhookFanoutConsumer);
+    const list = await request(ctx.app.getHttpServer())
+      .get('/v1/webhook_events?limit=50')
+      .set('Authorization', bearer(seeded));
+
     const list = await request(ctx.app.getHttpServer())
       .get('/v1/webhook_events?limit=50')
       .set('Authorization', bearer(seeded));
 
     const consumer = ctx.app.get(WebhookFanoutConsumer);
+    const event = makeEnvelope(
+      'payout.scheduled',
+      {
+        payout_id: 'po_wh0003',
+        merchant_id: seeded.merchant.id,
+        amount_minor: 20_000,
+        currency: 'GBP',
+        available_on: '2026-01-17',
+        scheduled_at: '2026-01-15T12:00:00.000Z',
+      } as never,
+      { merchant_id: seeded.merchant.id },
+    );
+
+    await ctx.dataSource.transaction(async (tx) => consumer.handle(event, tx));
+
     const target = list.body.data[0];
 
     const stranger = await seedMerchant(ctx, { display_name: 'Borealis' });
+    const list = await request(ctx.app.getHttpServer())
+      .get('/v1/webhook_events?limit=1')
+      .set('Authorization', bearer(seeded));
+
+    const res = await request(ctx.app.getHttpServer())
+      .post(`/v1/webhook_events/${list.body.data[0].id}/redeliver`)
+      .set('Authorization', bearer(stranger))
+      .set('Idempotency-Key', 'wh-redeliver-foreign')
+      .send({});
+
+    expect(res.status).toBe(404);
+  });
+
+  it('deletes an endpoint without deleting its delivery history', async () => {
   });
 });

@@ -43,3 +43,18 @@ import { WebhookEventsService } from './webhook-events.service';
     HttpFormDeliveryStrategy,
     {
       provide: WEBHOOK_DELIVERY_STRATEGIES,
+      inject: [HttpJsonDeliveryStrategy, HttpFormDeliveryStrategy],
+      useFactory: (json: HttpJsonDeliveryStrategy, form: HttpFormDeliveryStrategy) => [json, form],
+    },
+  ],
+  exports: [
+    WebhookEndpointsService,
+    WebhookEventsService,
+    WebhookSecretService,
+    WebhookEndpointRepository,
+    WebhookEventRepository,
+    WebhookDeliveryStateMachine,
+    WEBHOOK_DELIVERY_STRATEGIES,
+  ],
+})
+export class WebhooksModule {}

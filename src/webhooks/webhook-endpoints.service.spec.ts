@@ -3,6 +3,18 @@ import { WebhookEndpointsService } from './webhook-endpoints.service';
 describe('WebhookEndpointsService', () => {
   const now = new Date('2026-05-01T00:00:00.000Z');
 
+  let repo: {
+    count: jest.Mock;
+    insert: jest.Mock;
+    save: jest.Mock;
+    delete: jest.Mock;
+    findEnabledFor: jest.Mock;
+    findStale: jest.Mock;
+    disable: jest.Mock;
+    recordSuccess: jest.Mock;
+    recordFailure: jest.Mock;
+    find: jest.Mock;
+  };
   let secrets: { generate: jest.Mock; encrypt: jest.Mock; lastFour: jest.Mock; rotate: jest.Mock };
   let service: WebhookEndpointsService;
 
@@ -79,6 +91,28 @@ describe('WebhookEndpointsService', () => {
     repo.count.mockResolvedValueOnce(16);
 
     await expect(service.create('mer_1', true, dto)).rejects.toThrow(/too many webhook endpoints/);
+  });
+
+  it('delegates the fanout lookup straight to the containment query', async () => {
+    await service.listEnabledFor('mer_1', 'payout.failed', true);
+
+    expect(repo.findEnabledFor).toHaveBeenCalledWith('mer_1', 'payout.failed', true);
+  });
+
+  it('disables endpoints with no success in 72h and 20 consecutive failures', async () => {
+    repo.findStale.mockResolvedValueOnce([
+      { id: 'whe_1', merchantId: 'mer_1', consecutiveFailureCount: 21 },
+    ]);
+
+    const disabled = await service.disableStale(20, 50);
+
+    expect(disabled).toEqual(['whe_1']);
+    expect(repo.findStale).toHaveBeenCalledWith(
+      new Date('2026-04-28T00:00:00.000Z'),
+      20,
+      50,
+    );
+    expect(repo.disable).toHaveBeenCalledWith('whe_1');
   });
 
   it('resets the failure counter on a successful delivery', async () => {

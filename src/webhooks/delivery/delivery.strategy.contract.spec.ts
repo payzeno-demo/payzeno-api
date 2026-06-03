@@ -93,6 +93,41 @@ describe('WebhookDeliveryStrategy contract', () => {
       expect(selectStrategy([strategy], strategy.name)).toBe(strategy);
     });
 
+    it('never throws — a dead merchant endpoint is data, not an exception', async () => {
+      request.mockRejectedValue(new Error('connect ETIMEDOUT'));
+
+      const result = await build().deliver(anEvent(), anEndpoint(url));
+
+      expect(result.delivered).toBe(false);
+      expect(result.responseStatus).toBeNull();
+      expect(result.error).toContain('ETIMEDOUT');
+    });
+
+    it.each([200, 201, 202, 204])('treats %i as delivered', async (status) => {
+      request.mockResolvedValue({ statusCode: status, body: { text: jest.fn(async () => '') } });
+
+      const result = await build().deliver(anEvent(), anEndpoint(url));
+
+      expect(result.delivered).toBe(true);
+      expect(isSuccessStatus(status)).toBe(true);
+    });
+
+    it.each([301, 400, 401, 404, 410, 429, 500, 503])(
+      'treats %i as not delivered but keeps the status for the job',
+      async (status) => {
+        request.mockResolvedValue({
+          statusCode: status,
+          body: { text: jest.fn(async () => '') },
+        });
+
+        const result = await build().deliver(anEvent(), anEndpoint(url));
+
+        expect(result.delivered).toBe(false);
+        expect(result.responseStatus).toBe(status);
+        expect(result.error).toBe(`endpoint responded ${status}`);
+      },
+    );
+
     it('signs "{timestamp}.{body}" with HMAC-SHA256 over whatever it actually sent', async () => {
       const strategy = build();
 
@@ -111,6 +146,14 @@ describe('WebhookDeliveryStrategy contract', () => {
       );
     });
 
+    it('identifies the event on the wire so the merchant can dedupe', async () => {
+      await build().deliver(anEvent(), anEndpoint(url));
+
+      const headers = (request.mock.calls[0][1] as { headers: Record<string, string> }).headers;
+      expect(headers['payzeno-event-id']).toBe('evt_contract_1');
+      expect(headers['payzeno-event-type']).toBe('payment.captured');
+    });
+
     it('leaves the retry decision to the job', async () => {
       request.mockResolvedValue({ statusCode: 503, body: { text: jest.fn(async () => '') } });
 
@@ -123,6 +166,11 @@ describe('WebhookDeliveryStrategy contract', () => {
   });
 
   describe('registry helpers', () => {
+    it('routes form-marked urls to the form strategy and everything else to JSON', () => {
+      expect(strategyNameForUrl('https://legacy.example.com/hook?format=form')).toBe('http-form');
+      expect(strategyNameForUrl('https://merchant.example.com/hook')).toBe('http-json');
+    });
+
     it('fails loudly when a strategy is missing rather than silently not delivering', () => {
       const json = new HttpJsonDeliveryStrategy(
         secretsStub() as never,
@@ -133,6 +181,12 @@ describe('WebhookDeliveryStrategy contract', () => {
       expect(() => selectStrategy([json], 'http-form')).toThrow(
         'no WebhookDeliveryStrategy registered for "http-form"',
       );
+    });
+
+    it('holds the shared 410-is-permanent rule', () => {
+      expect(isPermanentRejection(410)).toBe(true);
+      expect(isPermanentRejection(404)).toBe(false);
+      expect(isPermanentRejection(null)).toBe(false);
     });
 
   });
