@@ -48,6 +48,13 @@ export class InternalServiceGuard extends BaseAuthGuard {
   constructor(
     @Inject(API_CONFIG) config: ApiConfig,
     private readonly principals: PrincipalFactory,
+    @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
+  ) {
+    super();
+    this.sharedSecret = config.ledger.internalApiSecret;
+  }
+
+  override async canActivate(context: ExecutionContext): Promise<boolean> {
     const spec = this.reflector.getAllAndOverride<InternalOnlySpec | undefined>(INTERNAL_ONLY_KEY, [
       context.getHandler(),
       context.getClass(),
@@ -68,5 +75,21 @@ export class InternalServiceGuard extends BaseAuthGuard {
 
   protected async authenticate(request: AuthenticatedRequest): Promise<AuthPrincipal | null> {
     const service = this.header(request, SERVICE_HEADER);
+    const secret = this.header(request, INTERNAL_SECRET_HEADER);
+
+    if (!service && !secret) return null;
+
+    if (!service || !KNOWN_CALLERS.includes(service as InternalCaller)) {
+      throw new AuthenticationRequiredException('Unknown or missing X-Payzeno-Service');
+    }
+
+    if (!secret || !ApiKeyHasher.constantTimeEquals(secret, this.sharedSecret)) {
+      // Logged at warn: a wrong secret on the internal listener is either a rotation that
+      // half-landed or something that should not be able to reach this port at all.
+      this.logger.warn('internal.secret_mismatch', { service });
+      throw new AuthenticationRequiredException('Invalid internal service credential');
+    }
+
+    return this.principals.fromInternalService(service as InternalCaller, ['internal:read', 'internal:write']);
   }
 }

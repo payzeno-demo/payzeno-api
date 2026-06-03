@@ -20,3 +20,10 @@ import { InternalController } from './internal.controller';
 import { InternalService } from './internal.service';
 
 @Module({
+  imports: [
+    CommonModule,
+    AuthModule,
+    AuditModule,
+    MerchantsModule,
+    PaymentsModule,
+    WebhooksModule,
