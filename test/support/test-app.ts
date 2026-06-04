@@ -50,6 +50,7 @@ export interface TestApp {
  */
 export async function createTestApp(overrides: TestAppOverrides = {}): Promise<TestApp> {
   const ledger = overrides.ledger ?? new InMemoryLedgerClient();
+  const clock = new FixedClock(overrides.now ?? '2026-01-15T12:00:00.000Z');
   const flags = new StaticFeatureFlags({
     ledger_owns_invoices: false,
     ledger_owns_fees: false,
@@ -70,6 +71,20 @@ export async function createTestApp(overrides: TestAppOverrides = {}): Promise<T
   }
 
   const moduleRef = await builder.compile();
+  const app = moduleRef.createNestApplication();
+
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+      exceptionFactory: validationExceptionFactory,
+    }),
+  );
+  app.useGlobalFilters(new HttpExceptionFilter());
+
+  await app.init();
+
   const dataSource = app.get(DataSource);
 
   return {

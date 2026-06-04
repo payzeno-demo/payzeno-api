@@ -47,6 +47,19 @@ export function makeMerchant(overrides: Partial<Merchant> = {}): Merchant {
   };
 }
 
+/** The eleven deferred-capture merchants of arc INC. Reserve + T+7 + capture at settlement. */
+export function makeDeferredCaptureMerchant(overrides: Partial<Merchant> = {}): Merchant {
+  return makeMerchant({
+    capture_at_settlement: true,
+    risk_tier: 'elevated',
+    reserve_bps: 500,
+    reserve_hold_days: 90,
+    payout_delay_days: 7,
+    mcc: '4722',
+    ...overrides,
+  });
+}
+
 export function makeUser(overrides: Partial<User> = {}): User {
   const merchantId = overrides.merchant_id ?? nextId('mch_');
   return {

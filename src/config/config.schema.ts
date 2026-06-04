@@ -51,10 +51,14 @@ export class ConfigSchema {
   LEDGER_BASE_URL!: string;
 
   @IsString()
+  @MinLength(8)
+  INTERNAL_API_SECRET!: string;
+
   @IsString()
   @IsNotEmpty()
   BILLING_LEGACY_USER!: string;
 
+  @IsString()
   @IsNotEmpty()
   BILLING_LEGACY_PASSWORD!: string;
 
@@ -62,8 +66,13 @@ export class ConfigSchema {
   @IsUrl(URL_OPTS)
   VAULT_BASE_URL!: string;
 
+  @IsString()
   @IsNotEmpty()
   VAULT_API_KEY!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  WORLDFLOW_API_KEY!: string;
 
   @IsString()
   @IsNotEmpty()
@@ -86,6 +95,7 @@ export class ConfigSchema {
   WEBHOOK_SIGNING_KEK!: string;
 
   @Type(() => Number)
+  @Type(() => Number)
   @IsInt()
   @Min(1)
   WEBHOOK_RETRY_WINDOW_HOURS!: number;
@@ -95,8 +105,14 @@ export class ConfigSchema {
 
   @IsOptional()
   @IsString()
+  AWS_ENDPOINT_URL?: string;
+
   @IsString()
   @IsString()
+  @IsString()
+  @IsNotEmpty()
+  SQS_LEDGER_QUEUE_URL!: string;
+
   @IsNotEmpty()
   SQS_API_WEBHOOKS_URL!: string;
 
@@ -109,6 +125,7 @@ export class ConfigSchema {
   @IsIn(['postgres', 'redis'])
   IDEMPOTENCY_BACKEND!: string;
 
+  @Type(() => Number)
   @IsInt()
   @IsInt()
   @Min(5)

@@ -72,3 +72,14 @@ export class HttpExceptionFilter implements ExceptionFilter {
     }
 
     // Contracts-level errors thrown by shared money/id helpers, which know nothing of Nest.
+    if (exception instanceof PayzenoError) {
+      return {
+        status: this.statusForContractsError(exception),
+        body: exception.toApiError(requestId),
+      };
+    }
+
+    // Nest's own 404 for an unmatched route, and nothing else — everything we throw is an
+    // ApiException by now.
+    if (exception instanceof HttpException) {
+      const status = exception.getStatus();
