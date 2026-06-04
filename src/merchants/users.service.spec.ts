@@ -96,6 +96,14 @@ describe('MerchantUsersService', () => {
       expect(page.has_more).toBe(true);
     });
 
+    it('returns a null cursor — this list is not cursor-paginated (PAY-1902)', async () => {
+      const page = await service.list(TEST_MERCHANT_ID, { limit: 25 });
+
+      expect(page.next_cursor).toBeNull();
+    });
+  });
+
+  describe('get', () => {
     it('404s a user id that is not in this tenant', async () => {
       users.findByIdForMerchant.mockResolvedValue(null);
 
@@ -115,6 +123,25 @@ describe('MerchantUsersService', () => {
       expect(row.lastLoginAt).toBeNull();
     });
 
+    it('mints a usr_-prefixed id and trims the display name', async () => {
+      await service.invite(TEST_MERCHANT_ID, input);
+
+      const [row] = users.insertMapped.mock.calls[0];
+      expect(row.id).toMatch(/^usr_/);
+      expect(row.fullName).toBe('New Person');
+    });
+
+    it('rejects an address that already has a login at this merchant', async () => {
+      users.findByEmailForMerchant.mockResolvedValue(userRow());
+
+      await expect(service.invite(TEST_MERCHANT_ID, input)).rejects.toBeInstanceOf(
+        ValidationException,
+      );
+      expect(users.insertMapped).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('changeRole', () => {
     it('promotes without any owner check', async () => {
       users.findByIdForMerchant.mockResolvedValue(userRow({ role: 'developer' }));
 
@@ -132,6 +159,14 @@ describe('MerchantUsersService', () => {
       ).rejects.toBeInstanceOf(ValidationException);
 
       expect(users.updateRole).not.toHaveBeenCalled();
+    });
+
+    it('allows demoting an owner when another one remains', async () => {
+      users.countOwners.mockResolvedValue(3);
+
+      await service.changeRole(TEST_MERCHANT_ID, TEST_USER_ID, 'admin');
+
+      expect(users.updateRole).toHaveBeenCalled();
     });
 
     it('404s an unknown user', async () => {

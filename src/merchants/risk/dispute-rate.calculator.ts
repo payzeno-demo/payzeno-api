@@ -28,4 +28,43 @@ export interface DisputeRateInput {
 
 export const MINIMUM_SAMPLE = 50;
 
+/** Under this, a restricted merchant is eligible to be reinstated. Hysteresis, on purpose. */
+export const REINSTATE_THRESHOLD_BPS = 60;
+
 @Injectable()
+export class DisputeRateCalculator {
+  calculate(input: DisputeRateInput): DisputeRateResult {
+    const { capturedCharges, disputesOpened } = input;
+
+    if (capturedCharges <= 0) {
+      return { bps: 0, capturedCharges, disputesOpened, actionable: false };
+    }
+
+    const bps = Math.round((disputesOpened / capturedCharges) * 10_000);
+
+    return {
+      bps,
+      capturedCharges,
+      disputesOpened,
+      actionable: capturedCharges >= MINIMUM_SAMPLE,
+    };
+  }
+
+  shouldRestrict(result: DisputeRateResult): boolean {
+    return result.actionable && result.bps > RESTRICT_THRESHOLD_BPS;
+  }
+
+  /**
+   * Hysteresis: a merchant restricted at 101 bps is not reinstated at 99. The band between
+   * the two thresholds is what stops a merchant hovering at the line from being restricted
+   * and reinstated on alternate nights, with a `merchant.status_changed` event each time.
+   */
+  shouldReinstate(result: DisputeRateResult): boolean {
+    return result.actionable && result.bps < REINSTATE_THRESHOLD_BPS;
+  }
+
+  /** The window every caller uses. Exported so the job and the calculator cannot disagree. */
+  windowStart(now: Date): Date {
+    return new Date(now.getTime() - 30 * 86_400_000);
+  }
+}
