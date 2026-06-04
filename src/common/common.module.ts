@@ -95,4 +95,30 @@ const HTTP_PLUMBING = [
   HttpExceptionFilter,
 ];
 
+@Module({
+  imports: [ConfigModule.forRoot(), TypeOrmModule.forFeature([IdempotencyRecord])],
+  providers: [
+    IdFactory,
+    SystemClock,
+    RedisLockService,
+    TransactionManager,
+    ...SEAMS,
+    ...IDEMPOTENCY,
+    ...HTTP_PLUMBING,
+  ],
+  exports: [
+    ConfigModule,
+    TypeOrmModule,
+    IdFactory,
+    TransactionManager,
+    FeatureFlags,
+    PAYZENO_LOGGER,
+    CLOCK,
+    DISTRIBUTED_LOCK,
+    IDEMPOTENCY_STORE,
+    POSTGRES_IDEMPOTENCY_STORE,
+    REDIS_IDEMPOTENCY_STORE,
+    ...HTTP_PLUMBING,
+  ],
+})
 export class CommonModule {}

@@ -46,6 +46,80 @@ async function bootstrap(): Promise<void> {
   });
 
   const config = app.get<ApiConfig>(API_CONFIG);
+  const logger = app.get<PayzenoLogger>(PAYZENO_LOGGER);
+
+  app.use(cookieParser());
+
+  /**
+   * The `verify` hook keeps the raw bytes on the request for the acquirer webhook routes, and
+   * only for those. `ProcessorSignatureVerifier` HMACs the bytes as they arrived — verifying a
+   * re-serialised copy of the parsed object means key ordering decides whether a webhook
+   * authenticates, which is a silent downgrade to no verification at all.
+   *
+   * Scoped by path rather than applied globally: holding a Buffer copy of every request body
+   * in memory for the whole request is a cost with no benefit on the other 60 routes.
+   */
+  app.useBodyParser('json', {
+    limit: BODY_LIMIT,
+    verify: (req: RawBodyRequest, _res: unknown, buf: Buffer) => {
+      if (req.url?.startsWith('/v1/webhooks/')) {
+        req.rawBody = Buffer.from(buf);
+      }
+    },
+  });
+
+  /**
+   * `X-Forwarded-For` is set by nginx and by the ALB. Without this, `RateLimitGuard`'s IP
+   * bucket keys on the load balancer's address and every merchant behind the same ingress
+   * shares one bucket — which is to say, the rate limiter limits nothing.
+   */
+  app.set('trust proxy', true);
+
+  /**
+   * The `ws` adapter, for `GET /ws/notifications` (`NotificationsGateway`). socket.io is not
+   * used: the console's `useNotificationStream()` is a plain `WebSocket`, and the socket.io
+   * handshake would need a client library on the browser side to talk to.
+   */
+  app.useWebSocketAdapter(new WsAdapter(app));
+
+  /**
+   * The same ValidationPipe AppModule registers as APP_PIPE. Registering it here as well is
+   * not redundant: the APP_PIPE provider does not apply to the WebSocket adapter's message
+   * payloads, and `app.useGlobalPipes` does.
+   */
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+      exceptionFactory: validationExceptionFactory,
+    }),
+  );
+
+  /**
+   * Lets `onApplicationShutdown` run on SIGTERM — which is how ECS stops a task. Without it,
+   * the SQS consumers keep long-polling into a process that is about to die and the messages
+   * they claimed sit invisible until the visibility timeout expires.
+   */
+  app.enableShutdownHooks();
+
+  /**
+   * CORS is handled at the ingress for the console's origin, but the browser also talks
+   * directly to this service in local development, where there is no nginx.
+   */
+  if (config.runtime.nodeEnv !== 'production') {
+    app.enableCors({ origin: true, credentials: true });
+  }
+
+  await app.listen(config.runtime.port, '0.0.0.0');
+
+  logger.info('api.started', {
+    port: config.runtime.port,
+    env: config.runtime.nodeEnv,
+    version: config.runtime.serviceVersion,
+    idempotency_backend: config.idempotency.backend,
+  });
+
   const shutdown = async (signal: string): Promise<void> => {
     logger.info('api.shutting_down', { signal });
     await app.close();
