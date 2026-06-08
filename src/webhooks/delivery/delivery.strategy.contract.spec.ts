@@ -93,6 +93,18 @@ describe('WebhookDeliveryStrategy contract', () => {
       expect(selectStrategy([strategy], strategy.name)).toBe(strategy);
     });
 
+    it('returns a fully populated DeliveryResult on success', async () => {
+      const result = await build().deliver(anEvent(), anEndpoint(url));
+
+      expect(result).toEqual({
+        delivered: true,
+        responseStatus: 200,
+        error: null,
+        durationMs: expect.any(Number),
+        nextAttemptAt: null,
+      });
+    });
+
     it('never throws — a dead merchant endpoint is data, not an exception', async () => {
       request.mockRejectedValue(new Error('connect ETIMEDOUT'));
 
@@ -146,6 +158,15 @@ describe('WebhookDeliveryStrategy contract', () => {
       );
     });
 
+    it('produces a stable signature for the same body and timestamp', () => {
+      const strategy = build();
+
+      expect(strategy.sign('body', 'whsec_k', unix)).toBe(strategy.sign('body', 'whsec_k', unix));
+      expect(strategy.sign('body', 'whsec_k', unix)).not.toBe(
+        strategy.sign('body', 'whsec_k', unix + 1),
+      );
+    });
+
     it('identifies the event on the wire so the merchant can dedupe', async () => {
       await build().deliver(anEvent(), anEndpoint(url));
 
@@ -189,5 +210,8 @@ describe('WebhookDeliveryStrategy contract', () => {
       expect(isPermanentRejection(null)).toBe(false);
     });
 
+    it('keeps the replay tolerance at five minutes', () => {
+      expect(SIGNATURE_TOLERANCE_SECONDS).toBe(300);
+    });
   });
 });

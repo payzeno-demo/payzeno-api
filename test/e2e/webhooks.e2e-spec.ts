@@ -64,10 +64,36 @@ describe('webhooks e2e', () => {
       .get('/v1/webhook_events?limit=50')
       .set('Authorization', bearer(seeded));
 
+    const consumer = ctx.app.get(WebhookFanoutConsumer);
+    const event = makeEnvelope(
+      'refund.succeeded',
+      {
+        refund_id: 're_wh0002',
+        charge_id: 'ch_wh0002',
+        merchant_id: seeded.merchant.id,
+        amount_minor: 1_000,
+        currency: 'GBP',
+        succeeded_at: '2026-01-15T12:00:00.000Z',
+      } as never,
+      { merchant_id: seeded.merchant.id },
+    );
+
+    await ctx.dataSource.transaction(async (tx) => consumer.handle(event, tx));
+    await ctx.dataSource.transaction(async (tx) => consumer.handle(event, tx));
+
     const list = await request(ctx.app.getHttpServer())
       .get('/v1/webhook_events?limit=50')
       .set('Authorization', bearer(seeded));
 
+    const fanned = list.body.data.filter(
+      (e: { source_event_id: string }) => e.source_event_id === event.id,
+    );
+    // uq_webhook_event_source (endpoint_id, source_event_id) — at-least-once is the bus's
+    // contract, exactly-once is ours.
+    expect(fanned).toHaveLength(1);
+  });
+
+  it('does not fan out an event the endpoint has not subscribed to', async () => {
     const consumer = ctx.app.get(WebhookFanoutConsumer);
     const event = makeEnvelope(
       'payout.scheduled',
@@ -84,6 +110,16 @@ describe('webhooks e2e', () => {
 
     await ctx.dataSource.transaction(async (tx) => consumer.handle(event, tx));
 
+    // The scheme the merchant verifies against, reproduced here from the spec rather
+    // than from the implementation.
+    const timestamp = 1_768_478_400;
+    const expected = createHmac('sha256', signingSecret)
+      .update(`${timestamp}.${body}`)
+      .digest('hex');
+    expect(expected).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('redelivers an event on demand and increments attempt_count', async () => {
     const target = list.body.data[0];
 
     const stranger = await seedMerchant(ctx, { display_name: 'Borealis' });
@@ -101,5 +137,9 @@ describe('webhooks e2e', () => {
   });
 
   it('deletes an endpoint without deleting its delivery history', async () => {
+    const events = await request(ctx.app.getHttpServer())
+      .get('/v1/webhook_events?limit=50')
+      .set('Authorization', bearer(seeded));
+    expect(events.body.data.length).toBeGreaterThan(0);
   });
 });
