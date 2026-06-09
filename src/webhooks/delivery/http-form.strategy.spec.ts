@@ -33,6 +33,8 @@ describe('HttpFormDeliveryStrategy', () => {
   };
 
   let secrets: { signingMaterial: jest.Mock };
+  let strategy: HttpFormDeliveryStrategy;
+
   function endpoint(): WebhookEndpointEntity {
     return {
       id: 'whe_form_1',
@@ -55,6 +57,17 @@ describe('HttpFormDeliveryStrategy', () => {
       createdAt: now,
     });
   }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    secrets = { signingMaterial: jest.fn(async () => ({ current: 'whsec_f', previous: null })) };
+    strategy = new HttpFormDeliveryStrategy(
+      secrets as never,
+      { now: () => now, nowMs: () => now.getTime() } as never,
+      logger as never,
+    );
+    request.mockResolvedValue({ statusCode: 200, body: { text: jest.fn(async () => 'OK') } });
+  });
 
   it('sends form-encoded, never JSON', async () => {
     await strategy.deliver(event({ id: 'ch_1' }), endpoint());
@@ -103,6 +116,23 @@ describe('HttpFormDeliveryStrategy', () => {
     expect(form.type).toBe('payment.captured');
     expect(form.livemode).toBe('true');
     expect(form.created).toBe(String(unix));
+  });
+
+  it('signs the encoded form body, not the JSON serialization', async () => {
+    const evt = event({ id: 'ch_4' });
+
+    await strategy.deliver(evt, endpoint());
+
+    const options = request.mock.calls[0][1] as { headers: Record<string, string>; body: string };
+    const expected = createHmac('sha256', 'whsec_f')
+      .update(`${unix}.${options.body}`)
+      .digest('hex');
+    expect(options.headers[SIGNATURE_HEADER.toLowerCase()]).toBe(`t=${unix},v1=${expected}`);
+    // If we ever signed `evt.serialize()` here the three remaining integrations would all
+    // start rejecting on signature mismatch at once, which is how this test got written.
+    expect(options.headers[SIGNATURE_HEADER.toLowerCase()]).not.toContain(
+      createHmac('sha256', 'whsec_f').update(`${unix}.${evt.serialize()}`).digest('hex'),
+    );
   });
 
   it('percent-encodes values that would otherwise break the body', async () => {

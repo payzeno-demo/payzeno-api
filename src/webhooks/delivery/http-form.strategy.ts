@@ -40,6 +40,7 @@ export class HttpFormDeliveryStrategy implements WebhookDeliveryStrategy {
     const body = this.encode(event);
     const timestamp = Math.floor(this.clock.now().getTime() / 1000);
 
+    const material = await this.secrets.signingMaterial(endpoint, this.clock.now());
     const signatures = [this.sign(body, material.current, timestamp)];
     if (material.previous) {
       signatures.push(this.sign(body, material.previous, timestamp));
