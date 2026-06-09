@@ -25,8 +25,15 @@ export class SettlementCompletion {
    * A re-run of reconciliation against the same batch emits a fresh set of chunks. Keying
    * on batch alone would make the second run look like duplicate chunks of the first.
    */
+  @PrimaryColumn({ name: 'run_id', type: 'text' })
+  runId!: ReconciliationRunId;
+
   @Column({ name: 'chunk_count', type: 'smallint' })
   chunkCount!: number;
+
+  /** Postgres `smallint[]`. Sorted is not guaranteed — the bus is unordered. */
+  @Column({ name: 'chunks_seen', type: 'smallint', array: true, default: () => "'{}'" })
+  chunksSeen!: number[];
 
   @Column({ name: 'created_at', type: 'timestamptz', default: () => 'now()' })
   createdAt!: Date;
