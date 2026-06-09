@@ -48,10 +48,23 @@ export class EventOutbox {
    * 2^attempt seconds with ±20% jitter. Without it a permanently failing event is
    * re-selected every 5 seconds forever.
    */
+  @Column({ name: 'next_attempt_at', type: 'timestamptz', default: () => 'now()' })
+  nextAttemptAt!: Date;
+
   @Column({ name: 'claimed_at', type: 'timestamptz', nullable: true })
   claimedAt!: Date | null;
+
+  /** Task identity of the drain that holds the row. Diagnostic only — SKIP LOCKED is the lock. */
+  @Column({ name: 'claimed_by', type: 'text', nullable: true })
+  claimedBy!: string | null;
+
+  @Column({ name: 'last_error', type: 'text', nullable: true })
+  lastError!: string | null;
 
   @Column({ name: 'created_at', type: 'timestamptz', default: () => 'now()' })
   createdAt!: Date;
 
+  isDeliverable(now: Date): boolean {
+    return this.publishedAt === null && this.deadAt === null && this.nextAttemptAt <= now;
+  }
 }
