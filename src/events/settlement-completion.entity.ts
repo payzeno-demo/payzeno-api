@@ -28,6 +28,12 @@ export class SettlementCompletion {
   @Column({ name: 'chunk_count', type: 'smallint' })
   chunkCount!: number;
 
+  @Column({ name: 'created_at', type: 'timestamptz', default: () => 'now()' })
+  createdAt!: Date;
+
+  @Column({ name: 'updated_at', type: 'timestamptz', default: () => 'now()' })
+  updatedAt!: Date;
+
   /** Every index in 0..chunkCount-1 has arrived. */
   hasAllChunks(): boolean {
     if (this.chunkCount <= 0) {
