@@ -14,6 +14,8 @@ describe('OutboxEventPublisher', () => {
     occurredAt: '2026-04-01T11:59:59.000Z',
   };
 
+  let outbox: { enqueue: jest.Mock };
+  let transactions: { currentManager: jest.Mock; isInTransaction: jest.Mock };
   beforeEach(() => {
     outbox = { enqueue: jest.fn(async () => 'evt_1') };
     transactions = {
