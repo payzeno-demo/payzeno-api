@@ -30,6 +30,15 @@ describe('cursor', () => {
       offset: jest.Mock;
     };
 
+    function apply(cursor: string | null, direction?: 'ASC' | 'DESC') {
+      return applyCursor(qb as unknown as SelectQueryBuilder<CursorRow>, {
+        limit: 25,
+        cursor,
+        alias: 'charge',
+        direction,
+      });
+    }
+
     it('orders by created_at then id', () => {
       apply(null);
 
@@ -60,6 +69,14 @@ describe('cursor', () => {
       expect(params.cursorCreatedAt).toBeInstanceOf(Date);
     });
 
+    it('breaks ties on id within the same instant', () => {
+      // Two rows created in the same millisecond are ordinary at our volume, and offset
+      // pagination silently skips one of them.
+      apply(encodeCursor({ createdAt: '2026-01-15T12:00:00.000Z', id: TEST_CHARGE_ID }));
+
+      expect(qb.andWhere.mock.calls[0][0]).toContain('charge.created_at = :cursorCreatedAt');
+    });
+
     it('flips the comparison for an ascending page', () => {
       apply(encodeCursor({ createdAt: '2026-01-15T12:00:00.000Z', id: TEST_CHARGE_ID }), 'ASC');
 
@@ -67,6 +84,12 @@ describe('cursor', () => {
       expect(qb.orderBy).toHaveBeenCalledWith('charge.created_at', 'ASC');
     });
 
+    it('rejects a hand-edited cursor with a 422', () => {
+      expect(() => apply('not-a-real-cursor')).toThrow(ValidationException);
+    });
+  });
+
+  describe('toPage', () => {
     const rows = [
       row(nextId('ch_'), '2026-01-15T12:00:03.000Z'),
       row(nextId('ch_'), '2026-01-15T12:00:02.000Z'),
@@ -112,5 +135,13 @@ describe('cursor', () => {
   });
 
   describe('mapPage', () => {
+    it('maps the rows and preserves the cursor metadata', () => {
+      const page = { data: [row('ch_1', '2026-01-15T12:00:00Z')], has_more: true, next_cursor: 'abc' };
+
+      const mapped = mapPage(page, (r) => ({ id: r.id.toUpperCase() }));
+
+      expect(mapped).toEqual({ data: [{ id: 'CH_1' }], has_more: true, next_cursor: 'abc' });
+    });
+
   });
 });

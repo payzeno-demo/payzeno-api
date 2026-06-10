@@ -29,6 +29,27 @@ export abstract class ApiException extends PayzenoError {
    * The wire body. Note `details` is narrowed to scalars — a nested object here is how
    * cardholder data escaped into an error response the first time (arc PCI, PAY-1740).
    */
+  readonly httpStatus = 422;
+
+  constructor(
+    message: string,
+    readonly fieldErrors: FieldError[] = [],
+    details?: Record<string, unknown>,
+  ) {
+    super(message, details);
+  }
+
+  override toResponse(requestId?: string): ApiError {
+    const body = super.toResponse(requestId);
+    if (this.fieldErrors.length > 0) {
+      body.error.field_errors = this.fieldErrors;
+    }
+    return body;
+  }
+}
+
+/** 400. The catch-all for a request that is malformed rather than semantically wrong. */
+export class InvalidRequestException extends ApiException {
   readonly code: ErrorCode = 'invalid_request';
   readonly httpStatus = 400;
 }
