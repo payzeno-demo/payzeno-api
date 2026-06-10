@@ -48,6 +48,24 @@ describe('PrincipalFactory', () => {
       });
     });
 
+    it('fromApiKey copies the scope array rather than aliasing the entity', () => {
+      const principal = factory.fromApiKey(apiKeyRow);
+
+      (principal as { scopes: string[] }).scopes.push('payouts:write');
+
+      // A guard that mutated the principal must not have mutated the row behind it.
+      expect(apiKeyRow.scopes).toHaveLength(2);
+    });
+
+    it('fromSessionUser produces a dashboard_session with the user role', () => {
+      expect(factory.fromSessionUser(userRow)).toEqual({
+        kind: 'dashboard_session',
+        merchant_id: MERCHANT,
+        user_id: 'usr_01HQ8ZZZ0000000000000009',
+        role: 'admin',
+      });
+    });
+
     it('fromSessionRecord matches fromSessionUser for the same subject', () => {
       expect(factory.fromSessionRecord(MERCHANT, userRow.id, 'admin')).toEqual(
         factory.fromSessionUser(userRow),
@@ -70,6 +88,14 @@ describe('PrincipalFactory', () => {
       expect(factory.fromStaff('stf_0001', 'risk', null).kind).toBe('staff_session');
     });
 
+    it('fromInternalService defaults to no scopes', () => {
+      expect(factory.fromInternalService('payzeno-ledger')).toEqual({
+        kind: 'internal_service',
+        service: 'payzeno-ledger',
+        scopes: [],
+      });
+    });
+
     it('fromClientSecret pins the principal to exactly one intent', () => {
       expect(factory.fromClientSecret(MERCHANT, 'pi_01HQ8ZZZ0000000000000002')).toEqual({
         kind: 'client_secret',
@@ -86,6 +112,10 @@ describe('PrincipalFactory', () => {
       ['client_secret', factory.fromClientSecret(MERCHANT, 'pi_01HQ8ZZZ0000000000000002')],
     ])('reads merchant_id off a %s principal', (_kind, principal) => {
       expect(merchantIdOf(principal as AuthPrincipal)).toBe(MERCHANT);
+    });
+
+    it('reads acting_merchant_id off a staff principal', () => {
+      expect(merchantIdOf(factory.fromStaff('stf_0001', 'support', MERCHANT))).toBe(MERCHANT);
     });
 
     it('throws when a staff principal named no merchant', () => {
@@ -117,6 +147,15 @@ describe('PrincipalFactory', () => {
   });
 
   describe('livemodeOf', () => {
+    it('follows the key mode for an api_key principal', () => {
+      expect(livemodeOf(factory.fromApiKey(apiKeyRow))).toBe(false);
+      expect(livemodeOf(factory.fromApiKey({ ...apiKeyRow, mode: 'live' } as ApiKeyEntity))).toBe(true);
+    });
+
+    it('is true for a dashboard session — the console switches mode with a sk_test_ key', () => {
+      expect(livemodeOf(factory.fromSessionUser(userRow))).toBe(true);
+    });
+
     it('is true for staff, client secret and internal principals', () => {
       expect(livemodeOf(factory.fromStaff('stf_0001', 'risk', MERCHANT))).toBe(true);
       expect(livemodeOf(factory.fromClientSecret(MERCHANT, 'pi_1'))).toBe(true);
@@ -133,6 +172,24 @@ describe('PrincipalFactory', () => {
     it('scopesOf is empty for anything that is not an api key', () => {
       expect(scopesOf(factory.fromApiKey(apiKeyRow))).toHaveLength(2);
       expect(scopesOf(factory.fromSessionUser(userRow))).toEqual([]);
+    });
+
+    it('roleOf is the merchant role only, never the staff role', () => {
+      expect(roleOf(factory.fromSessionUser(userRow))).toBe('admin');
+      expect(roleOf(factory.fromStaff('stf_0001', 'risk', null))).toBeNull();
+    });
+  });
+
+  describe('describePrincipal', () => {
+    it.each([
+      ['anonymous', null],
+      ['api_key:ak_01HQ8ZZZAB12CD34', factory.fromApiKey(apiKeyRow)],
+      ['user:usr_01HQ8ZZZ0000000000000009', factory.fromSessionUser(userRow)],
+      ['staff:stf_0001', factory.fromStaff('stf_0001', 'risk', null)],
+      ['service:payzeno-ledger', factory.fromInternalService('payzeno-ledger')],
+      ['client_secret:pi_1', factory.fromClientSecret(MERCHANT, 'pi_1')],
+    ])('renders %s', (expected, principal) => {
+      expect(describePrincipal(principal as AuthPrincipal | null)).toBe(expected);
     });
 
     it('never includes a secret — it goes straight into the access log', () => {
