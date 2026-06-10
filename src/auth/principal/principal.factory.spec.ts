@@ -66,6 +66,34 @@ describe('PrincipalFactory', () => {
       expect(principal).not.toHaveProperty('merchant_id');
     });
 
+    it('fromStaff allows a null acting merchant — POST /v1/merchants has no merchant yet', () => {
+      expect(factory.fromStaff('stf_0001', 'risk', null).kind).toBe('staff_session');
+    });
+
+    it('fromClientSecret pins the principal to exactly one intent', () => {
+      expect(factory.fromClientSecret(MERCHANT, 'pi_01HQ8ZZZ0000000000000002')).toEqual({
+        kind: 'client_secret',
+        merchant_id: MERCHANT,
+        payment_intent_id: 'pi_01HQ8ZZZ0000000000000002',
+      });
+    });
+  });
+
+  describe('merchantIdOf', () => {
+    it.each([
+      ['api_key', factory.fromApiKey(apiKeyRow)],
+      ['dashboard_session', factory.fromSessionUser(userRow)],
+      ['client_secret', factory.fromClientSecret(MERCHANT, 'pi_01HQ8ZZZ0000000000000002')],
+    ])('reads merchant_id off a %s principal', (_kind, principal) => {
+      expect(merchantIdOf(principal as AuthPrincipal)).toBe(MERCHANT);
+    });
+
+    it('throws when a staff principal named no merchant', () => {
+      expect(() => merchantIdOf(factory.fromStaff('stf_0001', 'support', null))).toThrow(
+        PermissionDeniedException,
+      );
+    });
+
     it('throws for an internal service — /v1 is not its surface', () => {
       expect(() => merchantIdOf(factory.fromInternalService('payzeno-ledger'))).toThrow(
         PermissionDeniedException,
@@ -74,6 +102,21 @@ describe('PrincipalFactory', () => {
   });
 
   describe('optionalMerchantIdOf', () => {
+    it('is null rather than a throw for a staff principal with no merchant', () => {
+      expect(optionalMerchantIdOf(factory.fromStaff('stf_0001', 'finance', null))).toBeNull();
+    });
+
+    it('is null for an absent principal — interceptors run before the guards', () => {
+      expect(optionalMerchantIdOf(undefined)).toBeNull();
+      expect(optionalMerchantIdOf(null)).toBeNull();
+    });
+
+    it('is null for an internal service', () => {
+      expect(optionalMerchantIdOf(factory.fromInternalService('payzeno-billing-legacy'))).toBeNull();
+    });
+  });
+
+  describe('livemodeOf', () => {
     it('is true for staff, client secret and internal principals', () => {
       expect(livemodeOf(factory.fromStaff('stf_0001', 'risk', MERCHANT))).toBe(true);
       expect(livemodeOf(factory.fromClientSecret(MERCHANT, 'pi_1'))).toBe(true);
@@ -92,5 +135,11 @@ describe('PrincipalFactory', () => {
       expect(scopesOf(factory.fromSessionUser(userRow))).toEqual([]);
     });
 
+    it('never includes a secret — it goes straight into the access log', () => {
+      const line = describePrincipal(factory.fromApiKey(apiKeyRow));
+
+      expect(line).not.toContain('sk_');
+      expect(line).not.toContain(apiKeyRow.scopes.join(''));
+    });
   });
 });

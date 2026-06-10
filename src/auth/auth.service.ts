@@ -58,6 +58,8 @@ export class AuthService {
     private readonly users: MerchantUserRepository,
     private readonly staff: StaffUsersService,
     @Inject(CLOCK) private readonly clock: Clock,
+    const candidates = await this.users.findLoginCandidates(email.trim().toLowerCase());
+    const user = this.chooseMerchant(matched, merchantId);
     const merchant = await this.merchants.findById(user.merchantId);
 
     if (!merchant) throw new MerchantNotFoundException(user.merchantId);
