@@ -33,6 +33,19 @@ describe('CsrfService', () => {
       expect(csrf.mint()).toMatch(/^[A-Za-z0-9_-]+$/);
     });
 
+    it('produces 32 bytes of randomness', () => {
+      // base64url of 32 bytes is 43 characters with no padding.
+      expect(csrf.mint()).toHaveLength(43);
+    });
+
+    it('never repeats', () => {
+      const tokens = new Set(Array.from({ length: 50 }, () => csrf.mint()));
+
+      expect(tokens.size).toBe(50);
+    });
+  });
+
+  describe('cookieOptions', () => {
     it('is NOT HttpOnly — the console reads it to populate X-Payzeno-CSRF', () => {
       expect(csrf.cookieOptions().httpOnly).toBe(false);
     });
@@ -49,8 +62,22 @@ describe('CsrfService', () => {
       expect(new CsrfService(config('development')).cookieOptions().secure).toBe(false);
     });
 
+    it('carries the configured 24h lifetime in milliseconds', () => {
+      expect(csrf.cookieOptions().maxAge).toBe(86_400 * 1000);
+    });
+  });
+
+  describe('assert', () => {
+    it.each(['GET', 'HEAD', 'OPTIONS', 'get', 'head'])('exempts %s', (method) => {
+      expect(() => csrf.assert(method, undefined, 'expected-token')).not.toThrow();
+    });
+
     it('passes when the header matches the cookie', () => {
       expect(() => csrf.assert('POST', 'the-token', 'the-token')).not.toThrow();
+    });
+
+    it('throws permission_denied when the header is absent', () => {
+      expect(() => csrf.assert('POST', undefined, 'the-token')).toThrow(PermissionDeniedException);
     });
 
     it('throws permission_denied when the header is wrong', () => {
@@ -67,9 +94,40 @@ describe('CsrfService', () => {
       expect(mismatch?.httpStatus).toBe(403);
     });
 
+    it('rejects a prefix of the expected token', () => {
+      // A length-tolerant compare would let `t` pass against `token`.
+      expect(() => csrf.assert('PATCH', 'the-tok', 'the-token')).toThrow(PermissionDeniedException);
+    });
+
+    it('rejects an empty header even when the expected token is empty', () => {
+      expect(() => csrf.assert('POST', '', '')).toThrow(PermissionDeniedException);
+    });
+  });
+
+  describe('readHeader', () => {
     it('reads the lowercase header name Node gives us', () => {
       expect(csrf.readHeader({ [CSRF_HEADER]: 'tok' })).toBe('tok');
     });
 
+    it('takes the first value when a client sent the header twice', () => {
+      expect(csrf.readHeader({ [CSRF_HEADER]: ['first', 'second'] })).toBe('first');
+    });
+
+    it('is undefined when absent', () => {
+      expect(csrf.readHeader({})).toBeUndefined();
+    });
+  });
+
+  it('exposes the configured cookie name', () => {
+    expect(csrf.name).toBe('pz_csrf');
+  });
+});
+
+function catchIt(fn: () => void): PermissionDeniedException | null {
+  try {
+    fn();
+    return null;
+  } catch (err) {
+    return err as PermissionDeniedException;
   }
 }

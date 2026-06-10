@@ -80,6 +80,13 @@ describe('RedisSessionStore', () => {
       );
     });
 
+    it('adds the session to the user reverse index', async () => {
+      await store.create(record(), TTL);
+
+      expect(pipeline.sadd).toHaveBeenCalledWith('sess:user:usr_0001', 'sess_aaa');
+      expect(pipeline.expire).toHaveBeenCalledWith('sess:user:usr_0001', TTL);
+    });
+
     it('indexes a staff session under its staff id', async () => {
       await store.create(
         record({ kind: 'staff', userId: null, staffId: 'stf_0001', staffRole: 'risk' }),
@@ -89,6 +96,15 @@ describe('RedisSessionStore', () => {
       expect(pipeline.sadd).toHaveBeenCalledWith('sess:user:stf_0001', 'sess_aaa');
     });
 
+    it('does both writes in one MULTI — a half-created session is unrevokable', async () => {
+      await store.create(record(), TTL);
+
+      expect(redis.multi).toHaveBeenCalledTimes(1);
+      expect(pipeline.exec).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('get', () => {
     it('parses the stored record', async () => {
       redis.get.mockResolvedValue(JSON.stringify(record()));
 
@@ -99,6 +115,24 @@ describe('RedisSessionStore', () => {
       await expect(store.get('sess_aaa')).resolves.toBeNull();
     });
 
+    it('drops and reports null for an unparseable record', async () => {
+      redis.get.mockResolvedValue('{"id":"sess_aaa"');
+
+      await expect(store.get('sess_aaa')).resolves.toBeNull();
+      expect(pipeline.del).toHaveBeenCalledWith('sess:sess_aaa');
+    });
+  });
+
+  describe('touch', () => {
+    it('rewrites the record with a fresh TTL and a new lastSeenAt', async () => {
+      redis.get.mockResolvedValue(JSON.stringify(record()));
+
+      await store.touch('sess_aaa', TTL);
+
+      const [, json] = pipeline.set.mock.calls[0];
+      expect(JSON.parse(json as string).lastSeenAtMs).toBeGreaterThan(record().lastSeenAtMs);
+    });
+
     it('slides the reverse index too, or the SET expires first', async () => {
       redis.get.mockResolvedValue(JSON.stringify(record()));
 
@@ -107,6 +141,32 @@ describe('RedisSessionStore', () => {
       expect(pipeline.expire).toHaveBeenCalledWith('sess:user:usr_0001', TTL);
     });
 
+    it('does nothing for an unknown session', async () => {
+      await store.touch('sess_gone', TTL);
+
+      expect(pipeline.set).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('destroy', () => {
+    it('deletes the record and removes it from the reverse index', async () => {
+      redis.get.mockResolvedValue(JSON.stringify(record()));
+
+      await store.destroy('sess_aaa');
+
+      expect(pipeline.del).toHaveBeenCalledWith('sess:sess_aaa');
+      expect(pipeline.srem).toHaveBeenCalledWith('sess:user:usr_0001', 'sess_aaa');
+    });
+
+    it('still deletes the key when the record has already gone', async () => {
+      await store.destroy('sess_aaa');
+
+      expect(pipeline.del).toHaveBeenCalledWith('sess:sess_aaa');
+      expect(pipeline.srem).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('destroyAllForUser', () => {
     it('deletes every indexed session and the index itself', async () => {
       redis.smembers.mockResolvedValue(['sess_a', 'sess_b']);
 

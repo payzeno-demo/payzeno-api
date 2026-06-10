@@ -25,6 +25,53 @@ import { subjectOf, type SessionRecord, type SessionStore } from './session.stor
 export class RedisSessionStore implements SessionStore {
   constructor(
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
+    @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
+  ) {}
+
+  private key(sessionId: string): string {
+    return redisKey('session', sessionId);
+  }
+
+  private userKey(userId: UserId): string {
+    return redisKey('session', 'user', userId);
+  }
+
+  async create(record: SessionRecord, ttlSec: number): Promise<void> {
+    await this.redis
+      .multi()
+      .set(this.key(record.id), JSON.stringify(record), 'EX', ttlSec)
+      .sadd(this.userKey(subjectOf(record)), record.id)
+      .expire(this.userKey(subjectOf(record)), ttlSec)
+      .exec();
+
+    this.logger.debug('session.created', {
+      session_id: record.id,
+      kind: record.kind,
+      subject: subjectOf(record),
+      merchant_id: record.merchantId,
+    });
+  }
+
+  async get(sessionId: string): Promise<SessionRecord | null> {
+    const raw = await this.redis.get(this.key(sessionId));
+    if (!raw) return null;
+
+    try {
+      return JSON.parse(raw) as SessionRecord;
+    } catch (err) {
+      // A record we cannot parse is a record we cannot trust. Drop it and re-authenticate.
+      this.logger.error('session.unparseable', err, { session_id: sessionId });
+      await this.destroy(sessionId);
+      return null;
+    }
+  }
+
+  /**
+   * Sliding expiry. The `lastSeenAtMs` write is deliberately not a read-modify-write under a
+   * lock — two concurrent requests racing to stamp the same second is not a correctness
+   * problem, and a lock on every authenticated request is.
+   */
+  async touch(sessionId: string, ttlSec: number): Promise<void> {
     const record = await this.get(sessionId);
     if (!record) return;
 
@@ -38,6 +85,19 @@ export class RedisSessionStore implements SessionStore {
 
   async destroy(sessionId: string): Promise<void> {
     const record = await this.get(sessionId);
+    const pipeline = this.redis.multi().del(this.key(sessionId));
+
+    if (record) {
+      pipeline.srem(this.userKey(subjectOf(record)), sessionId);
+    }
+
+    await pipeline.exec();
+  }
+
+  async destroyAllForUser(userId: UserId): Promise<number> {
+    const ids = await this.redis.smembers(this.userKey(userId));
+    if (ids.length === 0) return 0;
+
     const pipeline = this.redis.multi();
     for (const id of ids) {
       pipeline.del(this.key(id));
