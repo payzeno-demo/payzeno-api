@@ -48,6 +48,7 @@ export class ProcessorWebhookService {
     private readonly router: ProcessorRouter,
     private readonly charges: ChargesService,
     private readonly disputes: DisputesService,
+    private readonly refunds: RefundsService,
     private readonly publisher: OutboxEventPublisher,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
@@ -62,6 +63,17 @@ export class ProcessorWebhookService {
     const adapter = this.router.forAcquirer(acquirer);
     // Throws on a bad signature — deliberately not caught. Non-2xx makes the acquirer retry.
     const event: ProcessorWebhookEvent = adapter.parseWebhook(rawBody, signature);
+
+    const charge = await this.charges.findByProcessorReference(acquirer, event.networkTransactionId);
+    if (!charge) {
+      this.logger.info('processor_webhook_unmatched', {
+        acquirer,
+        kind: event.kind,
+        network_transaction_id: event.networkTransactionId,
+        occurred_at: event.occurredAt,
+      });
+      return;
+    }
 
     const raw = (event.raw ?? {}) as DisputePayload & RefundPayload;
 

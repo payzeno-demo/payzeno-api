@@ -30,6 +30,20 @@ export interface ParsedSignature {
 export class ProcessorSignatureVerifier {
   constructor(
     private readonly secretsByAcquirer: Readonly<Record<Acquirer, string>>,
+    private readonly clock: Clock,
+  ) {}
+
+  /** Throws `PermissionDeniedException` (403) on anything that is not a valid, fresh signature. */
+  assertValid(acquirer: Acquirer, rawBody: Buffer, header: string): void {
+    const parsed = this.parse(header);
+    const nowSeconds = Math.floor(this.clock.now().getTime() / 1000);
+
+    if (Math.abs(nowSeconds - parsed.timestamp) > SIGNATURE_TOLERANCE_SECONDS) {
+      throw new PermissionDeniedException(
+        `${acquirer} webhook signature is outside the ${SIGNATURE_TOLERANCE_SECONDS}s tolerance`,
+      );
+    }
+
     const expected = this.sign(acquirer, rawBody, parsed.timestamp);
     if (!constantTimeEquals(expected, parsed.signature)) {
       throw new PermissionDeniedException(`${acquirer} webhook signature did not verify`);

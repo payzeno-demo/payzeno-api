@@ -146,6 +146,13 @@ describe('ProcessorAdapter contract', () => {
       expect(['worldflow', 'nordpay']).toContain(c.adapter.acquirer);
     });
 
+    it('declares at least one supported currency', () => {
+      expect(SUPPORTED_CURRENCIES_BY_ACQUIRER[c.adapter.acquirer].length).toBeGreaterThan(0);
+      expect(adapterSupports(c.adapter, SUPPORTED_CURRENCIES_BY_ACQUIRER[c.adapter.acquirer][0])).toBe(
+        true,
+      );
+    });
+
     it('authorizes and returns a non-empty processor reference', async () => {
       c.primeAuthorize();
 
@@ -182,6 +189,18 @@ describe('ProcessorAdapter contract', () => {
       expect(Date.parse(result.capturedAt)).not.toBeNaN();
     });
 
+    it('voids an authorisation', async () => {
+      c.primeVoid();
+
+      const result = await c.adapter.void({
+        networkTransactionId: 'ntx_contract01',
+        idempotencyKey: 'void:ch_contract00001',
+      });
+
+      expect(result.voided).toBe(true);
+      expect(result.processorReference).toEqual(expect.any(String));
+    });
+
     it('refunds and reports a null failure reason on success', async () => {
       c.primeRefund();
 
@@ -197,5 +216,20 @@ describe('ProcessorAdapter contract', () => {
       expect(result.failureReason).toBeNull();
     });
 
+    it('reports health as a boolean, never by throwing', async () => {
+      c.primeHealth();
+
+      await expect(c.adapter.healthCheck()).resolves.toEqual(expect.any(Boolean));
+    });
+
+    it('refuses a webhook whose signature does not verify', () => {
+      expect(() =>
+        c.adapter.parseWebhook(Buffer.from('{"event_type":"chargeback.opened"}'), 't=1,v1=deadbeef'),
+      ).toThrow();
+    });
+  });
+
+  it('covers all three concretes interfaces.md §2.2 names', () => {
+    expect(buildCases()).toHaveLength(3);
   });
 });

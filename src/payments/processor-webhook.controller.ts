@@ -45,6 +45,7 @@ export class ProcessorWebhookController {
   @HttpCode(202)
   @UseGuards(ProcessorSignatureGuard)
   @RateLimit(600, 60)
+  @AuditLog('processor.webhook', { resourceType: 'charge' })
   async receive(@Param('acquirer') acquirer: Acquirer, @Req() req: RawBodyRequest): Promise<void> {
     const signature = String(req.headers['x-payzeno-signature'] ?? '');
     const rawBody = req.rawBody ?? Buffer.from(JSON.stringify(req.body ?? {}));
