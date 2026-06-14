@@ -27,6 +27,12 @@ import { isSerializationFailure, mapTypeOrmError } from './typeorm-error.mapper'
  */
 const active = new AsyncLocalStorage<EntityManager>();
 
+export interface TransactionOptions {
+  /** Retries on 40001/40P01 only. Never on a business exception. */
+  retries?: number;
+  retryBaseDelayMs?: number;
+}
+
 export class TransactionManager {
   constructor(private readonly dataSource: DataSource) {}
 
