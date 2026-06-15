@@ -106,7 +106,23 @@ export class BankAccountRepository extends PayzenoRepository<BankAccountEntity> 
 export class BankAccountsService extends BaseService<BankAccountEntity> {
   constructor(
     private readonly accounts: BankAccountRepository,
+    private readonly transactions: TransactionManager,
     @Inject(CLOCK) private readonly clock: Clock,
+    const page = await this.paginate(query, scope);
+    return {
+      data: page.data.map((account) => account.toBankAccount()),
+      has_more: page.has_more,
+      next_cursor: page.next_cursor,
+    };
+  }
+
+  async get(scope: MerchantScope, bankAccountId: string): Promise<BankAccount> {
+    const account = await this.findOneOrThrow(bankAccountId, scope);
+    return account.toBankAccount();
+  }
+
+  /** Internal read for `InternalController#getBankAccount` — the ledger's stale-projection fallback. */
+  async getForInternal(bankAccountId: string): Promise<BankAccountEntity> {
     const saved = await this.transactions.runInTransaction(async (manager) => {
       if (account.isDefault) {
         await this.accounts.clearDefault(scope.merchantId, account.currency, scope.livemode, manager);
@@ -177,5 +193,33 @@ export class BankAccountsService extends BaseService<BankAccountEntity> {
   }
 
   private build(scope: MerchantScope, request: CreateBankAccountRequest): BankAccountEntity {
+    const now = this.clock.now();
+
+    account.id = this.ids.bankAccountId();
+    account.merchantId = scope.merchantId;
+    account.livemode = scope.livemode;
+    account.country = request.country.toUpperCase();
+    account.currency = request.currency;
+    account.scheme = request.scheme;
+    account.accountNumberToken = request.bank_account_token;
+    account.accountHolderName = request.account_holder_name.trim();
+    account.bankName = 'Pending validation';
+    account.status = 'new';
+    account.isDefault = request.is_default ?? false;
+    account.createdAt = now;
+    account.updatedAt = now;
+
+    // The vault returns the last-four values with the token; until the validation callback
+    // lands they are null, and `toBankAccount()` renders '0000' rather than leaking undefined.
+    account.lastFour = null;
+    account.routingLastFour = null;
+    account.ibanLastFour = null;
+    account.bic = null;
+    account.sortCodeLastFour = null;
+
+    return account;
+  }
+
+  private assertSchemeMatchesCurrency(scheme: BankAccountScheme, currency: CurrencyCode): void {
   }
 }
