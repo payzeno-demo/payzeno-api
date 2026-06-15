@@ -88,6 +88,22 @@ export class MerchantsService extends BaseService<MerchantEntity> {
 
   /** The row. `PayoutsService.create` and `ChargeCaptureService` both come through here. */
   async getById(merchantId: MerchantId): Promise<MerchantEntity> {
+    const merchant = await this.merchants.findById(merchantId);
+    if (!merchant) throw new MerchantNotFoundException(merchantId);
+    return merchant;
+  }
+
+  async get(merchantId: MerchantId): Promise<Merchant> {
+    return toMerchantResponse(await this.getById(merchantId));
+  }
+
+  /** Bus-side read. Null, not a throw — see the header. */
+  async findInternal(merchantId: MerchantId): Promise<MerchantEntity | null> {
+    return this.merchants.findById(merchantId);
+  }
+
+  /** Staff list. There is no merchant-scoped merchant list — a merchant sees exactly itself. */
+  async listForStaff(query: ListQuery, status?: MerchantStatus): Promise<Paginated<Merchant>> {
     const before = await this.getById(merchantId);
     const merchant = await this.getById(merchantId);
     const updated = await this.transactions.runInTransaction(async (manager) => {
