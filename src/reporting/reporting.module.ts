@@ -15,3 +15,12 @@ import { PaymentsModule } from '../payments/payments.module';
 
 import { ReportingController } from './reporting.controller';
 import { ReportingService } from './reporting.service';
+import { VolumeTimeseriesQuery } from './volume-timeseries.query';
+
+@Module({
+  imports: [CommonModule, AuthModule, LedgerModule, PaymentsModule],
+  controllers: [ReportingController],
+  providers: [ReportingService, VolumeTimeseriesQuery],
+  exports: [ReportingService],
+})
+export class ReportingModule {}

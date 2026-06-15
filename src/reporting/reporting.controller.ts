@@ -28,6 +28,10 @@ import { ReportingService } from './reporting.service';
 const WINDOWS: readonly ReportingWindow[] = ['24h', '7d', '30d'];
 const INTERVALS: readonly TimeseriesInterval[] = ['hour', 'day'];
 
+@Controller('v1/reporting')
+@MerchantScoped()
+@UseGuards(SessionGuard)
+@UseInterceptors(SerializerInterceptor)
 export class ReportingController {
   constructor(private readonly reporting: ReportingService) {}
 
@@ -92,6 +96,12 @@ export class ReportingController {
  * rather than by a DTO — three primitives do not earn a class. Everything throws the same
  * `ValidationException` the pipe would have, so the 422 body is identical either way.
  */
+function invalid(path: string, message: string): ValidationException {
+  return new ValidationException('Validation failed', [
+    { path, code: 'invalid_value', message },
+  ]);
+}
+
 function assertWindow(value: string): ReportingWindow {
   if (!(WINDOWS as readonly string[]).includes(value)) {
     throw invalid('window', `must be one of ${WINDOWS.join(', ')}`);
@@ -106,11 +116,28 @@ function assertInterval(value: string): TimeseriesInterval {
   return value as TimeseriesInterval;
 }
 
+function assertCurrency(value: string): CurrencyCode {
+  if (!/^[A-Z]{3}$/.test(value)) {
+    throw invalid('currency', 'must be a three-letter ISO 4217 code');
+  }
+  return value as CurrencyCode;
+}
+
 function assertTimestamp(field: string, value: string): string {
   if (!value || Number.isNaN(Date.parse(value))) {
     throw invalid(field, 'must be an RFC 3339 timestamp');
   }
   return value;
+}
+
+function merchantOf(principal: AuthPrincipal): MerchantId {
+  if (principal.kind === 'dashboard_session') {
+    return principal.merchant_id;
+  }
+  if (principal.kind === 'staff_session' && principal.acting_merchant_id) {
+    return principal.acting_merchant_id;
+  }
+  throw invalid('merchant_id', 'no merchant in scope for this principal');
 }
 
 function livemodeOf(principal: AuthPrincipal): boolean {
