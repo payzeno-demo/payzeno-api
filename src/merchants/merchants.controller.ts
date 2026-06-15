@@ -71,6 +71,7 @@ export class MerchantsController extends BaseController {
 
   @Get(':merchantId')
   @ApiVersion('2026-01-15')
+  @RequiredScopes('merchants:read')
   async get(@Param('merchantId') merchantId: MerchantId): Promise<Merchant> {
     return this.merchants.get(merchantId);
   }
@@ -80,6 +81,7 @@ export class MerchantsController extends BaseController {
    * class-validator has no principal — and a silent drop would show the merchant a reserve
    * percentage they set and we ignored.
    */
+  @Patch(':merchantId')
   @Roles('owner', 'admin')
   @Idempotent()
   @AuditLog('merchant.update', { resourceType: 'merchant', idParam: 'merchantId', captureBefore: true })
@@ -96,4 +98,29 @@ export class MerchantsController extends BaseController {
   @Post(':merchantId/status')
   @StaffOnly('risk')
   @Idempotent()
+  @AuditLog('merchant.status_change', { resourceType: 'merchant', idParam: 'merchantId' })
+  async changeStatus(
+    @CurrentPrincipal() principal: AuthPrincipal,
+    @Param('merchantId') merchantId: MerchantId,
+    @Body() body: ChangeMerchantStatusDto,
+  ): Promise<Merchant> {
+    return this.merchants.changeStatus(
+      merchantId,
+      body.status as MerchantStatus,
+      body.reason,
+      describePrincipal(principal),
+    );
+  }
+
+  private assertStaffOnlyFields(principal: AuthPrincipal, body: UpdateMerchantDto): void {
+    if (this.isStaff(principal)) return;
+
+    const offending = STAFF_ONLY_MERCHANT_FIELDS.filter((field) => body[field] !== undefined);
+
+    if (offending.length > 0) {
+      throw new PermissionDeniedException('These fields may only be changed by Payzeno', {
+        fields: offending.join(','),
+      });
+    }
+  }
 }

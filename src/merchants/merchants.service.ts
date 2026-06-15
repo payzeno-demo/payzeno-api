@@ -106,6 +106,25 @@ export class MerchantsService extends BaseService<MerchantEntity> {
 
   /** Staff list. There is no merchant-scoped merchant list — a merchant sees exactly itself. */
   async listForStaff(query: ListQuery, status?: MerchantStatus): Promise<Paginated<Merchant>> {
+    const page = await this.merchants.listForStaff(query, status);
+    return {
+      data: page.data.map(toMerchantResponse),
+      has_more: page.has_more,
+      next_cursor: page.next_cursor,
+    };
+  }
+
+  /**
+   * `PATCH /v1/merchants/:merchantId`.
+   *
+   * Chain: MerchantsController.update → here → TransactionManager.runInTransaction
+   *        → MerchantRepository.applyPatch → OutboxEventPublisher.publish('merchant.updated')
+   */
+  async update(
+    merchantId: MerchantId,
+    request: UpdateMerchantRequest,
+    actor: string,
+  ): Promise<Merchant> {
     const before = await this.getById(merchantId);
     const merchant = await this.getById(merchantId);
     const updated = await this.transactions.runInTransaction(async (manager) => {

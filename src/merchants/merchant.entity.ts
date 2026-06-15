@@ -43,6 +43,9 @@ export class MerchantEntity extends BaseEntity {
   @Column({ name: 'legal_name', type: 'text' })
   legalName!: string;
 
+  @Column({ name: 'default_currency', type: 'char', length: 3, transformer: currencyTransformer })
+  defaultCurrency!: CurrencyCode;
+
   @Column({ name: 'status', type: 'text', default: 'pending_review' })
   status!: MerchantStatus;
 
@@ -70,8 +73,14 @@ export class MerchantEntity extends BaseEntity {
   @Column({ name: 'livemode', type: 'boolean', default: false })
   livemode!: boolean;
 
+  @Column({ name: 'metadata', type: 'jsonb', default: () => "'{}'::jsonb" })
+  metadata!: Metadata;
+
   @OneToMany(() => ApiKeyEntity, (key) => key.merchant)
   apiKeys?: ApiKeyEntity[];
+
+  @OneToMany(() => BankAccountEntity, (account) => account.merchant)
+  bankAccounts?: BankAccountEntity[];
 
   /** May this merchant take new payments? `restricted` still can — it just cannot pay out. */
   canCharge(): boolean {
