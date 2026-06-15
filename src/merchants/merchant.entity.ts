@@ -43,11 +43,22 @@ export class MerchantEntity extends BaseEntity {
   @Column({ name: 'legal_name', type: 'text' })
   legalName!: string;
 
+  @Column({ name: 'default_currency', type: 'char', length: 3, transformer: currencyTransformer })
+  defaultCurrency!: CurrencyCode;
+
   @Column({ name: 'status', type: 'text', default: 'pending_review' })
   status!: MerchantStatus;
 
+  /** 4-digit merchant category code. 3000-3999 / 7011 / 7512 are the 30-day-auth set. */
+  @Column({ name: 'mcc', type: 'char', length: 4 })
+  mcc!: string;
+
   @Column({ name: 'payout_schedule', type: 'text', default: 'daily' })
   payoutSchedule!: PayoutSchedule;
+
+  /** Drives `reserve_hold.release_on` in the ledger. 0 = no rolling reserve. */
+  @Column({ name: 'reserve_hold_days', type: 'integer', default: 0 })
+  reserveHoldDays!: number;
 
   @Column({ name: 'platform_fee_fixed_minor', type: 'bigint', default: 30, transformer: requiredMinorUnitsTransformer })
   platformFeeFixedMinor!: MinorUnits;
@@ -62,8 +73,14 @@ export class MerchantEntity extends BaseEntity {
   @Column({ name: 'livemode', type: 'boolean', default: false })
   livemode!: boolean;
 
+  @Column({ name: 'metadata', type: 'jsonb', default: () => "'{}'::jsonb" })
+  metadata!: Metadata;
+
   @OneToMany(() => ApiKeyEntity, (key) => key.merchant)
   apiKeys?: ApiKeyEntity[];
+
+  @OneToMany(() => BankAccountEntity, (account) => account.merchant)
+  bankAccounts?: BankAccountEntity[];
 
   /** May this merchant take new payments? `restricted` still can — it just cannot pay out. */
   canCharge(): boolean {
@@ -81,4 +98,8 @@ export class MerchantEntity extends BaseEntity {
    * targets that same MCC set — a flat 7-day expiry would void the holds the feature depends
    * on. `ChargeExpiryPolicy` is the one that applies this.
    */
+  hasExtendedAuthWindow(): boolean {
+    const code = Number.parseInt(this.mcc, 10);
+    return (code >= 3000 && code <= 3999) || code === 7011 || code === 7512;
+  }
 }

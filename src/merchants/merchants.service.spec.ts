@@ -141,6 +141,14 @@ describe('MerchantsService', () => {
     });
   });
 
+  describe('findInternal', () => {
+    it('returns null instead of throwing — a duplicate against a closed merchant is a log line', async () => {
+      merchants.findById.mockResolvedValue(null);
+
+      await expect(service.findInternal(TEST_MERCHANT_ID)).resolves.toBeNull();
+    });
+  });
+
   describe('update', () => {
     it('writes only the keys the request actually carried', async () => {
       await service.update(TEST_MERCHANT_ID, { display_name: 'Aurora' }, 'usr_owner');
@@ -218,6 +226,52 @@ describe('MerchantsService', () => {
     });
   });
 
+  describe('changeStatus', () => {
+    it('runs the transition through the state machine before writing', async () => {
+      merchants.findById.mockResolvedValue(row({ status: 'active' }));
+
+      await service.changeStatus(TEST_MERCHANT_ID, 'restricted', 'dispute rate', 'stf_risk');
+
+      expect(merchants.transitionStatus).toHaveBeenCalledWith(
+        TEST_MERCHANT_ID,
+        'active',
+        'restricted',
+        expect.anything(),
+      );
+    });
+
+    it('refuses an illegal target without touching the database', async () => {
+      merchants.findById.mockResolvedValue(row({ status: 'closed' }));
+
+      await expect(
+        service.changeStatus(TEST_MERCHANT_ID, 'active', 'oops', 'stf_admin'),
+      ).rejects.toBeInstanceOf(InvalidMerchantTransitionException);
+
+      expect(merchants.transitionStatus).not.toHaveBeenCalled();
+    });
+
+    it('turns a lost race — zero rows affected — into the same 409', async () => {
+      merchants.transitionStatus.mockResolvedValue(0);
+
+      await expect(
+        service.changeStatus(TEST_MERCHANT_ID, 'suspended', 'fraud', 'stf_risk'),
+      ).rejects.toBeInstanceOf(InvalidMerchantTransitionException);
+    });
+
+    it('emits merchant.status_changed carrying both the previous and the new status', async () => {
+      await service.changeStatus(TEST_MERCHANT_ID, 'suspended', 'fraud review', 'stf_risk');
+
+      const [type, payload] = events.publish.mock.calls[0];
+      expect(type).toBe('merchant.status_changed');
+      expect(payload).toMatchObject({
+        previous_status: 'active',
+        status: 'suspended',
+        reason: 'fraud review',
+        changed_by: 'stf_risk',
+      });
+    });
+  });
+
   describe('restrictForRisk', () => {
     it('goes through changeStatus so the event and the audit row still happen', async () => {
       await service.restrictForRisk(TEST_MERCHANT_ID, 137);
@@ -229,6 +283,16 @@ describe('MerchantsService', () => {
         changed_by: 'system:risk_evaluation',
       });
       expect(String(payload.reason)).toContain('137 bps');
+    });
+  });
+
+  describe('listForStaff', () => {
+    it('maps rows to the wire shape and preserves the page envelope', async () => {
+      const page = await service.listForStaff({ limit: 10 }, 'active');
+
+      expect(merchants.listForStaff).toHaveBeenCalledWith({ limit: 10 }, 'active');
+      expect(page.has_more).toBe(false);
+      expect(page.data[0].object).toBe('merchant');
     });
   });
 

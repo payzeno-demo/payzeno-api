@@ -60,6 +60,8 @@ export class MerchantsService extends BaseService<MerchantEntity> {
   constructor(
     private readonly merchants: MerchantRepository,
     private readonly transactions: TransactionManager,
+    @Inject(EVENT_PUBLISHER) private readonly events: EventPublisher,
+    @Inject(CLOCK) private readonly clock: Clock,
     @Inject(PAYZENO_LOGGER) logger: PayzenoLogger,
   ) {
     super(merchants, logger);
@@ -88,6 +90,41 @@ export class MerchantsService extends BaseService<MerchantEntity> {
 
   /** The row. `PayoutsService.create` and `ChargeCaptureService` both come through here. */
   async getById(merchantId: MerchantId): Promise<MerchantEntity> {
+    const merchant = await this.merchants.findById(merchantId);
+    if (!merchant) throw new MerchantNotFoundException(merchantId);
+    return merchant;
+  }
+
+  async get(merchantId: MerchantId): Promise<Merchant> {
+    return toMerchantResponse(await this.getById(merchantId));
+  }
+
+  /** Bus-side read. Null, not a throw — see the header. */
+  async findInternal(merchantId: MerchantId): Promise<MerchantEntity | null> {
+    return this.merchants.findById(merchantId);
+  }
+
+  /** Staff list. There is no merchant-scoped merchant list — a merchant sees exactly itself. */
+  async listForStaff(query: ListQuery, status?: MerchantStatus): Promise<Paginated<Merchant>> {
+    const page = await this.merchants.listForStaff(query, status);
+    return {
+      data: page.data.map(toMerchantResponse),
+      has_more: page.has_more,
+      next_cursor: page.next_cursor,
+    };
+  }
+
+  /**
+   * `PATCH /v1/merchants/:merchantId`.
+   *
+   * Chain: MerchantsController.update → here → TransactionManager.runInTransaction
+   *        → MerchantRepository.applyPatch → OutboxEventPublisher.publish('merchant.updated')
+   */
+  async update(
+    merchantId: MerchantId,
+    request: UpdateMerchantRequest,
+    actor: string,
+  ): Promise<Merchant> {
     const before = await this.getById(merchantId);
     const merchant = await this.getById(merchantId);
     const updated = await this.transactions.runInTransaction(async (manager) => {
