@@ -60,6 +60,7 @@ export class MerchantsController extends BaseController {
 
   @Post()
   @StaffOnly('risk')
+  @Idempotent()
   @AuditLog('merchant.create', { resourceType: 'merchant' })
   async create(
     @CurrentPrincipal() principal: AuthPrincipal,
@@ -68,6 +69,8 @@ export class MerchantsController extends BaseController {
     return this.merchants.create(body, livemodeOf(principal), describePrincipal(principal));
   }
 
+  @Get(':merchantId')
+  @ApiVersion('2026-01-15')
   async get(@Param('merchantId') merchantId: MerchantId): Promise<Merchant> {
     return this.merchants.get(merchantId);
   }
@@ -79,6 +82,16 @@ export class MerchantsController extends BaseController {
    */
   @Roles('owner', 'admin')
   @Idempotent()
+  @AuditLog('merchant.update', { resourceType: 'merchant', idParam: 'merchantId', captureBefore: true })
+  async update(
+    @CurrentPrincipal() principal: AuthPrincipal,
+    @Param('merchantId') merchantId: MerchantId,
+    @Body() body: UpdateMerchantDto,
+  ): Promise<Merchant> {
+    this.assertStaffOnlyFields(principal, body);
+    return this.merchants.update(merchantId, body, describePrincipal(principal));
+  }
+
   /** Staff (risk). Emits `merchant.status_changed`; the ledger and the legacy biller consume it. */
   @Post(':merchantId/status')
   @StaffOnly('risk')

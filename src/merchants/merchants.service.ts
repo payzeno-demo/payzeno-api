@@ -60,6 +60,8 @@ export class MerchantsService extends BaseService<MerchantEntity> {
   constructor(
     private readonly merchants: MerchantRepository,
     private readonly transactions: TransactionManager,
+    @Inject(EVENT_PUBLISHER) private readonly events: EventPublisher,
+    @Inject(CLOCK) private readonly clock: Clock,
     @Inject(PAYZENO_LOGGER) logger: PayzenoLogger,
   ) {
     super(merchants, logger);
