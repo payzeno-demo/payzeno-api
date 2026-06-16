@@ -72,6 +72,7 @@ export class ApiKeyRepository extends PayzenoRepository<ApiKeyEntity> {
 @Injectable()
 export class ApiKeysService extends BaseService<ApiKeyEntity> {
   constructor(
+    private readonly keys: ApiKeyRepository,
     @Inject(PAYZENO_LOGGER) logger: PayzenoLogger,
   ) {
     super(keys, logger);
@@ -110,5 +111,49 @@ export class ApiKeysService extends BaseService<ApiKeyEntity> {
   ): Promise<CreateApiKeyResponse> {
     const minted = await this.hasher.mint();
     const now = this.clock.now();
+    const mode: ApiKeyMode = request.mode;
+
+    key.id = this.ids.apiKeyId();
+    key.merchantId = merchantId;
+    key.name = request.name.trim();
+    key.mode = mode;
+    key.prefix = `sk_${mode}_`;
+    key.lookupHash = minted.lookupHash;
+    key.secretHash = minted.secretHash;
+    key.lastFour = minted.lastFour;
+    key.scopes = (request.scopes ?? [...DEFAULT_SCOPES]) as ApiKeyScope[];
+    key.livemode = mode === 'live';
+    key.revokedAt = null;
+    key.createdAt = now;
+    key.updatedAt = now;
+
+    if (key.livemode !== scope.livemode) {
+      this.logger.debug('api_key.mode_differs_from_session', {
+        merchant_id: merchantId,
+        mode,
+        session_livemode: scope.livemode,
+      });
+    }
+
+    await this.keys.insertMapped(key);
+
+    this.logger.info('api_key.created', {
+      merchant_id: merchantId,
+      api_key_id: key.id,
+      mode,
+      scopes: key.scopes.length,
+    });
+
+    return {
+      ...key.toApiKey(),
+      secret: this.hasher.formatToken(mode, key.id, minted.secret),
+    };
+  }
+
+  /**
+   * Revocation is a timestamp, not a DELETE: `audit_log.actor_id` points at these ids and a
+   * deleted key makes every action it ever took unattributable.
+   */
+  async revoke(merchantId: MerchantId, apiKeyId: string): Promise<void> {
   }
 }
