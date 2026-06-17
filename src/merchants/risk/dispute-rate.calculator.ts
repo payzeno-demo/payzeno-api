@@ -26,6 +26,19 @@ export interface DisputeRateInput {
   disputesOpened: number;
 }
 
+export interface DisputeRateResult {
+  bps: number;
+  capturedCharges: number;
+  disputesOpened: number;
+  /** False when the sample is too small to act on. See MINIMUM_SAMPLE. */
+  actionable: boolean;
+}
+
+/**
+ * Below this many captured charges the rate is noise: one dispute out of nine is 1111 bps and
+ * means nothing. The schemes use 100 transactions; we use 50 because our long tail is smaller
+ * and waiting for 100 means a bad actor gets a second month.
+ */
 export const MINIMUM_SAMPLE = 50;
 
 /** Under this, a restricted merchant is eligible to be reinstated. Hysteresis, on purpose. */
