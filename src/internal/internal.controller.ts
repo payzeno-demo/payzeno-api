@@ -73,6 +73,11 @@ export class MarkChargeSettledDto implements MarkChargeSettledInput {
   @IsISO8601({ strict: true })
   settled_at!: IsoTimestamp;
 
+  @IsPayzenoId('txn_')
+  transaction_id!: string;
+}
+
+export class CreateSupportTaskDto implements CreateSupportTaskInput {
   @IsPayzenoId('mch_')
   merchant_id!: MerchantId;
 
@@ -81,6 +86,7 @@ export class MarkChargeSettledDto implements MarkChargeSettledInput {
   @IsIn(['low', 'medium', 'high', 'critical'])
   severity!: 'low' | 'medium' | 'high' | 'critical';
 
+  @IsString()
   @IsString()
   @MaxLength(20_000)
   body!: string;
@@ -98,6 +104,8 @@ export class MarkChargeSettledDto implements MarkChargeSettledInput {
 @Controller('internal/v1')
 @UseGuards(InternalServiceGuard)
 export class InternalController {
+  constructor(private readonly internal: InternalService) {}
+
   @InternalOnly('payzeno-ledger', 'payzeno-billing-legacy')
   async getMerchant(
     @Param('merchantId') merchantId: MerchantId,
