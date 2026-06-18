@@ -170,3 +170,22 @@ export class LedgerEventsConsumer extends BaseEventConsumer implements OnModuleI
     } else if (completion) {
       this.logger.info('settlement.chunk_recorded', {
         batch_id: payload.batch_id,
+        run_id: payload.run_id,
+        chunk_index: payload.chunk_index,
+        missing: completion.missingChunks().join(','),
+        source_event_id: sourceEventId,
+      });
+    }
+  }
+
+  /**
+   * arc INC. The ledger refused a duplicate posting; we want the evidence on the merchant's
+   * audit trail either way, and a human on it when the merchant is one of the
+   * capture-at-settlement ones — those are the merchants whose cardholder actually saw two
+   * charges rather than two ledger rows.
+   *
+   * `charge_id` and `merchant_id` are nullable on purpose (data-model §3.5): an orphaned
+   * reconciliation item has neither, and dropping the event on the floor because we could
+   * not resolve a charge is what made the first hour of PAY-2041 so quiet.
+   */
+  private async onDuplicateDetected(

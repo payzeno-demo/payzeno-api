@@ -132,3 +132,25 @@ export abstract class BaseEventConsumer {
     }
 
     const started = Date.now();
+    try {
+      const handled = await this.transactions.runInTransaction(async (tx) => {
+        const claimed = await this.claimEvent(event.id, tx);
+        if (!claimed) {
+          return false;
+        }
+        await this.handle(event, tx);
+        return true;
+      });
+
+      await this.acknowledge(message);
+      this.logger.info(handled ? 'consumer.handled' : 'consumer.duplicate_skipped', {
+        consumer: this.consumerName,
+        event_id: event.id,
+        type: event.type,
+        duration_ms: Date.now() - started,
+      });
+    } catch (err) {
+      this.logger.error('consumer.handler_failed', err, {
+        consumer: this.consumerName,
+        event_id: event.id,
+        type: event.type,
