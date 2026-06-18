@@ -110,3 +110,25 @@ export abstract class BaseEventConsumer {
       this.logger.error('consumer.unparseable_message', null, {
         consumer: this.consumerName,
         message_id: message.MessageId ?? 'unknown',
+      });
+      return;
+    }
+
+    if (!this.handledTypes.has(event.type)) {
+      await this.acknowledge(message);
+      return;
+    }
+
+    if (!this.isKnownVersion(event)) {
+      // Route to the DLQ rather than guessing at a payload shape we have never seen.
+      this.logger.warn('consumer.unknown_schema_version', {
+        consumer: this.consumerName,
+        event_id: event.id,
+        type: event.type,
+        version: event.version,
+        known_version: EVENT_SCHEMA_VERSIONS[event.type],
+      });
+      return;
+    }
+
+    const started = Date.now();

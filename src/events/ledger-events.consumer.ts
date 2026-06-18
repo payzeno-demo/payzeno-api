@@ -132,3 +132,22 @@ export class LedgerEventsConsumer extends BaseEventConsumer implements OnModuleI
     const marked = await this.charges.markSettledFromBatch(tx, payload.settled_charge_ids, {
       settlementBatchId: payload.batch_id,
       settledAt: payload.completed_at,
+    });
+
+    await tx.query(
+      `insert into settlement_completion
+         (batch_id, run_id, chunk_count, chunks_seen, charges_marked, created_at, updated_at)
+       values ($1, $2, $3, array[$4::smallint], $5, now(), now())
+       on conflict (batch_id, run_id) do update
+          set chunks_seen = (
+                select array_agg(distinct c order by c)
+                  from unnest(settlement_completion.chunks_seen || excluded.chunks_seen) as c
+              ),
+              charges_marked = settlement_completion.charges_marked + excluded.charges_marked,
+              updated_at = now()
+        where not (excluded.chunks_seen <@ settlement_completion.chunks_seen)`,
+      [payload.batch_id, payload.run_id, payload.chunk_count, payload.chunk_index, marked],
+    );
+
+    const completion = await tx.findOneBy(SettlementCompletion, {
+      batchId: payload.batch_id,
