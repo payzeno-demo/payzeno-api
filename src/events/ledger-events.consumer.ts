@@ -151,3 +151,22 @@ export class LedgerEventsConsumer extends BaseEventConsumer implements OnModuleI
 
     const completion = await tx.findOneBy(SettlementCompletion, {
       batchId: payload.batch_id,
+      runId: payload.run_id,
+    });
+
+    if (completion && completion.completedAt === null && completion.hasAllChunks()) {
+      await tx.update(
+        SettlementCompletion,
+        { batchId: payload.batch_id, runId: payload.run_id },
+        { completedAt: new Date(payload.completed_at), updatedAt: new Date() },
+      );
+      this.logger.info('settlement.batch_complete', {
+        batch_id: payload.batch_id,
+        run_id: payload.run_id,
+        chunks: payload.chunk_count,
+        charges_marked: completion.chargesMarked + marked,
+        source_event_id: sourceEventId,
+      });
+    } else if (completion) {
+      this.logger.info('settlement.chunk_recorded', {
+        batch_id: payload.batch_id,
