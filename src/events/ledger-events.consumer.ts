@@ -189,3 +189,22 @@ export class LedgerEventsConsumer extends BaseEventConsumer implements OnModuleI
    * not resolve a charge is what made the first hour of PAY-2041 so quiet.
    */
   private async onDuplicateDetected(
+    payload: SettlementDuplicateDetectedPayload,
+    sourceEventId: string,
+    tx: EntityManager,
+  ): Promise<void> {
+    await this.audit.record(tx, {
+      merchantId: payload.merchant_id,
+      actorType: 'system',
+      actorId: 'payzeno-ledger',
+      action: 'settlement.duplicate_detected',
+      resourceType: 'charge',
+      resourceId: payload.charge_id,
+      before: null,
+      after: {
+        batch_id: payload.batch_id,
+        item_id: payload.item_id,
+        idempotency_key: payload.idempotency_key,
+        existing_transaction_id: payload.existing_transaction_id,
+        detected_by: payload.detected_by,
+        amount_minor: payload.amount_minor,
