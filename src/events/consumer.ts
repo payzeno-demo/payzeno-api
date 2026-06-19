@@ -110,3 +110,47 @@ export abstract class BaseEventConsumer {
       this.logger.error('consumer.unparseable_message', null, {
         consumer: this.consumerName,
         message_id: message.MessageId ?? 'unknown',
+      });
+      return;
+    }
+
+    if (!this.handledTypes.has(event.type)) {
+      await this.acknowledge(message);
+      return;
+    }
+
+    if (!this.isKnownVersion(event)) {
+      // Route to the DLQ rather than guessing at a payload shape we have never seen.
+      this.logger.warn('consumer.unknown_schema_version', {
+        consumer: this.consumerName,
+        event_id: event.id,
+        type: event.type,
+        version: event.version,
+        known_version: EVENT_SCHEMA_VERSIONS[event.type],
+      });
+      return;
+    }
+
+    const started = Date.now();
+    try {
+      const handled = await this.transactions.runInTransaction(async (tx) => {
+        const claimed = await this.claimEvent(event.id, tx);
+        if (!claimed) {
+          return false;
+        }
+        await this.handle(event, tx);
+        return true;
+      });
+
+      await this.acknowledge(message);
+      this.logger.info(handled ? 'consumer.handled' : 'consumer.duplicate_skipped', {
+        consumer: this.consumerName,
+        event_id: event.id,
+        type: event.type,
+        duration_ms: Date.now() - started,
+      });
+    } catch (err) {
+      this.logger.error('consumer.handler_failed', err, {
+        consumer: this.consumerName,
+        event_id: event.id,
+        type: event.type,

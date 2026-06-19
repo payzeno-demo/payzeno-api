@@ -132,3 +132,79 @@ export class LedgerEventsConsumer extends BaseEventConsumer implements OnModuleI
     const marked = await this.charges.markSettledFromBatch(tx, payload.settled_charge_ids, {
       settlementBatchId: payload.batch_id,
       settledAt: payload.completed_at,
+    });
+
+    await tx.query(
+      `insert into settlement_completion
+         (batch_id, run_id, chunk_count, chunks_seen, charges_marked, created_at, updated_at)
+       values ($1, $2, $3, array[$4::smallint], $5, now(), now())
+       on conflict (batch_id, run_id) do update
+          set chunks_seen = (
+                select array_agg(distinct c order by c)
+                  from unnest(settlement_completion.chunks_seen || excluded.chunks_seen) as c
+              ),
+              charges_marked = settlement_completion.charges_marked + excluded.charges_marked,
+              updated_at = now()
+        where not (excluded.chunks_seen <@ settlement_completion.chunks_seen)`,
+      [payload.batch_id, payload.run_id, payload.chunk_count, payload.chunk_index, marked],
+    );
+
+    const completion = await tx.findOneBy(SettlementCompletion, {
+      batchId: payload.batch_id,
+      runId: payload.run_id,
+    });
+
+    if (completion && completion.completedAt === null && completion.hasAllChunks()) {
+      await tx.update(
+        SettlementCompletion,
+        { batchId: payload.batch_id, runId: payload.run_id },
+        { completedAt: new Date(payload.completed_at), updatedAt: new Date() },
+      );
+      this.logger.info('settlement.batch_complete', {
+        batch_id: payload.batch_id,
+        run_id: payload.run_id,
+        chunks: payload.chunk_count,
+        charges_marked: completion.chargesMarked + marked,
+        source_event_id: sourceEventId,
+      });
+    } else if (completion) {
+      this.logger.info('settlement.chunk_recorded', {
+        batch_id: payload.batch_id,
+        run_id: payload.run_id,
+        chunk_index: payload.chunk_index,
+        missing: completion.missingChunks().join(','),
+        source_event_id: sourceEventId,
+      });
+    }
+  }
+
+  /**
+   * arc INC. The ledger refused a duplicate posting; we want the evidence on the merchant's
+   * audit trail either way, and a human on it when the merchant is one of the
+   * capture-at-settlement ones — those are the merchants whose cardholder actually saw two
+   * charges rather than two ledger rows.
+   *
+   * `charge_id` and `merchant_id` are nullable on purpose (data-model §3.5): an orphaned
+   * reconciliation item has neither, and dropping the event on the floor because we could
+   * not resolve a charge is what made the first hour of PAY-2041 so quiet.
+   */
+  private async onDuplicateDetected(
+    payload: SettlementDuplicateDetectedPayload,
+    sourceEventId: string,
+    tx: EntityManager,
+  ): Promise<void> {
+    await this.audit.record(tx, {
+      merchantId: payload.merchant_id,
+      actorType: 'system',
+      actorId: 'payzeno-ledger',
+      action: 'settlement.duplicate_detected',
+      resourceType: 'charge',
+      resourceId: payload.charge_id,
+      before: null,
+      after: {
+        batch_id: payload.batch_id,
+        item_id: payload.item_id,
+        idempotency_key: payload.idempotency_key,
+        existing_transaction_id: payload.existing_transaction_id,
+        detected_by: payload.detected_by,
+        amount_minor: payload.amount_minor,

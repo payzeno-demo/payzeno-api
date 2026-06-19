@@ -24,6 +24,8 @@ describe('SnsEventPublisher', () => {
     },
   };
 
+  let publisher: SnsEventPublisher;
+
   beforeEach(() => {
     send.mockClear();
     publisher = new SnsEventPublisher(
@@ -68,4 +70,10 @@ describe('SnsEventPublisher', () => {
     expect(topicOf('merchant.bank_account_verified')).toBe('payzeno-merchant-events');
   });
 
+  it('marks ledger and billing events as not ours to originate', () => {
+    expect(isApiOwnedEvent('payment.authorized')).toBe(true);
+    expect(isApiOwnedEvent('merchant.created')).toBe(true);
+    expect(isApiOwnedEvent('settlement.duplicate_detected')).toBe(false);
+    expect(isApiOwnedEvent('invoice.issued')).toBe(false);
+  });
 });
