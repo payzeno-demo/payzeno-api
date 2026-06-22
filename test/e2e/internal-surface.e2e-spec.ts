@@ -39,6 +39,23 @@ describe('internal surface e2e', () => {
         capture_method: 'automatic',
         payment_method_token: 'pmt_visa_4242',
       });
+    it('401s a merchant api key on an internal route', async () => {
+      const res = await request(ctx.app.getHttpServer())
+        .get(`/internal/v1/merchants/${seeded.merchant.id}`)
+        .set('Authorization', bearer(seeded));
+
+      expect(res.status).toBe(401);
+    });
+
+    it('401s the right service header with the wrong shared secret', async () => {
+      const res = await request(ctx.app.getHttpServer())
+        .get(`/internal/v1/merchants/${seeded.merchant.id}`)
+        .set('X-Payzeno-Service', 'payzeno-ledger')
+        .set('X-Payzeno-Internal-Secret', 'wrong');
+
+      expect(res.status).toBe(401);
+    });
+
     it('401s an unknown service name even with the right secret', async () => {
       const res = await request(ctx.app.getHttpServer())
         .get(`/internal/v1/merchants/${seeded.merchant.id}`)
@@ -50,6 +67,16 @@ describe('internal surface e2e', () => {
   });
 
   describe('the six routes, authenticated', () => {
+    it('GET /internal/v1/charges/:chargeId serves the cold read after an orphan', async () => {
+      const res = await request(ctx.app.getHttpServer())
+        .get(`/internal/v1/charges/${chargeId}`)
+        .set(internalHeaders);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ object: 'charge', id: chargeId });
+      expect(res.body.processor_reference).toEqual(expect.any(String));
+    });
+
     it('POST /internal/v1/charges/:chargeId/settled marks a single out-of-band settlement', async () => {
       const res = await request(ctx.app.getHttpServer())
         .post(`/internal/v1/charges/${chargeId}/settled`)
