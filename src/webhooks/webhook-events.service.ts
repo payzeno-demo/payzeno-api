@@ -77,6 +77,7 @@ export class WebhookEventsService {
     merchantId: MerchantId,
     query: ListQuery & { status?: WebhookEventStatus; type?: PublicEventType },
   ): Promise<Paginated<WebhookEventDto>> {
+    const limit = Math.min(query.limit ?? 25, 100);
     const rows = await this.events.listForMerchant(
       merchantId,
       { status: query.status, type: query.type },
