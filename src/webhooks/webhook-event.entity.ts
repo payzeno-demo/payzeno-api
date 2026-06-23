@@ -24,6 +24,7 @@ export class WebhookEventEntity extends MerchantScopedEntity {
   @Column({ name: 'endpoint_id', type: 'text' })
   endpointId!: string;
 
+  @ManyToOne(() => WebhookEndpointEntity, (endpoint) => endpoint.events)
   @JoinColumn({ name: 'endpoint_id' })
   endpoint!: WebhookEndpointEntity;
 
@@ -43,6 +44,9 @@ export class WebhookEventEntity extends MerchantScopedEntity {
   @Column({ name: 'attempt_count', type: 'smallint', default: 0 })
   attemptCount!: number;
 
+  @Column({ name: 'next_attempt_at', type: 'timestamptz', nullable: true })
+  nextAttemptAt!: Date | null;
+
   @Column({ name: 'last_response_status', type: 'smallint', nullable: true })
   lastResponseStatus!: number | null;
 
@@ -52,6 +56,14 @@ export class WebhookEventEntity extends MerchantScopedEntity {
   @Column({ name: 'signature_version', type: 'varchar', length: 4, default: 'v1' })
   signatureVersion!: 'v1';
 
+  @Column({ name: 'delivered_at', type: 'timestamptz', nullable: true })
+  deliveredAt!: Date | null;
+
+  /**
+   * Exponential backoff, 1m·2^n with ±20% jitter. Eight attempts of that exhausts in about
+   * two hours; merchant endpoints have multi-hour outages, which is why the window is 12
+   * attempts / 72h rather than the 8 the first implementation shipped with.
+   */
   computeNextAttempt(from: Date): Date {
     const base = 60 * 1000 * Math.pow(2, Math.min(this.attemptCount, WEBHOOK_TERMINAL_ATTEMPTS));
     const jitter = 1 + (Math.random() * 0.4 - 0.2);

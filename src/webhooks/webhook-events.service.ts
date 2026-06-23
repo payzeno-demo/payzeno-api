@@ -107,5 +107,33 @@ export class WebhookEventsService {
    * `dead` row — support wants to see how many times we already tried.
    */
   async redeliver(merchantId: MerchantId, eventId: string): Promise<WebhookEventDto> {
+    const row = await this.events.findOneBy({ merchantId, id: eventId } as never);
+    if (!row) {
+      throw new ResourceNotFoundException('webhook_event', eventId);
+    }
+    if (row.status === 'delivering') {
+      throw new InvalidStateTransitionException(
+        'webhook_event',
+        row.status,
+        'redeliver',
+        'a delivery attempt is already in flight',
+      );
+    }
+
+    await this.events.markRetrying(
+      row.id,
+      row.attemptCount,
+      this.clock.now(),
+      row.lastResponseStatus,
+      row.lastError,
+    );
+
+    this.logger.info('webhook.redeliver_requested', {
+      webhook_event_id: row.id,
+      merchant_id: merchantId,
+      previous_status: row.status,
+      attempt_count: row.attemptCount,
+    });
+
   }
 }
