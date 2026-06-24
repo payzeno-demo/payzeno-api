@@ -14,6 +14,8 @@ describe('WebhookEventsService', () => {
   };
   let service: WebhookEventsService;
 
+  let sequence = 0;
+
   beforeEach(() => {
     jest.clearAllMocks();
     sequence = 0;
@@ -30,6 +32,24 @@ describe('WebhookEventsService', () => {
       { generate: () => `evt_${(sequence += 1)}` } as never,
       { now: () => now } as never,
       { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn(), child: jest.fn() } as never,
+    );
+  });
+
+  it('writes one row per endpoint, all sharing the source event id', async () => {
+    const inserted = await service.fanout(tx, {
+      sourceEventId: 'evt_bus_1',
+      merchantId: 'mer_1',
+      type: 'payout.failed',
+      payload: { payout_id: 'po_1' },
+      livemode: true,
+      endpoints: [{ id: 'whe_1' }, { id: 'whe_2' }] as never,
+    });
+
+    expect(inserted).toBe(2);
+    const [, rows] = repo.insertIgnoringSourceConflict.mock.calls[0];
+    expect(rows.map((row: { endpointId: string }) => row.endpointId)).toEqual(['whe_1', 'whe_2']);
+    expect(new Set(rows.map((row: { sourceEventId: string }) => row.sourceEventId))).toEqual(
+      new Set(['evt_bus_1']),
     );
   });
 

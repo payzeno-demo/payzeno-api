@@ -37,6 +37,7 @@ export interface FanoutInput {
 export class WebhookEventsService {
   constructor(
     private readonly events: WebhookEventRepository,
+    private readonly ids: IdFactory,
     @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
   ) {}
 
@@ -135,5 +136,33 @@ export class WebhookEventsService {
       attempt_count: row.attemptCount,
     });
 
+    const refreshed = await this.events.findOneBy({ id: row.id } as never);
+    return this.toDto(refreshed ?? row);
+  }
+
+  /** Support/ops view: how bad is this endpoint. Used by the runbook and the disable rule. */
+  async deadCountFor(merchantId: MerchantId, endpointId: string): Promise<number> {
+    return this.events.countDead(merchantId, endpointId);
+  }
+
+  toDto(row: WebhookEventEntity): WebhookEventDto {
+    return {
+      id: row.id,
+      object: 'webhook_event',
+      merchant_id: row.merchantId,
+      endpoint_id: row.endpointId,
+      type: row.type,
+      source_event_id: row.sourceEventId,
+      payload: row.payload,
+      status: row.status,
+      attempt_count: row.attemptCount,
+      next_attempt_at: row.nextAttemptAt ? row.nextAttemptAt.toISOString() : null,
+      last_response_status: row.lastResponseStatus,
+      last_error: row.lastError,
+      signature_version: row.signatureVersion,
+      livemode: row.livemode,
+      created_at: row.createdAt.toISOString(),
+      delivered_at: row.deliveredAt ? row.deliveredAt.toISOString() : null,
+    };
   }
 }
