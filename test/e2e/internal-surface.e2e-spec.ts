@@ -67,6 +67,23 @@ describe('internal surface e2e', () => {
   });
 
   describe('the six routes, authenticated', () => {
+    it('GET /internal/v1/merchants/:merchantId returns the full merchant config', async () => {
+      const res = await request(ctx.app.getHttpServer())
+        .get(`/internal/v1/merchants/${seeded.merchant.id}`)
+        .set(internalHeaders);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        object: 'merchant',
+        id: seeded.merchant.id,
+        capture_at_settlement: false,
+      });
+      // The ledger's merchant_projection is fed from these fields; all of them must be here.
+      expect(res.body).toHaveProperty('reserve_bps');
+      expect(res.body).toHaveProperty('payout_delay_days');
+      expect(res.body).toHaveProperty('settlement_tolerance_minor');
+    });
+
     it('GET /internal/v1/charges/:chargeId serves the cold read after an orphan', async () => {
       const res = await request(ctx.app.getHttpServer())
         .get(`/internal/v1/charges/${chargeId}`)
@@ -114,6 +131,47 @@ describe('internal surface e2e', () => {
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty('data');
       expect(res.body).toHaveProperty('has_more');
+    });
+
+    it('POST /internal/v1/support-tasks accepts the duplicate_detected branch', async () => {
+      const res = await request(ctx.app.getHttpServer())
+        .post('/internal/v1/support-tasks')
+        .set(internalHeaders)
+        .send({
+          kind: 'duplicate_settlement',
+          merchant_id: seeded.merchant.id,
+          charge_id: chargeId,
+          severity: 'high',
+          title: 'Duplicate settlement posting detected',
+          body: 'retry_scheduler lost the race with the batch pass on ri_000042',
+          source_event_id: 'evt_dup_000042',
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.id).toEqual(expect.stringMatching(/^st_/));
+    });
+
+    it('deduplicates support tasks on source_event_id', async () => {
+      const payload = {
+        kind: 'duplicate_settlement',
+        merchant_id: seeded.merchant.id,
+        charge_id: chargeId,
+        severity: 'high',
+        title: 'Duplicate settlement posting detected',
+        body: 'redelivered',
+        source_event_id: 'evt_dup_000099',
+      };
+      const first = await request(ctx.app.getHttpServer())
+        .post('/internal/v1/support-tasks')
+        .set(internalHeaders)
+        .send(payload);
+      const second = await request(ctx.app.getHttpServer())
+        .post('/internal/v1/support-tasks')
+        .set(internalHeaders)
+        .send(payload);
+
+      expect(second.status).toBe(201);
+      expect(second.body.id).toBe(first.body.id);
     });
 
     it('GET /internal/v1/bank-accounts/:id serves the stale-projection fallback', async () => {
