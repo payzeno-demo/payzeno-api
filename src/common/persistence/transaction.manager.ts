@@ -33,6 +33,7 @@ export interface TransactionOptions {
   retryBaseDelayMs?: number;
 }
 
+@Injectable()
 export class TransactionManager {
   constructor(private readonly dataSource: DataSource) {}
 
