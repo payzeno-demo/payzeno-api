@@ -84,6 +84,15 @@ describe('InvoiceSourceResolver', () => {
       );
     });
 
+    it('passes the caller’s filter through to the legacy service', async () => {
+      await resolver.list(TEST_MERCHANT_ID, { status: 'open', limit: 25 });
+
+      expect(legacy.listInvoices).toHaveBeenCalledWith(
+        TEST_MERCHANT_ID,
+        expect.objectContaining({ status: 'open', limit: 25 }),
+      );
+    });
+
     it('never takes the ledger arm', async () => {
       await resolver.list(TEST_MERCHANT_ID, {});
       await resolver.get(TEST_MERCHANT_ID, 'inv_0001');
@@ -115,6 +124,26 @@ describe('InvoiceSourceResolver', () => {
   });
 
   describe('with ledger_owns_invoices ON (never taken in production)', () => {
+    beforeEach(() => {
+      flags.set(FLAG_NAMES.LEDGER_OWNS_INVOICES, true);
+    });
+
+    it('reads from the ledger and never from the legacy service', async () => {
+      const result = await resolver.list(TEST_MERCHANT_ID, {});
+
+      expect(result.source).toBe('ledger');
+      expect(legacy.listInvoices).not.toHaveBeenCalled();
+    });
+
+    it('warns loudly, because seeing this line in prod means the cutover started', async () => {
+      await resolver.list(TEST_MERCHANT_ID, {});
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        'invoice_source_ledger_arm_taken',
+        expect.objectContaining({ flag: FLAG_NAMES.LEDGER_OWNS_INVOICES }),
+      );
+    });
+
     it('still prefers the projection when it has the page', async () => {
       projection.list.mockResolvedValue({ data: [invoice], next_cursor: null, has_more: false } as never);
 

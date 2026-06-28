@@ -49,3 +49,29 @@ import { InvoiceProjectionService } from './projection/invoice-projection.servic
         breakers: CircuitBreakerRegistry,
       ): BillingLegacyClient =>
         new BillingLegacyClient(
+          config.billingLegacy,
+          transport,
+          {
+            ...DEFAULT_CLIENT_OPTIONS,
+            connectTimeoutMs: 2_000,
+            // The nightly invoice generation job holds a MySQL table lock while it runs and
+            // the list endpoint queues behind it. 15s is measured, not guessed.
+            readTimeoutMs: 15_000,
+            retries: 0,
+            userAgent: 'payzeno-api/billing',
+          },
+          // No retries: the breaker is the resilience story here. Retrying into a service
+          // that is already the reason the breaker is half-open is how you keep it open.
+          new NoRetryPolicy(),
+          logger,
+          breakers,
+        ),
+    },
+    InvoicesService,
+    InvoiceSourceResolver,
+    InvoiceProjectionService,
+    InvoiceProjectionRepository,
+  ],
+  exports: [BillingLegacyClient, InvoiceProjectionService, InvoiceSourceResolver],
+})
+export class BillingModule {}

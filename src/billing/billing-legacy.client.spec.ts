@@ -64,6 +64,20 @@ describe('BillingLegacyClient', () => {
       expect(url).toContain('status=open');
     });
 
+    it('authenticates with HTTP basic, not a bearer', async () => {
+      transport.on('GET', '/internal/v1/invoices', () => ({
+        status: 200,
+        body: { data: [], next_cursor: null, has_more: false },
+      }));
+
+      await client.listInvoices(TEST_MERCHANT_ID);
+
+      const { headers } = transport.callsTo('GET', '/internal/v1/invoices')[0];
+      expect(headers.authorization).toBe(
+        `Basic ${Buffer.from('payzeno-api:secret').toString('base64')}`,
+      );
+    });
+
     it('gets one invoice by id', async () => {
       transport.on('GET', '/internal/v1/invoices/:id', () => ({ status: 200, body: invoice }));
 
@@ -114,6 +128,28 @@ describe('BillingLegacyClient', () => {
       );
     });
 
+    it('logs LEGACY_CALL_AFTER_MIGRATION for computeFees', async () => {
+      transport.on('POST', '/internal/v1/fees/compute', () => ({ status: 200, body: {} }));
+
+      await client.computeFees({ merchant_id: TEST_MERCHANT_ID } as never);
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        'LEGACY_CALL_AFTER_MIGRATION',
+        expect.objectContaining({ method: 'computeFees' }),
+      );
+    });
+
+    it('logs LEGACY_CALL_AFTER_MIGRATION for getStatement', async () => {
+      transport.on('GET', '/internal/v1/statements', () => ({ status: 200, body: {} }));
+
+      await client.getStatement(TEST_MERCHANT_ID, '2026-01');
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        'LEGACY_CALL_AFTER_MIGRATION',
+        expect.objectContaining({ method: 'getStatement' }),
+      );
+    });
+
     it('names payzeno-billing-legacy as the upstream in the warning', async () => {
       transport.on('GET', '/internal/v1/statements', () => ({ status: 200, body: {} }));
 
@@ -156,6 +192,18 @@ describe('BillingLegacyClient', () => {
   });
 
   describe('the circuit breaker', () => {
+    it('runs every call under one named circuit', async () => {
+      transport.on('GET', '/internal/v1/invoices', () => ({
+        status: 200,
+        body: { data: [], next_cursor: null, has_more: false },
+      }));
+
+      await client.listInvoices(TEST_MERCHANT_ID);
+      await client.listInvoices(TEST_MERCHANT_ID);
+
+      expect(breakers.snapshot()).toHaveLength(1);
+    });
+
     it('trips and short-circuits with LegacyBillingUnavailableException', async () => {
       transport.on('GET', '/internal/v1/invoices', () => ({ status: 500, body: 'boom' }));
 

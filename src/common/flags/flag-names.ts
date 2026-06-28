@@ -14,3 +14,6 @@ export const FLAG_NAMES = {
    * docs/adr/0012-invoice-cutover.md.
    */
   LEDGER_OWNS_INVOICES: 'ledger_owns_invoices',
+
+  /** arc MIG step 1, done. True everywhere. Kept because the legacy fee path still compiles. */
+  LEDGER_OWNS_FEES: 'ledger_owns_fees',
