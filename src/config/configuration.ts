@@ -53,6 +53,16 @@ function billingLegacy(env: ConfigSchema): BillingLegacyConfig {
   };
 }
 
+function acquirers(env: ConfigSchema): AcquirerConfig {
+  return {
+    worldflowBaseUrl: env.WORLDFLOW_BASE_URL,
+    worldflowApiKey: env.WORLDFLOW_API_KEY,
+    nordpayBaseUrl: env.NORDPAY_BASE_URL,
+    nordpayApiKey: env.NORDPAY_API_KEY,
+    defaultAcquirer: env.PROCESSOR_DEFAULT_ACQUIRER as AcquirerConfig['defaultAcquirer'],
+  };
+}
+
 function auth(env: ConfigSchema): AuthConfig {
   return {
     sessionSecret: env.SESSION_SECRET,
@@ -91,6 +101,19 @@ function limits(env: ConfigSchema): LimitsConfig {
   };
 }
 
+function flags(env: ConfigSchema): FlagsConfig {
+  return {
+    ledgerOwnsInvoices: asBool(env.FLAG_LEDGER_OWNS_INVOICES),
+    ledgerOwnsFees: asBool(env.FLAG_LEDGER_OWNS_FEES),
+    redactPanInLogs: asBool(env.FLAG_REDACT_PAN_IN_LOGS),
+  };
+}
+
+/**
+ * Reads, validates and shapes the environment exactly once.
+ * `source` exists so `test/support/test-app.ts` can boot a config without mutating
+ * `process.env` in a worker shared with other suites.
+ */
 export function loadConfiguration(source: NodeJS.ProcessEnv = process.env): ApiConfig {
   const env = validateEnv(source as Record<string, unknown>);
 

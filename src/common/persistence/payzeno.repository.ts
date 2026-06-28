@@ -37,6 +37,11 @@ export abstract class PayzenoRepository<T extends ObjectLiteral & CursorRow> ext
   /** Query-builder alias. Subclasses set it; every generated predicate uses it. */
   protected abstract get alias(): string;
 
+  /** Returns null rather than throwing; the service decides which NotFound subclass applies. */
+  async findScoped(id: string, scope: MerchantScope, manager?: EntityManager): Promise<T | null> {
+    return this.scopedQuery(scope, manager).andWhere(`${this.alias}.id = :id`, { id }).getOne();
+  }
+
   /** Insert that translates 23505 into the right business exception. */
   async insertMapped(entity: QueryDeepPartialEntity<T>, manager?: EntityManager): Promise<void> {
     const repo = manager ? manager.getRepository<T>(this.target) : this;
