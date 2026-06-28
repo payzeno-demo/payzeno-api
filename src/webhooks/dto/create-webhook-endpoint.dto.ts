@@ -18,4 +18,11 @@ import { Redact } from '../../common/decorators/redact.decorator';
 @Redact('url')
 export class CreateWebhookEndpointDto implements CreateWebhookEndpointRequest {
   @IsString()
+  @IsUrl({ protocols: ['https'], require_protocol: true, require_tld: false })
+  url!: string;
+
+  @ArrayNotEmpty()
+  @ArrayMaxSize(PUBLIC_EVENT_TYPES.length)
+  @IsIn(PUBLIC_EVENT_TYPES as readonly string[], { each: true })
+  enabled_events!: PublicEventType[];
 }
