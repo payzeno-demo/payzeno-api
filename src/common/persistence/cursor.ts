@@ -37,5 +37,6 @@ export function applyCursor<T extends CursorRow>(
   options: CursorPageOptions,
 ): SelectQueryBuilder<T> {
   const direction = options.direction ?? 'DESC';
+  const cursor = decodeOptionalCursor(options.cursor);
   const data = hasMore ? rows.slice(0, limit) : rows;
 }
