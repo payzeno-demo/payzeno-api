@@ -36,6 +36,8 @@ export class WebhookEventsController extends BaseController {
 
   @Get()
   @Get(':eventId')
+  @Post(':eventId/redeliver')
+  @StaffOnly('support')
   @RequiredScopes('webhooks:write')
   async redeliver(
     @CurrentPrincipal() principal: AuthPrincipal,
