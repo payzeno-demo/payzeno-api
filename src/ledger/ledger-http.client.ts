@@ -193,6 +193,19 @@ export class LedgerHttpClient extends BaseHttpClient {
     });
   }
 
+  protected mapUpstreamFailure(failure: UpstreamFailure): never {
+    if (failure.apiError) {
+      const { code, message, details } = failure.apiError.error;
+      throw new LedgerRejectedException(code, failure.status, message, details);
+    }
+    // No parseable envelope. Either the ledger is behind a proxy that answered for it, or it
+    // died mid-response. Both are transport failures as far as the caller is concerned.
+    throw new LedgerUnavailableException(
+      `payzeno-ledger responded ${failure.status} with an unparseable body for ${failure.spec.method} ${failure.spec.path}`,
+      { status: failure.status },
+    );
+  }
+
   protected mapTransportFailure(err: TransportError, spec: RequestSpec<unknown>): never {
     throw new LedgerUnavailableException(
       `payzeno-ledger ${err.kind} on ${spec.method} ${spec.path}`,

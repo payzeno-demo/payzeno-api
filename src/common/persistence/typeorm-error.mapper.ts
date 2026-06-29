@@ -22,6 +22,17 @@ interface DriverError {
   message?: string;
 }
 
+export const SQLSTATE = {
+  UNIQUE_VIOLATION: '23505',
+  FOREIGN_KEY_VIOLATION: '23503',
+  CHECK_VIOLATION: '23514',
+  NOT_NULL_VIOLATION: '23502',
+  SERIALIZATION_FAILURE: '40001',
+  DEADLOCK_DETECTED: '40P01',
+  LOCK_NOT_AVAILABLE: '55P03',
+  QUERY_CANCELED: '57014',
+} as const;
+
 export function isUniqueViolation(err: unknown, constraint?: string): boolean {
   const driver = asDriverError(err);
   if (!driver || driver.code !== SQLSTATE.UNIQUE_VIOLATION) return false;
@@ -74,3 +85,6 @@ function extractChargeId(detail: string | undefined): string | null {
   return detail?.match(/\(charge_id\)=\(([^)]+)\)/)?.[1] ?? null;
 }
 
+function extractKey(detail: string | undefined): string | null {
+  return detail?.match(/, ([^,)]+)\)$/)?.[1] ?? null;
+}

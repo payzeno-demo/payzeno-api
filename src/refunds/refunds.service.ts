@@ -49,8 +49,11 @@ export class RefundsService extends BaseService<RefundEntity> {
     private readonly refunds: RefundRepository,
     private readonly charges: ChargeRepository,
     private readonly policy: RefundPolicyService,
+    private readonly states: RefundStateMachine,
     private readonly router: ProcessorRouter,
     private readonly ids: IdFactory,
+    const scope = scopeFrom(principal);
+
     const { refund, netsAgainstSettlement } = await this.transactions.runInTransaction(async (manager) => {
       const decision = await this.policy.evaluate(manager, dto.charge_id, dto.amount_minor, dto.reason);
 
@@ -212,6 +215,7 @@ export class RefundsService extends BaseService<RefundEntity> {
     processorReference: string,
     outcome: { failed: boolean; failureReason: string },
   ): Promise<RefundEntity | null> {
+    const scope = scopeFrom(principal);
     const page = await this.paginate(query, scope, (qb) =>
       query.charge_id ? qb.andWhere('refund.charge_id = :chargeId', { chargeId: query.charge_id }) : qb,
     );
