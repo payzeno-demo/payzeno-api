@@ -37,11 +37,60 @@ export abstract class PayzenoRepository<T extends ObjectLiteral & CursorRow> ext
   /** Query-builder alias. Subclasses set it; every generated predicate uses it. */
   protected abstract get alias(): string;
 
+  /** A builder already narrowed to one tenant and one mode. The only entry point that is. */
+  scopedQuery(scope: MerchantScope, manager?: EntityManager): SelectQueryBuilder<T> {
+    const repo = manager ? manager.getRepository<T>(this.target) : this;
+    return repo
+      .createQueryBuilder(this.alias)
+      .where(`${this.alias}.${this.scopeColumn} = :merchantId`, { merchantId: scope.merchantId })
+      .andWhere(`${this.alias}.livemode = :livemode`, { livemode: scope.livemode });
+  }
+
   /** Returns null rather than throwing; the service decides which NotFound subclass applies. */
   async findScoped(id: string, scope: MerchantScope, manager?: EntityManager): Promise<T | null> {
     return this.scopedQuery(scope, manager).andWhere(`${this.alias}.id = :id`, { id }).getOne();
   }
 
+  async existsScoped(id: string, scope: MerchantScope): Promise<boolean> {
+    const count = await this.scopedQuery(scope).andWhere(`${this.alias}.id = :id`, { id }).getCount();
+    return count > 0;
+  }
+
+  /**
+   * Keyset page within a tenant. `extend` lets the caller add feature predicates (status,
+   * charge_id, …) without leaving the scoped builder.
+   */
+  async paginateCursor(
+    scope: MerchantScope,
+    query: ResolvedListQuery,
+    extend?: (qb: SelectQueryBuilder<T>) => SelectQueryBuilder<T>,
+  ): Promise<Paginated<T>> {
+    let qb = this.scopedQuery(scope);
+
+    if (query.createdAfter) {
+      qb = qb.andWhere(`${this.alias}.created_at > :createdAfter`, { createdAfter: query.createdAfter });
+    }
+    if (query.createdBefore) {
+      qb = qb.andWhere(`${this.alias}.created_at < :createdBefore`, { createdBefore: query.createdBefore });
+    }
+    if (extend) {
+      qb = extend(qb);
+    }
+
+    const rows = await applyCursor(qb, {
+      limit: query.limit,
+      cursor: query.cursor,
+      alias: this.alias,
+    }).getMany();
+
+    return toPage(rows, query.limit);
+  }
+
+  /**
+   * Row lock inside an existing transaction. `manager` is required on purpose: a FOR UPDATE
+   * outside a transaction takes a lock and drops it on the next statement, which reads as
+   * working and protects nothing.
+   */
   /** Insert that translates 23505 into the right business exception. */
   async insertMapped(entity: QueryDeepPartialEntity<T>, manager?: EntityManager): Promise<void> {
     const repo = manager ? manager.getRepository<T>(this.target) : this;
