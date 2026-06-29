@@ -74,6 +74,12 @@ export class MerchantRepository extends PayzenoRepository<MerchantEntity> {
     status?: MerchantStatus,
   ): Promise<Paginated<MerchantEntity>> {
     const resolved = 'createdAfter' in query ? query : resolveListQuery(query);
+    let qb = this.createQueryBuilder('merchant');
+
+    if (status) {
+      qb = qb.where('merchant.status = :status', { status });
+    }
+
     const rows = await qb
       .orderBy('merchant.created_at', 'DESC')
       .addOrderBy('merchant.id', 'DESC')
@@ -93,5 +99,18 @@ export class MerchantRepository extends PayzenoRepository<MerchantEntity> {
   ): Promise<number> {
     const repo = manager ? manager.getRepository(MerchantEntity) : this;
     const repo = manager ? manager.getRepository(MerchantEntity) : this;
+    const result = await repo
+      .createQueryBuilder()
+      .update()
+      .set({ status: to })
+      .where('id = :merchantId', { merchantId })
+      .andWhere('status = :from', { from })
+      .execute();
+
+    return result.affected ?? 0;
+  }
+
+  /** `RiskEvaluationJob` walks these. Only active merchants can be restricted for risk. */
+  listActiveLive(limit: number, afterId: string | null): Promise<MerchantEntity[]> {
   }
 }

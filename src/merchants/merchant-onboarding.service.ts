@@ -52,6 +52,7 @@ export class MerchantOnboardingService {
     private readonly merchants: MerchantRepository,
     private readonly transactions: TransactionManager,
     private readonly ledger: LedgerHttpClient,
+    private readonly ids: IdFactory,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
   ) {}
@@ -116,5 +117,56 @@ export class MerchantOnboardingService {
    */
   private async assertNotDuplicate(legalName: string, country: string): Promise<void> {
     const merchant = new MerchantEntity();
+    const now = this.clock.now();
+
+    merchant.id = this.ids.merchantId();
+    merchant.legalName = request.legal_name.trim();
+    merchant.displayName = request.display_name.trim();
+    merchant.country = request.country.toUpperCase();
+    merchant.defaultCurrency = request.default_currency;
+    merchant.mcc = request.mcc;
+    merchant.status = 'pending_review';
+    merchant.riskTier = 'standard';
+    merchant.payoutSchedule = request.payout_schedule ?? 'daily';
+    merchant.pricingModel = 'blended';
+    merchant.reserveBps = 0;
+    merchant.reserveHoldDays = 0;
+    merchant.platformFeeBps = DEFAULTS.platformFeeBps;
+    merchant.platformFeeFixedMinor = DEFAULTS.platformFeeFixedMinor;
+    merchant.payoutDelayDays = DEFAULTS.payoutDelayDays;
+    merchant.settlementToleranceMinor = DEFAULTS.settlementToleranceMinor;
+    merchant.captureAtSettlement = false;
+    merchant.statementDescriptor = null;
+    merchant.livemode = livemode;
+    merchant.metadata = request.metadata ?? {};
+    merchant.createdAt = now;
+    merchant.updatedAt = now;
+
+    return merchant;
+  }
+
+  /**
+   * `POST /internal/v1/accounts/bootstrap`. Idempotent ledger-side, so the retry a staff
+   * operator performs with the same Idempotency-Key does not create a second chart.
+   */
+  private async bootstrapLedgerAccounts(
+    merchantId: MerchantId,
+    currency: CurrencyCode,
+    livemode: boolean,
+  ): Promise<void> {
+    try {
+      const result = await this.ledger.bootstrapAccounts(merchantId, currency, livemode);
+      this.logger.debug('merchant.accounts_bootstrapped', {
+        merchant_id: merchantId,
+        created: result.created,
+      });
+    } catch (err) {
+      if (err instanceof LedgerUnavailableException) {
+        // Rethrow so the transaction rolls back: better no merchant than a merchant with no
+        // accounts. The staff console shows "ledger unavailable, retry" and the retry works.
+        this.logger.error('merchant.bootstrap_failed', err, { merchant_id: merchantId });
+      }
+      throw err;
+    }
   }
 }
