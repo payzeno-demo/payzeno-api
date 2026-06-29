@@ -87,8 +87,84 @@ export abstract class BaseHttpClient {
    * Translate a non-2xx into this repo's exception hierarchy. Every subclass throws; the
    * return type is `never` so a subclass that forgets to throw fails to compile.
    */
+  protected abstract mapUpstreamFailure(failure: UpstreamFailure): never;
+
+  /** Translate a socket failure. Separate from the above so 502-with-a-body never becomes "unavailable". */
+  protected abstract mapTransportFailure(err: TransportError, spec: RequestSpec<unknown>): never;
+
+  async request<TResponse, TBody = unknown>(spec: RequestSpec<TBody>): Promise<TResponse> {
+    const url = this.buildUrl(spec.path, spec.query);
+    const transportRequest = this.buildTransportRequest(spec, url);
+
+    let attempt = 0;
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      attempt += 1;
+      const started = Date.now();
+      let response: TransportResponse;
+
+      try {
+        response = await this.transport.send(transportRequest);
+      } catch (raw) {
+        const err = classifyTransportError(raw, url);
+        const retry = this.retryPolicy.shouldRetry({
+          method: spec.method,
+          error: err,
+          attempt,
+          hasIdempotencyKey: Boolean(spec.idempotencyKey),
+        });
+        this.logAttempt(spec, url, attempt, null, err, Date.now() - started, retry);
+        if (retry) {
+          await sleep(this.retryPolicy.delayMs(attempt));
+          continue;
+        }
+        this.mapTransportFailure(err, spec);
+      }
+
+      if (response.status >= 200 && response.status < 300) {
+        this.logAttempt(spec, url, attempt, response.status, null, response.durationMs, false);
+        return this.parseSuccess<TResponse>(response);
+      }
+
+      const retry = this.retryPolicy.shouldRetry({
+        method: spec.method,
+        status: response.status,
+        attempt,
+        hasIdempotencyKey: Boolean(spec.idempotencyKey),
+      });
+      this.logAttempt(spec, url, attempt, response.status, null, response.durationMs, retry);
+      if (retry) {
+        await sleep(this.retryPolicy.delayMs(attempt));
+        continue;
+      }
+
+      this.mapUpstreamFailure({
+        status: response.status,
+        headers: response.headers,
+        rawBody: response.body,
+        apiError: parseApiError(response.body),
+        spec: spec as RequestSpec<unknown>,
+        url,
+      });
+    }
+  }
+
   protected get<TResponse>(path: string, query?: QueryParams, timeoutMs?: number): Promise<TResponse> {
     return this.request<TResponse>({ method: 'GET', path, query, timeoutMs });
+  }
+
+  protected post<TResponse, TBody>(
+    path: string,
+    body: TBody,
+    idempotencyKey?: string,
+    query?: QueryParams,
+  ): Promise<TResponse> {
+    return this.request<TResponse, TBody>({ method: 'POST', path, body, idempotencyKey, query });
+  }
+
+  protected buildUrl(path: string, query?: QueryParams): string {
+    const suffix = encodeQuery(query);
+    return `${this.baseUrl}${path}${suffix}`;
   }
 
   private buildTransportRequest(spec: RequestSpec<unknown>, url: string): TransportRequest {
@@ -124,6 +200,54 @@ export abstract class BaseHttpClient {
     };
   }
 
+  private parseSuccess<TResponse>(response: TransportResponse): TResponse {
+    if (response.status === 204 || response.body.length === 0) {
+      return undefined as unknown as TResponse;
+    }
+    try {
+      return JSON.parse(response.body) as TResponse;
+    } catch {
+      throw new TransportError(
+        'network',
+        this.upstream,
+        `${this.upstream} returned ${response.status} with an unparseable JSON body`,
+      );
+    }
+  }
+
+  private logAttempt(
+    spec: RequestSpec<unknown>,
+    url: string,
+    attempt: number,
+    status: number | null,
+    error: TransportError | null,
+    durationMs: number,
+    willRetry: boolean,
+  ): void {
+    const ctx = {
+      upstream: this.upstream,
+      method: spec.method,
+      path: spec.path,
+      url,
+      attempt,
+      status,
+      duration_ms: durationMs,
+      will_retry: willRetry,
+      transport: this.transport.name,
+      failure: error ? error.kind : null,
+    };
+    if (error || (status !== null && status >= 500)) {
+      this.logger.warn('upstream_call_failed', ctx);
+    } else {
+      this.logger.debug('upstream_call', ctx);
+    }
+  }
+}
+
+export function encodeQuery(query?: QueryParams): string {
+  if (!query) {
+    return '';
+  }
   const parts: string[] = [];
   for (const [key, value] of Object.entries(query)) {
     if (value === undefined || value === null || value === '') {

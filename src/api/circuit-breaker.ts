@@ -37,7 +37,77 @@ export interface BreakerSnapshot {
   rejects: number;
 }
 
+type Guarded<T> = () => Promise<T>;
+
 @Injectable()
+export class CircuitBreakerRegistry {
+  private readonly logger = new Logger(CircuitBreakerRegistry.name);
+  private readonly breakers = new Map<string, CircuitBreaker<[Guarded<unknown>], unknown>>();
+
+  /**
+   * Runs `fn` under the named circuit. When the circuit is open the call is not attempted and
+   * `onOpen()` supplies the exception the caller wants surfaced — `LegacyBillingUnavailableException`
+   * for the biller, `ProcessorUnavailableException` for an acquirer. The registry does not
+   * pick that for you, because a generic 502 loses the code the console renders.
+   */
+  async run<T>(name: string, fn: Guarded<T>, onOpen: () => Error, options?: Partial<BreakerOptions>): Promise<T> {
+    const breaker = this.breakerFor(name, options);
+    if (breaker.opened) {
+      throw onOpen();
+    }
+    try {
+      return (await breaker.fire(fn as Guarded<unknown>)) as T;
+    } catch (err) {
+      if (isBreakerOpenError(err)) {
+        throw onOpen();
+      }
+      throw err;
+    }
+  }
+
+  snapshot(): BreakerSnapshot[] {
+    return [...this.breakers.entries()].map(([name, breaker]) => ({
+      name,
+      state: breaker.opened ? 'open' : breaker.halfOpen ? 'half-open' : 'closed',
+      failures: breaker.stats.failures,
+      successes: breaker.stats.successes,
+      rejects: breaker.stats.rejects,
+    }));
+  }
+
+  isOpen(name: string): boolean {
+    return this.breakers.get(name)?.opened ?? false;
+  }
+
+  /** Test and runbook seam — `docs/runbooks/payzeno-api.md` documents closing a stuck circuit. */
+  reset(name: string): void {
+    this.breakers.get(name)?.close();
+  }
+
+  private breakerFor(
+    name: string,
+    overrides?: Partial<BreakerOptions>,
+  ): CircuitBreaker<[Guarded<unknown>], unknown> {
+    const existing = this.breakers.get(name);
+    if (existing) {
+      return existing;
+    }
+    const opts = { ...DEFAULT_BREAKER_OPTIONS, ...(overrides ?? {}) };
+    const breaker = new CircuitBreaker<[Guarded<unknown>], unknown>((fn: Guarded<unknown>) => fn(), {
+      name,
+      errorThresholdPercentage: opts.errorThresholdPercentage,
+      volumeThreshold: opts.volumeThreshold,
+      resetTimeout: opts.resetTimeoutMs,
+      timeout: opts.timeoutMs,
+    });
+    breaker.on('open', () => this.logger.error(`circuit ${name} opened`));
+    breaker.on('halfOpen', () => this.logger.warn(`circuit ${name} half-open, probing`));
+    breaker.on('close', () => this.logger.log(`circuit ${name} closed`));
+    this.breakers.set(name, breaker);
+    return breaker;
+  }
+}
+
 function isBreakerOpenError(err: unknown): boolean {
   if (err instanceof Error) {
     return err.message === 'Breaker is open' || (err as { code?: string }).code === 'EOPENBREAKER';

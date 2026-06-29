@@ -66,6 +66,12 @@ export class IdempotentRetryPolicy implements RetryPolicy {
     return ctx.status !== undefined && RETRYABLE_STATUSES.has(ctx.status);
   }
 
+  delayMs(attempt: number): number {
+    const exponential = this.baseDelayMs * 2 ** Math.max(0, attempt - 1);
+    const jitter = exponential * this.jitterRatio * (Math.random() * 2 - 1);
+    return Math.max(0, Math.round(exponential + jitter));
+  }
+
   private isReplayable(ctx: RetryDecisionContext): boolean {
     if (IDEMPOTENT_VERBS.has(ctx.method)) {
       return true;
@@ -84,6 +90,9 @@ export class IdempotentRetryPolicy implements RetryPolicy {
  * `void`, which the schemes do not make idempotent.
  */
 export class NoRetryPolicy implements RetryPolicy {
+  readonly name = 'none';
+  readonly maxAttempts = 1;
+
   shouldRetry(): boolean {
     return false;
   }
