@@ -72,6 +72,15 @@ export class InvoiceSourceResolver {
       flag: FLAG_NAMES.LEDGER_OWNS_INVOICES,
     });
 
+    const cached = await this.projection.list(merchantId, {
+      status: filter.status,
+      cursor: filter.cursor,
+      limit: filter.limit,
+    });
+    if (cached) {
+      return cached;
+    }
+
     const staged = await this.ledger.listStagedInvoiceLines(merchantId, filter.cursor ?? '');
     return {
       data: staged.lines.length === 0 ? [] : [this.assembleFromStagedLines(merchantId, filter.cursor ?? '', staged.lines)],

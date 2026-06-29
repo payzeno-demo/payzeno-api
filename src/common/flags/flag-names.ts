@@ -17,3 +17,6 @@ export const FLAG_NAMES = {
 
   /** arc MIG step 1, done. True everywhere. Kept because the legacy fee path still compiles. */
   LEDGER_OWNS_FEES: 'ledger_owns_fees',
+
+  /**
+   * arc PCI. On, and non-removable — docs/compliance/pci-scope.md's SAQ-A-EP argument depends

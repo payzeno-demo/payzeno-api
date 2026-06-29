@@ -35,6 +35,10 @@ export class InvoicesService {
     private readonly resolver: InvoiceSourceResolver,
     private readonly legacy: BillingLegacyClient,
     private readonly projection: InvoiceProjectionService,
+    @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
+  ) {}
+
+  async list(principal: AuthPrincipal, filters: InvoiceListFilters): Promise<Paginated<Invoice>> {
     const merchantId = merchantIdOf(principal);
     const resolved = await this.resolver.list(merchantId, {
       status: filters.status,
@@ -54,6 +58,27 @@ export class InvoicesService {
 
   async get(principal: AuthPrincipal, invoiceId: string): Promise<Invoice> {
     const merchantId = merchantIdOf(principal);
+    const resolved = await this.resolver.get(merchantId, invoiceId);
+
+    // The legacy service is happy to hand any caller any invoice by id; the scope check is
+    // ours to make and it has to happen after the fetch, because the id carries no tenant.
+    if (resolved.invoice.merchant_id !== merchantId) {
+      this.logger.warn('invoice_cross_tenant_read_blocked', {
+        merchant_id: merchantId,
+        invoice_id: invoiceId,
+        owner_merchant_id: resolved.invoice.merchant_id,
+      });
+      throw new ResourceNotFoundException('invoice', invoiceId);
+    }
+
+    return resolved.invoice;
+  }
+
+  /**
+   * `POST /v1/invoices/:invoiceId/void` — admin only. Writes go straight to the legacy
+   * service; there is no local copy to keep consistent, only a cache to drop.
+   */
+  async voidInvoice(principal: AuthPrincipal, invoiceId: string): Promise<Invoice> {
     const merchantId = merchantIdOf(principal);
     // Scope first: the void is irreversible in the legacy service and it has no tenant check.
     await this.get(principal, invoiceId);

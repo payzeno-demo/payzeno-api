@@ -44,3 +44,10 @@ export const ALL_JOB_NAMES: readonly string[] = [
   'charge-expiry',
   'processed-event-retention',
   'risk-evaluation',
+  'unsettled-charge-sweep',
+  'dispute-deadline-reminder',
+];
+
+@Module({
+  imports: [
+    ScheduleModule.forRoot(),
