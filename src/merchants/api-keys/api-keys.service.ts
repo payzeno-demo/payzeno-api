@@ -110,6 +110,7 @@ export class ApiKeysService extends BaseService<ApiKeyEntity> {
     scope: MerchantScope,
   ): Promise<CreateApiKeyResponse> {
     const minted = await this.hasher.mint();
+    const key = new ApiKeyEntity();
     const now = this.clock.now();
     const mode: ApiKeyMode = request.mode;
 
