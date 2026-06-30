@@ -15,3 +15,12 @@
 
 # --- runtime and on-call surfaces: Infrastructure co-owns ----------------------
 # Every job in here has a runbook and a pager rule attached to it. apager reviews
+# anything that changes a schedule, a lock TTL or a batch size.
+/src/jobs/                          @payzeno/platform @payzeno/infrastructure
+/src/health/                        @payzeno/platform @payzeno/infrastructure
+/src/common/lock/                   @payzeno/platform @payzeno/infrastructure
+/src/common/logging/                @payzeno/platform @payzeno/infrastructure
+/src/instrumentation.ts             @payzeno/infrastructure
+/Dockerfile                         @payzeno/platform @payzeno/infrastructure
+/docker-compose.override.yml        @payzeno/infrastructure
+/.github/workflows/                 @payzeno/platform @payzeno/infrastructure

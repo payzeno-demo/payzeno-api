@@ -32,9 +32,27 @@ import { InvoicesService } from './invoices.service';
 export class InvoicesController extends BaseController {
   constructor(
     private readonly invoices: InvoicesService,
+    private readonly resolver: InvoiceSourceResolver,
+  ) {
+    super();
+  }
+
+  @Get()
+  @RequiredScopes('invoices:read')
+  async list(
     @CurrentPrincipal() principal: AuthPrincipal,
     @Query() query: ListQueryDto,
     @Res({ passthrough: true }) res: Response,
+    @Query('status') status?: InvoiceStatus,
+  ): Promise<Paginated<Invoice>> {
+    res.setHeader('X-Payzeno-Invoice-Source', this.resolver.currentSource());
+    return this.invoices.list(principal, this.invoices.filtersFrom(query, status));
+  }
+
+  @Get(':invoiceId')
+  @RequiredScopes('invoices:read')
+  @Header('Cache-Control', 'private, max-age=30')
+  get(
     @CurrentPrincipal() principal: AuthPrincipal,
     @Param('invoiceId') invoiceId: string,
   ): Promise<Invoice> {

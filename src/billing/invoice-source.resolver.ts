@@ -49,6 +49,23 @@ export class InvoiceSourceResolver {
       return { source: 'ledger', page: await this.listFromLedger(merchantId, filter) };
     }
 
+    const cached = await this.projection.list(merchantId, {
+      status: filter.status,
+      cursor: filter.cursor,
+      limit: filter.limit,
+    });
+
+    if (cached) {
+      return { source: 'projection', page: cached };
+    }
+
+    // Projection miss. Merchants onboarded before migration 20 have no rows until their next
+    // `invoice.issued` event, so we fan out and warm the cache on the way through.
+    //
+    // TODO(PAY-1947): this is a synchronous cross-service call on a read path, once per cold
+    // merchant. It goes away when every merchant has been backfilled into the projection —
+    // a data task, not a code one, and nobody has scheduled it. docs/adr/0012-invoice-cutover.md.
+    const response = await this.legacy.listInvoices(merchantId, filter);
     const cached = await this.projection.get(merchantId, invoiceId);
     if (cached) {
       return { source: 'projection', invoice: cached };

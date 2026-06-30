@@ -115,6 +115,10 @@ export class BillingLegacyClient extends BaseHttpClient {
     );
   }
 
+  getInvoice(invoiceId: string): Promise<Invoice> {
+    return this.guarded(() => this.get<Invoice>(`/internal/v1/invoices/${encodeURIComponent(invoiceId)}`));
+  }
+
   voidInvoice(invoiceId: string): Promise<Invoice> {
     return this.guarded(() =>
       this.request<Invoice, Record<string, never>>({
@@ -159,12 +163,36 @@ export class BillingLegacyClient extends BaseHttpClient {
     );
   }
 
+  /** @deprecated since billing 2.14.0. `StatementController#get`. */
+  getStatement(merchantId: MerchantId, period: string): Promise<LegacyStatement> {
+    this.warnLegacyCall('getStatement', merchantId);
+    return this.guarded(() =>
+      this.get<LegacyStatement>('/internal/v1/statements', { merchant_id: merchantId, period }),
+    );
+  }
+
+  // -- plumbing ------------------------------------------------------------
+
+  /**
+   * The three breaker knobs are `BILLING_LEGACY_BREAKER_*` in `.env.example`, read once by
+   * `src/config/configuration.ts`. They used to be defaulted here instead of read, which meant
+   * turning the threshold down during an incident required a deploy.
+   */
   private get breakerOptions(): Partial<BreakerOptions> {
     return {
       errorThresholdPercentage: this.billingConfig.breakerErrorThresholdPercent,
       volumeThreshold: this.billingConfig.breakerVolumeThreshold,
       resetTimeoutMs: this.billingConfig.breakerResetTimeoutMs,
     };
+  }
+
+  private guarded<T>(fn: () => Promise<T>): Promise<T> {
+    return this.breakers.run(
+      BILLING_LEGACY_CIRCUIT,
+      fn,
+      () => new LegacyBillingUnavailableException('payzeno-billing-legacy circuit is open'),
+      this.breakerOptions,
+    );
   }
 
   private warnLegacyCall(method: string, merchantId: MerchantId): void {

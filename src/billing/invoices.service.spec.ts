@@ -34,6 +34,38 @@ describe('InvoicesService', () => {
     } as never;
   }
 
+  beforeEach(async () => {
+    resolver = {
+      list: jest.fn().mockResolvedValue({
+        source: 'projection',
+        page: { data: [invoice()], next_cursor: null, has_more: false },
+      }),
+      get: jest.fn().mockResolvedValue({ source: 'projection', invoice: invoice() }),
+      currentSource: jest.fn().mockReturnValue('billing-legacy'),
+    } as unknown as jest.Mocked<InvoiceSourceResolver>;
+
+    legacy = {
+      voidInvoice: jest.fn().mockResolvedValue(invoice({ status: 'void' })),
+      getStatement: jest.fn().mockResolvedValue({ period: '2026-01' }),
+    } as unknown as jest.Mocked<BillingLegacyClient>;
+
+    projection = {
+      invalidateStatus: jest.fn().mockResolvedValue(undefined),
+    } as unknown as jest.Mocked<InvoiceProjectionService>;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        InvoicesService,
+        { provide: InvoiceSourceResolver, useValue: resolver },
+        { provide: BillingLegacyClient, useValue: legacy },
+        { provide: InvoiceProjectionService, useValue: projection },
+        { provide: PAYZENO_LOGGER, useValue: new NoopLogger() },
+      ],
+    }).compile();
+
+    service = moduleRef.get(InvoicesService);
+  });
+
   describe('list', () => {
     it('resolves through the source resolver, never the legacy client directly', async () => {
       const page = await service.list(principal, { limit: 10 });
@@ -66,6 +98,35 @@ describe('InvoicesService', () => {
       await expect(service.get(principal, 'inv_other')).rejects.toBeInstanceOf(
         ResourceNotFoundException,
       );
+    });
+  });
+
+  describe('voidInvoice', () => {
+    it('checks scope before voiding — the void is irreversible upstream', async () => {
+      await service.voidInvoice(principal, 'inv_1');
+
+      const scopeOrder = resolver.get.mock.invocationCallOrder[0];
+      const voidOrder = legacy.voidInvoice.mock.invocationCallOrder[0];
+      expect(scopeOrder).toBeLessThan(voidOrder);
+    });
+
+    it('drops the projection row rather than updating it', async () => {
+      const result = await service.voidInvoice(principal, 'inv_1');
+
+      expect(result.status).toBe('void');
+      expect(projection.invalidateStatus).toHaveBeenCalledWith('inv_1', 'void');
+    });
+
+    it('does not call the legacy service for another merchant’s invoice', async () => {
+      resolver.get.mockResolvedValue({
+        source: 'billing-legacy',
+        invoice: invoice({ merchant_id: 'mch_someone_else' }),
+      } as never);
+
+      await expect(service.voidInvoice(principal, 'inv_other')).rejects.toBeInstanceOf(
+        ResourceNotFoundException,
+      );
+      expect(legacy.voidInvoice).not.toHaveBeenCalled();
     });
   });
 
