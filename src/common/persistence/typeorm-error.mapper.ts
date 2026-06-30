@@ -39,6 +39,13 @@ export function isUniqueViolation(err: unknown, constraint?: string): boolean {
   return constraint ? driver.constraint === constraint : true;
 }
 
+export function isSerializationFailure(err: unknown): boolean {
+  const driver = asDriverError(err);
+  return (
+    driver?.code === SQLSTATE.SERIALIZATION_FAILURE || driver?.code === SQLSTATE.DEADLOCK_DETECTED
+  );
+}
+
 export function mapTypeOrmError(err: unknown): unknown {
   if (err instanceof ApiException) return err;
 
