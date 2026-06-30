@@ -28,11 +28,19 @@ describe('typeorm-error.mapper', () => {
   });
 
   describe('isUniqueViolation', () => {
+    it('recognises a 23505', () => {
+      expect(isUniqueViolation(driverError('23505'))).toBe(true);
+    });
+
     it('can be narrowed to one constraint', () => {
       const err = driverError('23505', 'uq_dispute_charge_open');
 
       expect(isUniqueViolation(err, 'uq_dispute_charge_open')).toBe(true);
       expect(isUniqueViolation(err, 'uq_charge_processor_reference')).toBe(false);
+    });
+
+    it('recognises 40001', () => {
+      expect(isSerializationFailure(driverError('40001'))).toBe(true);
     });
 
     it('recognises a deadlock as retryable too', () => {
@@ -72,5 +80,8 @@ describe('typeorm-error.mapper', () => {
       expect(mapTypeOrmError(err)).toBe(err);
     });
 
+    it('does not throw on null', () => {
+      expect(() => mapTypeOrmError(null)).not.toThrow();
+    });
   });
 });
