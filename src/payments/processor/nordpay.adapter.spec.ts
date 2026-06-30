@@ -20,6 +20,45 @@ describe('NordpayAdapter', () => {
   let transport: InMemoryTransport;
   let adapter: NordpayAdapter;
 
+  const euroAuth: AuthorizeRequest = {
+    chargeId: 'ch_np00000001',
+    merchantId: 'mch_np01',
+    amountMinor: 9_900,
+    currency: 'EUR',
+    paymentMethodToken: 'pmt_visa_0002',
+    captureMethod: 'automatic',
+    statementDescriptor: 'AURORA EU',
+    threeDSecure: { returnUrl: 'https://aurora.example/3ds', challengePreference: 'auto' },
+    idempotencyKey: 'auth:ch_np00000001',
+  };
+
+  function approval(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      outcome: 'APPROVED',
+      scheme_transaction_id: 'ntx_np_0001',
+      auth_code: 'N44120',
+      reference: 'np_auth_0001',
+      refusal_reason: null,
+      fraud_score: 8,
+      card: {
+        scheme: 'VISA',
+        last_digits: '0002',
+        expiry_month: 4,
+        expiry_year: 2028,
+        issuer_country_code: 'DE',
+        funding_source: 'CREDIT',
+      },
+      authentication: {
+        protocol_version: '2.2.0',
+        flow: 'frictionless',
+        status: 'Y',
+        eci: '05',
+        liability_shift: true,
+      },
+      ...overrides,
+    };
+  }
+
   beforeEach(() => {
     transport = new InMemoryTransport();
     adapter = buildNordpay(transport, new FixedClock('2026-01-15T12:00:00.000Z')).adapter;
@@ -118,6 +157,47 @@ describe('NordpayAdapter', () => {
     });
   });
 
+  it('surfaces AUTHENTICATION_REQUIRED as not-approved so the intent can go to requires_action', async () => {
+    transport.on('POST', '/v2/authorizations', () => ({
+      status: 200,
+      body: approval({
+        outcome: 'AUTHENTICATION_REQUIRED',
+        scheme_transaction_id: null,
+        auth_code: null,
+        authentication: {
+          protocol_version: '2.2.0',
+          flow: 'challenge',
+          status: 'U',
+          eci: '07',
+          liability_shift: false,
+        },
+      }),
+    }));
+
+    const result = await adapter.authorize(euroAuth);
+
+    expect(result.approved).toBe(false);
+    expect(result.threeDSecure?.authenticationFlow).toBe('challenge');
+  });
+
+  it('maps a refusal reason onto a payzeno decline code', async () => {
+    transport.on('POST', '/v2/authorizations', () => ({
+      status: 200,
+      body: approval({
+        outcome: 'DECLINED',
+        scheme_transaction_id: null,
+        auth_code: null,
+        refusal_reason: 'ISSUER_UNAVAILABLE',
+        authentication: null,
+      }),
+    }));
+
+    const result = await adapter.authorize(euroAuth);
+
+    expect(result.approved).toBe(false);
+    expect(result.declineCode).toBe('issuer_unavailable');
+  });
+
   it('captures against the same route shape as worldflow', async () => {
     transport.on('POST', '/v2/authorizations/:ntx/captures', () => ({
       status: 200,
@@ -161,4 +241,9 @@ describe('NordpayAdapter', () => {
     expect(result.failureReason).toBe('ORIGINAL_NOT_SETTLED');
   });
 
+  it('throws ProcessorUnavailableException on a 504', async () => {
+    transport.on('POST', '/v2/authorizations', () => ({ status: 504, body: {} }));
+
+    await expect(adapter.authorize(euroAuth)).rejects.toBeInstanceOf(ProcessorUnavailableException);
+  });
 });

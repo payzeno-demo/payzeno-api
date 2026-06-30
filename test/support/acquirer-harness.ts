@@ -45,6 +45,29 @@ export interface AcquirerHarness<TAdapter> {
   verifier: ProcessorSignatureVerifier;
 }
 
+export function buildAcquirerClient(
+  credentials: AcquirerCredentials,
+  transport: InMemoryTransport,
+  options: { retries?: number } = {},
+): { http: AcquirerHttpClient; breakers: CircuitBreakerRegistry } {
+  const breakers = new CircuitBreakerRegistry();
+  const retryPolicy =
+    options.retries === 0 ? new NoRetryPolicy() : new IdempotentRetryPolicy(options.retries ?? 2);
+
+  const http = new AcquirerHttpClient(
+    credentials,
+    transport,
+    { ...DEFAULT_CLIENT_OPTIONS, retries: options.retries ?? 2 },
+    retryPolicy,
+    new NoopLogger(),
+    breakers,
+  );
+
+  return { http, breakers };
+}
+
+export const WEBHOOK_SECRETS = { worldflow: 'wf_webhook_secret', nordpay: 'np_webhook_secret' };
+
 export function buildWorldflow(
   transport = new InMemoryTransport(),
   clock: Clock = new FixedClock(),
@@ -101,3 +124,12 @@ export function worldflowApproval(overrides: Record<string, unknown> = {}): Reco
   };
 }
 
+export function worldflowDecline(reason = 'INSUFFICIENT_FUNDS'): Record<string, unknown> {
+  return worldflowApproval({
+    status: 'declined',
+    network_transaction_id: null,
+    authorization_code: null,
+    decline_reason: reason,
+    three_ds: null,
+  });
+}

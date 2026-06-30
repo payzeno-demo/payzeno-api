@@ -16,6 +16,7 @@ import { makeCharge, makeSettledCharge } from 'test/factories/charge.factory';
 describe('ProcessorWebhookService', () => {
   let service: ProcessorWebhookService;
   let charges: jest.Mocked<ChargesService>;
+  let disputes: jest.Mocked<DisputesService>;
   let refunds: jest.Mocked<RefundsService>;
   let publisher: jest.Mocked<OutboxEventPublisher>;
   let router: jest.Mocked<ProcessorRouter>;
@@ -119,6 +120,20 @@ describe('ProcessorWebhookService', () => {
     );
   });
 
+  it('emits refund.failed when the acquirer reports a failed reversal', async () => {
+    adapter.parseWebhook.mockReturnValue(
+      parsed('refund_settled', { raw: { refund_reference: 'wf_ref_2', failed: true } }),
+    );
+
+    await service.handle('worldflow', Buffer.from('{}'), 'sig');
+
+    expect(publisher.publish).toHaveBeenCalledWith(
+      'refund.failed',
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
   it('handles chargeback_reversed without inventing a new dispute', async () => {
     adapter.parseWebhook.mockReturnValue(parsed('chargeback_reversed'));
 
@@ -138,4 +153,11 @@ describe('ProcessorWebhookService', () => {
     expect(publisher.publish).not.toHaveBeenCalled();
   });
 
+  it('rethrows a signature failure so the route returns non-2xx', async () => {
+    adapter.parseWebhook.mockImplementation(() => {
+      throw new Error('bad signature');
+    });
+
+    await expect(service.handle('worldflow', Buffer.from('{}'), 'nope')).rejects.toThrow();
+  });
 });
