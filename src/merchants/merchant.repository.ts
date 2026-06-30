@@ -98,6 +98,28 @@ export class MerchantRepository extends PayzenoRepository<MerchantEntity> {
     manager?: EntityManager,
   ): Promise<number> {
     const repo = manager ? manager.getRepository(MerchantEntity) : this;
+    const result = await repo
+      .createQueryBuilder()
+      .update()
+      .set(patch)
+      .where('id = :merchantId', { merchantId })
+      .execute();
+
+    return result.affected ?? 0;
+  }
+
+  /**
+   * Conditional status write. The `WHERE status = :from` is what makes two concurrent
+   * transitions safe: the loser affects zero rows and `MerchantsService.changeStatus` turns
+   * that into the 409 the state machine would have raised, rather than silently overwriting
+   * a suspension with an approval.
+   */
+  async transitionStatus(
+    merchantId: MerchantId,
+    from: MerchantStatus,
+    to: MerchantStatus,
+    manager?: EntityManager,
+  ): Promise<number> {
     const repo = manager ? manager.getRepository(MerchantEntity) : this;
     const result = await repo
       .createQueryBuilder()
@@ -112,5 +134,21 @@ export class MerchantRepository extends PayzenoRepository<MerchantEntity> {
 
   /** `RiskEvaluationJob` walks these. Only active merchants can be restricted for risk. */
   listActiveLive(limit: number, afterId: string | null): Promise<MerchantEntity[]> {
+    let qb = this.createQueryBuilder('merchant')
+      .where('merchant.status = :status', { status: 'active' })
+      .andWhere('merchant.livemode = true');
+
+    if (afterId) {
+      qb = qb.andWhere('merchant.id > :afterId', { afterId });
+    }
+
+    return qb.orderBy('merchant.id', 'ASC').take(limit).getMany();
+  }
+
+  /** The `pix_merchant_capture_at_settlement` partial index exists for this one query. */
+  listDeferredCapture(): Promise<MerchantEntity[]> {
+    return this.createQueryBuilder('merchant')
+      .where('merchant.capture_at_settlement = true')
+      .getMany();
   }
 }

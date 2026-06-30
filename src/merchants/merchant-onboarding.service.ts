@@ -53,6 +53,7 @@ export class MerchantOnboardingService {
     private readonly transactions: TransactionManager,
     private readonly ledger: LedgerHttpClient,
     private readonly ids: IdFactory,
+    @Inject(EVENT_PUBLISHER) private readonly events: EventPublisher,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
   ) {}
@@ -116,6 +117,16 @@ export class MerchantOnboardingService {
    * different capitalisation is the duplicate that actually happens.
    */
   private async assertNotDuplicate(legalName: string, country: string): Promise<void> {
+    const existing = await this.merchants.findByLegalName(legalName, country);
+
+    if (existing) {
+      throw new ValidationException('A merchant with this legal name already exists in this country', [
+        { path: 'legal_name', code: 'duplicate', message: `already onboarded as ${existing.id}` },
+      ]);
+    }
+  }
+
+  private build(request: CreateMerchantRequest, livemode: boolean): MerchantEntity {
     const merchant = new MerchantEntity();
     const now = this.clock.now();
 

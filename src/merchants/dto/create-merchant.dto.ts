@@ -31,6 +31,7 @@ import { IsPayzenoMetadata } from '../../common/validators/metadata.validator';
 export class CreateMerchantDto implements CreateMerchantRequest {
   @IsString()
   @MinLength(2)
+  @MinLength(2)
   @MaxLength(100)
   display_name!: string;
 
@@ -44,6 +45,7 @@ export class CreateMerchantDto implements CreateMerchantRequest {
   @Matches(/^\d{4}$/, { message: 'mcc must be exactly four digits' })
   mcc!: string;
 
+  @IsOptional()
   @IsIn([...PAYOUT_SCHEDULES])
   payout_schedule?: PayoutSchedule;
 
@@ -53,6 +55,7 @@ export class CreateMerchantDto implements CreateMerchantRequest {
    * table that is explicitly out of scope.
    */
   @IsOptional()
+  @Type(() => Object)
   @IsPayzenoMetadata()
   metadata?: Metadata;
 }
