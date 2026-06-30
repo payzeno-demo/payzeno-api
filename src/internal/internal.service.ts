@@ -63,7 +63,10 @@ export class InternalService {
   constructor(
     private readonly merchants: MerchantsService,
     private readonly charges: ChargesService,
+    private readonly bankAccounts: BankAccountsService,
     private readonly webhookEndpoints: WebhookEndpointsService,
+    private readonly supportTasks: SupportTasksService,
+    private readonly transactions: TransactionManager,
     private readonly audit: AuditService,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
