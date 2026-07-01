@@ -66,6 +66,7 @@ export class DisputesService extends BaseService<DisputeEntity> {
     private readonly charges: ChargeRepository,
     private readonly evidence: DisputeEvidenceService,
     private readonly states: DisputeStateMachine,
+    private readonly ledger: LedgerReadThroughService,
     private readonly transactions: TransactionManager,
     @Inject(EVENT_PUBLISHER) private readonly events: EventPublisher,
     @Inject(CLOCK) private readonly clock: Clock,
@@ -92,8 +93,17 @@ export class DisputesService extends BaseService<DisputeEntity> {
       throw new ChargeNotFoundException(command.chargeId);
     }
 
+    // FIXME: fee lookup should be cached. `dispute_fee_schedule` has fourteen rows, it changes
+    // when a scheme changes its pricing (twice in twelve months), and we hit the database for
+    // it on every single dispute webhook. It is not slow enough to have been worth a ticket and
+    // it is exactly the kind of thing that stops being fine at 10x volume.
+    const feeMinor = command.isWarning
+      ? 0
+      : await this.fees.feeFor(charge.acquirer, charge.currency);
+
     const status: DisputeStatus = command.isWarning ? 'warning_needs_response' : 'needs_response';
     const scope = scopeFrom(principal);
+    const submit = dto.submit !== false;
     const submittedAt = submit ? this.clock.now() : null;
 
     if (submit) {

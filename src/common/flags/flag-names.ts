@@ -22,3 +22,6 @@ export const FLAG_NAMES = {
    * arc PCI. On, and non-removable — docs/compliance/pci-scope.md's SAQ-A-EP argument depends
    * on it being unconditional. It is a named flag so the runbook has something to point at,
    * not so anyone can turn it off.
+   */
+  REDACT_PAN_IN_LOGS: 'redact_pan_in_logs',
+} as const;

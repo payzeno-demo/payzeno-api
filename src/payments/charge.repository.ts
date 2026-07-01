@@ -93,6 +93,21 @@ export class ChargeRepository extends PayzenoRepository<ChargeEntity> {
     return this.lockForUpdate(manager, chargeId);
   }
 
+  async markCaptured(manager: EntityManager, chargeId: ChargeId, write: CaptureWrite): Promise<number> {
+    const result = await manager
+      .createQueryBuilder()
+      .update(ChargeEntity)
+      .set({
+        status: 'captured',
+        captured_amount_minor: write.capturedAmountMinor,
+        processor_reference: write.processorReference,
+        captured_at: write.capturedAt,
+      })
+      .where('id = :id AND status = :expected', { id: chargeId, expected: 'authorized' })
+      .execute();
+    return result.affected ?? 0;
+  }
+
   async addRefundedAmount(manager: EntityManager, chargeId: ChargeId, amountMinor: number): Promise<void> {
     await manager
       .createQueryBuilder()
