@@ -41,6 +41,7 @@ export class InvoiceSourceResolver {
   constructor(
     private readonly flags: FeatureFlags,
     private readonly legacy: BillingLegacyClient,
+    private readonly ledger: LedgerHttpClient,
     @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
   ) {}
 

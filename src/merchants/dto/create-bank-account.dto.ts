@@ -32,6 +32,13 @@ export class CreateBankAccountDto implements CreateBankAccountRequest {
    * Payments. `BankAccountsService` re-checks the scheme against the currency, because a GBP
    * account on the SEPA rail is a payout that will be returned three days later.
    */
+  @IsIn([...BANK_ACCOUNT_SCHEMES])
+  scheme!: BankAccountScheme;
+
+  /** Opaque vault token, `bat_` prefixed. Payzeno never sees the account number. */
+  @IsVaultToken('bat_')
+  bank_account_token!: string;
+
   @IsString()
   @MinLength(2)
   @MaxLength(140)
