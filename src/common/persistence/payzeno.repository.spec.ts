@@ -131,6 +131,17 @@ describe('PayzenoRepository', () => {
   });
 
   describe('findScoped', () => {
+    it('adds the id predicate on top of the scope, never instead of it', async () => {
+      await repo.findScoped(TEST_CHARGE_ID, scope);
+
+      expect(builder.state.wheres).toHaveLength(3);
+      expect(builder.state.wheres[2][0]).toContain('charge.id = :id');
+    });
+
+    it('counts within the scope', async () => {
+      await expect(repo.existsScoped(TEST_CHARGE_ID, scope)).resolves.toBe(true);
+    });
+
     it('is false when the count is zero', async () => {
       (builder.qb as unknown as { getCount: () => Promise<number> }).getCount = async () => 0;
 
@@ -178,11 +189,30 @@ describe('PayzenoRepository', () => {
   });
 
   describe('lockForUpdate', () => {
+    it('takes a pessimistic write lock', async () => {
+      const manager = {
+        getRepository: () => ({ createQueryBuilder: () => builder.qb }),
+      } as unknown as EntityManager;
+
+      await repo.lockForUpdate(TEST_CHARGE_ID, manager);
+
+      expect(builder.state.locks).toContain('pessimistic_write');
+    });
+
     function managerWithBuilder(): EntityManager {
       return {
         getRepository: () => ({ createQueryBuilder: () => builder.qb }),
       } as unknown as EntityManager;
     }
+
+    it('constrains the update to the id, the merchant and the mode', async () => {
+      await repo.updateScoped(TEST_CHARGE_ID, scope, { status: 'captured' } as never, undefined, managerWithBuilder());
+
+      const sql = builder.state.wheres.map(([s]) => s).join(' ');
+      expect(sql).toContain('id = :id');
+      expect(sql).toContain('merchant_id = :merchantId');
+      expect(sql).toContain('livemode = :livemode');
+    });
 
     it('returns the number of rows affected', async () => {
       await expect(

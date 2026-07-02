@@ -157,3 +157,20 @@ export class ChargesService extends BaseService<ChargeEntity> {
 
     const marked = await this.markSettledFromBatch(manager, [chargeId], mark);
     if (marked === 0) {
+      throw new ChargeNotFoundException(chargeId);
+    }
+
+    charge.status = 'settled';
+    charge.settlement_batch_id = mark.settlementBatchId;
+    charge.settled_at = new Date(mark.settledAt);
+    return toCharge(charge);
+  }
+
+  /** Resolves an inbound acquirer webhook back to a charge. Null, not a throw: an unknown */
+  /** reference is usually another merchant's processor on a shared sandbox endpoint. */
+  findByProcessorReference(acquirer: Acquirer, processorReference: string): Promise<ChargeEntity | null> {
+    return this.charges.findByProcessorReference(acquirer, processorReference);
+  }
+
+  /** `GET /internal/v1/charges/:chargeId` — the ledger reconciling an orphaned item. */
+  async getInternal(chargeId: ChargeId): Promise<Charge> {

@@ -14,6 +14,8 @@ import { SQLSTATE } from 'src/common/persistence/typeorm-error.mapper';
 describe('TransactionManager', () => {
   let transaction: jest.Mock;
   let dataSource: DataSource;
+  let manager: TransactionManager;
+
   beforeEach(() => {
     transaction = jest
       .fn()
@@ -23,6 +25,12 @@ describe('TransactionManager', () => {
     dataSource = { transaction, manager: { id: 'root' } } as unknown as DataSource;
     manager = new TransactionManager(dataSource);
   });
+
+  function serializationFailure(): Error {
+    return Object.assign(new Error('could not serialize access'), {
+      code: SQLSTATE.SERIALIZATION_FAILURE,
+    });
+  }
 
   it('opens a transaction and hands the callback its manager', async () => {
     const seen: unknown[] = [];
@@ -142,4 +150,9 @@ describe('TransactionManager', () => {
     });
   });
 
+  describe('manager', () => {
+    it('exposes the root manager for callers that need no transaction', () => {
+      expect(manager.manager).toEqual({ id: 'root' });
+    });
+  });
 });
