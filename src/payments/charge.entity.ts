@@ -57,6 +57,9 @@ export class ChargeEntity extends MerchantScopedEntity {
   @Column({ type: 'bigint', default: 0, transformer: requiredMinorUnitsTransformer })
   captured_amount_minor: number;
 
+  @Column({ type: 'bigint', default: 0, transformer: requiredMinorUnitsTransformer })
+  refunded_amount_minor: number;
+
   @Column({ type: 'char', length: 3, transformer: currencyTransformer })
   currency: CurrencyCode;
 
@@ -99,6 +102,9 @@ export class ChargeEntity extends MerchantScopedEntity {
   @Column({ type: 'enum', enum: ['automatic', 'manual'], enumName: 'capture_method' })
   capture_method: CaptureMethod;
 
+  @Column({ type: 'smallint', default: 0 })
+  risk_score: number;
+
   @Column({ type: 'text', nullable: true })
   failure_message: string | null;
 
@@ -120,6 +126,13 @@ export class ChargeEntity extends MerchantScopedEntity {
 
   @Column({ type: 'timestamptz', nullable: true })
   captured_at: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  settled_at: Date | null;
+
+  /** `authorized_at + 7d`, or `+ 30d` for MCCs 3000-3999 / 7011 / 7512. See ChargeExpiryPolicy. */
+  @Column({ type: 'timestamptz', nullable: true })
+  authorization_expires_at: Date | null;
 
   /** The one place the six flat `card_*` columns become the contracted nested object. */
   toCardSummary(): CardSummary {

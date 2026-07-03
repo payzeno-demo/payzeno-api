@@ -112,3 +112,10 @@ const REQUEST_CHAIN = [
 
     HealthModule,
     AuthModule,
+    StaffModule,
+    AuditModule,
+    SupportModule,
+    MerchantsModule,
+    PaymentsModule,
+    RefundsModule,
+    DisputesModule,
