@@ -46,6 +46,14 @@ export function isSerializationFailure(err: unknown): boolean {
   );
 }
 
+export function isLockNotAvailable(err: unknown): boolean {
+  return asDriverError(err)?.code === SQLSTATE.LOCK_NOT_AVAILABLE;
+}
+
+/**
+ * Translates a driver error, or returns it untouched when it is already an ApiException or
+ * is not a driver error at all. Callers do `throw mapTypeOrmError(err)`.
+ */
 export function mapTypeOrmError(err: unknown): unknown {
   if (err instanceof ApiException) return err;
 
