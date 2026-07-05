@@ -53,6 +53,20 @@ describe('SessionService', () => {
     });
 
     it('makes pz_session HttpOnly and pz_csrf readable', async () => {
+      const issued = await sessions.issue(USER, MERCHANT, 'admin', origin);
+
+      expect(issued.sessionCookie.options.httpOnly).toBe(true);
+      expect(issued.csrfCookie.options.httpOnly).toBe(false);
+    });
+
+    it('mints an opaque id that is not derived from the user id', async () => {
+      const issued = await sessions.issue(USER, MERCHANT, 'admin', origin);
+
+      expect(issued.record.id).not.toContain(USER);
+      expect(issued.record.id).toHaveLength(43);
+    });
+
+    it('truncates a hostile user agent', async () => {
       const issued = await sessions.issue(USER, MERCHANT, 'admin', {
         userAgent: 'x'.repeat(5_000),
         ip: null,
@@ -88,6 +102,34 @@ describe('SessionService', () => {
 
   describe('resolve', () => {
     it('returns a dashboard_session principal', async () => {
+      const issued = await sessions.issue(USER, MERCHANT, 'admin', origin);
+
+      await expect(sessions.resolve(issued.record.id, 'POST', undefined)).rejects.toBeInstanceOf(
+        PermissionDeniedException,
+      );
+    });
+
+    it('accepts a mutating request with the matching CSRF header', async () => {
+      const issued = await sessions.issue(USER, MERCHANT, 'admin', origin);
+
+      await expect(
+        sessions.resolve(issued.record.id, 'POST', issued.record.csrfToken),
+      ).resolves.toMatchObject({ kind: 'dashboard_session' });
+    });
+
+    it('throws when no cookie was presented', async () => {
+      await expect(sessions.resolve(undefined, 'GET', undefined)).rejects.toBeInstanceOf(
+        AuthenticationRequiredException,
+      );
+    });
+
+    it('throws when the session is unknown or expired', async () => {
+      await expect(sessions.resolve('sess_nope', 'GET', undefined)).rejects.toBeInstanceOf(
+        AuthenticationRequiredException,
+      );
+    });
+
+    it('does NOT slide the TTL when CSRF fails', async () => {
       const touch = jest.spyOn(store, 'touch');
 
       await sessions.resolve(issued.record.id, 'GET', undefined);
@@ -98,6 +140,8 @@ describe('SessionService', () => {
 
   describe('resolveStaff', () => {
     it('returns null for a merchant session — StaffGuard then refuses', async () => {
+      const issued = await sessions.issueStaff('stf_0001', 'risk', origin);
+
       const principal = await sessions.resolveStaff(issued.record.id, 'GET', undefined, MERCHANT);
 
       expect(principal).toEqual({
@@ -111,7 +155,61 @@ describe('SessionService', () => {
     it('lets one session act on a different merchant per request', async () => {
       const issued = await sessions.issueStaff('stf_0001', 'support', origin);
 
+      const second = await sessions.resolveStaff(issued.record.id, 'GET', undefined, 'mch_other');
+
+      expect(first).toMatchObject({ acting_merchant_id: MERCHANT });
+      expect(second).toMatchObject({ acting_merchant_id: 'mch_other' });
+    });
+  });
+
+  describe('resolveForUpgrade', () => {
+    it('demands CSRF even though a WebSocket handshake has no method', async () => {
+      const issued = await sessions.issue(USER, MERCHANT, 'viewer', origin);
+
+      await expect(sessions.resolveForUpgrade(issued.record.id, undefined)).rejects.toBeInstanceOf(
+        PermissionDeniedException,
+      );
+      await expect(
+        sessions.resolveForUpgrade(issued.record.id, issued.record.csrfToken),
+      ).resolves.toMatchObject({ kind: 'dashboard_session' });
+    });
+  });
+
+  describe('refreshCsrf', () => {
+    it('returns the stored token and slides the TTL', async () => {
       const issued = await sessions.issue(USER, MERCHANT, 'owner', origin);
+      const touch = jest.spyOn(store, 'touch');
+
+      await expect(sessions.refreshCsrf(issued.record.id)).resolves.toBe(issued.record.csrfToken);
+      expect(touch).toHaveBeenCalled();
+    });
+  });
+
+  describe('destroy', () => {
+    it('removes the record', async () => {
+      const issued = await sessions.issue(USER, MERCHANT, 'owner', origin);
+
+      await sessions.destroy(issued.record.id);
+
+      await expect(store.get(issued.record.id)).resolves.toBeNull();
+    });
+
+    it('is a no-op with no cookie — logout without a session is still a 204', async () => {
+      await expect(sessions.destroy(undefined)).resolves.toBeUndefined();
+    });
+  });
+
+  describe('destroyAllForUser', () => {
+    it('drops every live session for that user', async () => {
+      await sessions.issue(USER, MERCHANT, 'owner', origin);
+      await sessions.issue(USER, MERCHANT, 'owner', origin);
+
+      await expect(sessions.destroyAllForUser(USER)).resolves.toBe(2);
+    });
+  });
+
+  describe('expiredCookies', () => {
+    it('clears both cookies on the same path they were set on', () => {
     });
   });
 
