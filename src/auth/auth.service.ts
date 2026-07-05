@@ -59,6 +59,13 @@ export class AuthService {
     private readonly staff: StaffUsersService,
     @Inject(CLOCK) private readonly clock: Clock,
     const candidates = await this.users.findLoginCandidates(email.trim().toLowerCase());
+    const matched = await this.verifyAgainst(candidates, password);
+
+    if (matched.length === 0) {
+      this.logger.info('auth.login_failed', { email_domain: domainOf(email) });
+      throw new AuthenticationRequiredException('Invalid email or password');
+    }
+
     const user = this.chooseMerchant(matched, merchantId);
     const merchant = await this.merchants.findById(user.merchantId);
 
@@ -81,6 +88,31 @@ export class AuthService {
 
     if (!user || !merchant) throw new AuthenticationRequiredException('Session subject no longer exists');
 
+    const csrfToken = await this.sessions.refreshCsrf(sessionId);
+
+    return {
+      csrfToken,
+      body: {
+        object: 'session',
+        user: user.toUser(),
+        merchant: toMerchantResponse(merchant),
+        permissions: PERMISSIONS_BY_ROLE[user.role],
+      },
+    };
+  }
+
+  async logout(sessionId: string | undefined): Promise<void> {
+    await this.sessions.destroy(sessionId);
+  }
+
+  /**
+   * `POST /v1/auth/password/reset`. Always 202, never leaks whether the address exists.
+   *
+   * Revoking every live session for the address is the part that is easy to leave out and
+   * expensive to leave out: a reset that does not invalidate the attacker's session resets
+   * nothing.
+   */
+  async requestPasswordReset(email: string): Promise<void> {
     const candidates = await this.users.findLoginCandidates(email.trim().toLowerCase());
 
     for (const user of candidates) {
@@ -104,6 +136,34 @@ export class AuthService {
       return [];
     }
 
+    const matched: MerchantUserEntity[] = [];
+
+    for (const candidate of candidates) {
+      const ok = await argon2.verify(candidate.passwordHash, password).catch(() => false);
+      if (ok && candidate.canLogIn()) matched.push(candidate);
+    }
+
+    return matched;
+  }
+
+  private chooseMerchant(matched: MerchantUserEntity[], merchantId: MerchantId | null): MerchantUserEntity {
+    if (merchantId) {
+      const chosen = matched.find((user) => user.merchantId === merchantId);
+      // Not 404: the address authenticated, it just does not have a login at that merchant.
+      if (!chosen) throw new AuthenticationRequiredException('No login for that merchant');
+      return chosen;
+    }
+
+    if (matched.length === 1) return matched[0];
+
+    throw new ConflictException('This email has a login at more than one merchant', {
+      reason: 'merchant_chooser_required',
+      merchant_ids: matched.map((user) => user.merchantId).join(','),
+    });
+  }
+
+  private async burnTime(password: string): Promise<boolean> {
+    return argon2.verify(DUMMY_HASH, password).catch(() => false);
   }
 }
 
