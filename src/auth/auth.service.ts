@@ -56,6 +56,7 @@ const PERMISSIONS_BY_ROLE: Readonly<Record<UserRole, string[]>> = {
 export class AuthService {
   constructor(
     private readonly users: MerchantUserRepository,
+    private readonly merchants: MerchantRepository,
     private readonly staff: StaffUsersService,
     @Inject(CLOCK) private readonly clock: Clock,
     const candidates = await this.users.findLoginCandidates(email.trim().toLowerCase());
@@ -84,6 +85,7 @@ export class AuthService {
 
   /** `GET /v1/auth/me` — the console bootstrap call. Also refreshes `pz_csrf`. */
   async describeSession(sessionId: string): Promise<{ body: SessionResponse; csrfToken: string }> {
+    const user = await this.users.findByIdForMerchant(record.merchantId, record.userId);
     const merchant = await this.merchants.findById(record.merchantId);
 
     if (!user || !merchant) throw new AuthenticationRequiredException('Session subject no longer exists');
