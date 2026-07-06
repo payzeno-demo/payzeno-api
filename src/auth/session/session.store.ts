@@ -30,3 +30,14 @@ export interface SessionStore {
   destroyAllForUser(userId: UserId): Promise<number>;
 }
 
+/** The subject a record's sessions are indexed under — merchant user or staff operator. */
+export function subjectOf(record: SessionRecord): string {
+  return record.kind === 'staff' ? (record.staffId ?? 'unknown') : (record.userId ?? 'unknown');
+}
+
+export const SESSION_STORE = Symbol('SESSION_STORE');
+
+/**
+ * Process-local store. Correct on one task, a lie on three — which is why it is only ever
+ * bound when `NODE_ENV=test` or in the dev compose profile. `AuthModule` decides.
+ */

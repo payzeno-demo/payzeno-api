@@ -55,6 +55,15 @@ export class ApiKeyResolver {
   }
 
   async resolve(token: string): Promise<AuthPrincipal> {
+    const entity = await this.resolveEntity(token);
+    return this.principals.fromApiKey(entity);
+  }
+
+  /**
+   * The row behind the token. Separated from `resolve` because `RateLimitInterceptor` wants
+   * the merchant and `ApiKeysService.touch` wants the id, and neither wants a principal.
+   */
+  async resolveEntity(token: string): Promise<ApiKeyEntity> {
     const split = this.split(token);
     if (!split) throw new InvalidApiKeyException();
 

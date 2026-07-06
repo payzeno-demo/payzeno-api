@@ -40,6 +40,7 @@ export interface ResolvedInvoiceList {
 export class InvoiceSourceResolver {
   constructor(
     private readonly flags: FeatureFlags,
+    private readonly projection: InvoiceProjectionService,
     private readonly legacy: BillingLegacyClient,
     private readonly ledger: LedgerHttpClient,
     @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
@@ -117,6 +118,36 @@ export class InvoiceSourceResolver {
     invoiceId: string,
     lines: ReadonlyArray<{ description: string; quantity: number; unit_amount_minor: number; amount_minor: number }>,
   ): Invoice {
+    const total = lines.reduce((sum, line) => sum + Number(line.amount_minor), 0);
+
+    return {
+      id: invoiceId,
+      object: 'invoice',
+      merchant_id: merchantId,
+      number: invoiceId,
+      status: 'open',
+      currency: 'USD',
+      subtotal_minor: total,
+      tax_minor: 0,
+      total_minor: total,
+      amount_due_minor: total,
+      period_start: '',
+      period_end: '',
+      due_date: null,
+      issued_at: null,
+      paid_at: null,
+      lines: lines.map((line) => ({
+        description: line.description,
+        quantity: line.quantity,
+        unit_amount_minor: line.unit_amount_minor,
+        amount_minor: line.amount_minor,
+      })),
+    } as unknown as Invoice;
+  }
+
+  /** Exposed for the invoices controller's `X-Payzeno-Invoice-Source` debug header. */
+  currentSource(): InvoiceSource {
+    return this.flags.isEnabled(FLAG_NAMES.LEDGER_OWNS_INVOICES) ? 'ledger' : 'billing-legacy';
   }
 }
 

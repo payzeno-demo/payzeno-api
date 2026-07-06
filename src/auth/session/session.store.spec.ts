@@ -11,9 +11,49 @@ import { InMemorySessionStore, subjectOf, type SessionRecord } from 'src/auth/se
 describe('InMemorySessionStore', () => {
   const TTL = 60;
 
+  function record(overrides: Partial<SessionRecord> = {}): SessionRecord {
+    return {
+      id: 'sess_aaa',
+      kind: 'merchant_user',
+      userId: 'usr_01HQ8ZZZ0000000000000009',
+      merchantId: 'mch_01HQ8ZZZ0000000000000001',
+      role: 'admin',
+      staffId: null,
+      staffRole: null,
+      csrfToken: 'csrf-token',
+      createdAtMs: Date.now(),
+      lastSeenAtMs: Date.now(),
+      userAgent: 'Mozilla/5.0',
+      ip: '203.0.113.7',
+      ...overrides,
+    };
+  }
+
   beforeEach(() => {
     store = new InMemorySessionStore();
     jest.useRealTimers();
+  });
+
+  it('expires a record once its TTL has passed', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-01-15T12:00:00.000Z'));
+    await store.create(record(), TTL);
+
+    jest.setSystemTime(new Date('2026-01-15T12:01:01.000Z'));
+
+    await expect(store.get('sess_aaa')).resolves.toBeNull();
+  });
+
+  it('slides the TTL on touch', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-01-15T12:00:00.000Z'));
+    await store.create(record(), TTL);
+
+    jest.setSystemTime(new Date('2026-01-15T12:00:50.000Z'));
+    await store.touch('sess_aaa', TTL);
+
+    jest.setSystemTime(new Date('2026-01-15T12:01:30.000Z'));
+
+    // Still alive: the touch moved the expiry to 12:01:50.
+    await expect(store.get('sess_aaa')).resolves.not.toBeNull();
   });
 
   it('records lastSeenAt on touch', async () => {
@@ -29,6 +69,18 @@ describe('InMemorySessionStore', () => {
 
   it('ignores a touch on a session that no longer exists', async () => {
     await expect(store.touch('sess_gone', TTL)).resolves.toBeUndefined();
+  });
+
+  it('destroys a session', async () => {
+    await store.create(record(), TTL);
+    await store.destroy('sess_aaa');
+
+    await expect(store.get('sess_aaa')).resolves.toBeNull();
+  });
+
+  it('is idempotent on a repeated destroy — logout twice is not an error', async () => {
+    await store.destroy('sess_aaa');
+    await expect(store.destroy('sess_aaa')).resolves.toBeUndefined();
   });
 
   describe('destroyAllForUser', () => {
