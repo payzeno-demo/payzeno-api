@@ -41,6 +41,12 @@ export interface ResponseDouble {
   statusCode?: number;
 }
 
+export interface GuardHarness {
+  context: ExecutionContext;
+  request: AuthenticatedRequest;
+  response: ResponseDouble;
+}
+
 /** A request with every field the base guard touches present and sane. */
 export function makeRequest(overrides: RequestOverrides = {}): AuthenticatedRequest {
   return {
@@ -58,6 +64,17 @@ export function makeRequest(overrides: RequestOverrides = {}): AuthenticatedRequ
   };
 }
 
+/** Header lookups in the guards are all lowercase; a fixture that is not is a false failure. */
+function lowercaseKeys(
+  headers: Record<string, string | string[] | undefined>,
+): Record<string, string | string[] | undefined> {
+  const out: Record<string, string | string[] | undefined> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    out[key.toLowerCase()] = value;
+  }
+  return out;
+}
+
 /** Shorthand: build both halves in one call. */
 export function guardContext(overrides: RequestOverrides = {}): GuardHarness {
   return makeExecutionContext(makeRequest(overrides));
@@ -68,3 +85,12 @@ export function guardContext(overrides: RequestOverrides = {}): GuardHarness {
  * defined value across the targets it is given, which is the semantic the guards rely on
  * when a handler overrides its controller.
  */
+export function makeReflector(metadata: Record<string | symbol, unknown> = {}): Reflector {
+  return {
+    get: (key: string | symbol) => metadata[key],
+    getAll: (key: string | symbol) => [metadata[key]],
+    getAllAndOverride: (key: string | symbol) => metadata[key],
+    getAllAndMerge: (key: string | symbol) => metadata[key] ?? [],
+  } as unknown as Reflector;
+}
+

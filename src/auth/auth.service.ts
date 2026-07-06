@@ -57,8 +57,22 @@ export class AuthService {
   constructor(
     private readonly users: MerchantUserRepository,
     private readonly merchants: MerchantRepository,
+    private readonly sessions: SessionService,
     private readonly staff: StaffUsersService,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
+  ) {}
+
+  /**
+   * Chain: AuthController.login → AuthService.login → MerchantUserRepository.findLoginCandidates
+   *        → argon2.verify → SessionService.issue → SessionStore.create
+   */
+  async login(
+    email: string,
+    password: string,
+    merchantId: MerchantId | null,
+    origin: SessionOrigin,
+  ): Promise<LoginOutcome> {
     const candidates = await this.users.findLoginCandidates(email.trim().toLowerCase());
     const matched = await this.verifyAgainst(candidates, password);
 
