@@ -47,6 +47,8 @@ export class WebhookEventsService {
    * if the consumer crashes between the claim and the commit.
    */
   async fanout(tx: EntityManager, input: FanoutInput): Promise<number> {
+    const now = this.clock.now();
+
     const rows = input.endpoints.map((endpoint) => {
       const row = new WebhookEventEntity();
       row.id = this.ids.generate(ApiIdPrefix.WEBHOOK_EVENT);

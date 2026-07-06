@@ -50,6 +50,27 @@ export class OutboxEventPublisher implements EventPublisher {
     }
 
     const row = this.toRow(type, payload, ctx);
+    const tx = this.transactions.currentManager();
+    await this.outbox.enqueue(tx, row);
+
+    this.logger.debug('outbox.enqueued', {
+      event_id: row.id,
+      type,
+      merchant_id: row.merchantId,
+      livemode: row.livemode,
+      in_transaction: this.transactions.isInTransaction(),
+    });
+    return row.id;
+  }
+
+  /**
+   * Bulk enqueue for the few callers that emit a fixed set at once —
+   * `MerchantOnboardingService` writes `merchant.created` alongside the bootstrap call, and
+   * `DisputeDeadlineReminderJob` expires a whole page of disputes in one transaction.
+   */
+  async publishBatch(events: ReadonlyArray<PayzenoEvent>): Promise<string[]> {
+    const tx = this.transactions.currentManager();
+    const now = this.clock.now();
     const row = new EventOutbox();
     row.id = this.ids.generate(ApiIdPrefix.EVENT);
     row.type = type;
