@@ -25,3 +25,6 @@ export const FLAG_NAMES = {
    */
   REDACT_PAN_IN_LOGS: 'redact_pan_in_logs',
 } as const;
+
+export type FlagName = (typeof FLAG_NAMES)[keyof typeof FLAG_NAMES];
+

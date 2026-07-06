@@ -102,6 +102,19 @@ describe('SessionService', () => {
 
   describe('resolve', () => {
     it('returns a dashboard_session principal', async () => {
+      const issued = await sessions.issue(USER, MERCHANT, 'developer', origin);
+
+      const principal = await sessions.resolve(issued.record.id, 'GET', undefined);
+
+      expect(principal).toEqual({
+        kind: 'dashboard_session',
+        merchant_id: MERCHANT,
+        user_id: USER,
+        role: 'developer',
+      });
+    });
+
+    it('requires the CSRF header on a mutating request', async () => {
       const issued = await sessions.issue(USER, MERCHANT, 'admin', origin);
 
       await expect(sessions.resolve(issued.record.id, 'POST', undefined)).rejects.toBeInstanceOf(
@@ -130,6 +143,18 @@ describe('SessionService', () => {
     });
 
     it('does NOT slide the TTL when CSRF fails', async () => {
+      const issued = await sessions.issue(USER, MERCHANT, 'admin', origin);
+      const touch = jest.spyOn(store, 'touch');
+
+      await sessions.resolve(issued.record.id, 'POST', 'wrong-token').catch(() => undefined);
+
+      // The order in resolve() is: assert, then touch. A stolen cookie replayed with a bad
+      // CSRF token must not keep itself alive.
+      expect(touch).not.toHaveBeenCalled();
+    });
+
+    it('slides the TTL on a request that passes', async () => {
+      const issued = await sessions.issue(USER, MERCHANT, 'admin', origin);
       const touch = jest.spyOn(store, 'touch');
 
       await sessions.resolve(issued.record.id, 'GET', undefined);
@@ -140,6 +165,12 @@ describe('SessionService', () => {
 
   describe('resolveStaff', () => {
     it('returns null for a merchant session — StaffGuard then refuses', async () => {
+      const issued = await sessions.issue(USER, MERCHANT, 'admin', origin);
+
+      await expect(sessions.resolveStaff(issued.record.id, 'GET', undefined, null)).resolves.toBeNull();
+    });
+
+    it('takes the acting merchant from the argument, never from the record', async () => {
       const issued = await sessions.issueStaff('stf_0001', 'risk', origin);
 
       const principal = await sessions.resolveStaff(issued.record.id, 'GET', undefined, MERCHANT);
@@ -155,6 +186,7 @@ describe('SessionService', () => {
     it('lets one session act on a different merchant per request', async () => {
       const issued = await sessions.issueStaff('stf_0001', 'support', origin);
 
+      const first = await sessions.resolveStaff(issued.record.id, 'GET', undefined, MERCHANT);
       const second = await sessions.resolveStaff(issued.record.id, 'GET', undefined, 'mch_other');
 
       expect(first).toMatchObject({ acting_merchant_id: MERCHANT });
@@ -210,6 +242,13 @@ describe('SessionService', () => {
 
   describe('expiredCookies', () => {
     it('clears both cookies on the same path they were set on', () => {
+      const cleared = sessions.expiredCookies();
+
+      expect(cleared.map((c) => c.name)).toEqual([SESSION_COOKIE, 'pz_csrf']);
+      for (const cookie of cleared) {
+        expect(cookie.options).toEqual({ path: '/', maxAge: 0 });
+        expect(cookie.value).toBe('');
+      }
     });
   });
 

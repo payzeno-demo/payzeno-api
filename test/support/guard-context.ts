@@ -75,6 +75,59 @@ function lowercaseKeys(
   return out;
 }
 
+export function makeResponse(): ResponseDouble {
+  const headers: Record<string, string> = {};
+  const response: ResponseDouble = {
+    headers,
+    setHeader: jest.fn((name: string, value: string) => {
+      headers[name] = value;
+    }),
+    status: jest.fn(function status(this: ResponseDouble, code: number) {
+      response.statusCode = code;
+      return response;
+    }),
+    json: jest.fn((body: unknown) => {
+      response.body = body;
+    }),
+  };
+  return response;
+}
+
+/**
+ * The handler/class pair a guard reflects on. Two distinct function objects so a spec can
+ * tell handler-level metadata from controller-level metadata — `@StaffOnly` on one route of
+ * a controller whose other routes are session-auth is a real shape in this repo
+ * (`SettlementsController`).
+ */
+export function makeExecutionContext(
+  request: AuthenticatedRequest,
+  response: ResponseDouble = makeResponse(),
+): GuardHarness {
+  const handler = function handler(): void {};
+  const controller = class TestController {};
+
+  const context = {
+    switchToHttp: () => ({
+      getRequest: <T>() => request as unknown as T,
+      getResponse: <T>() => response as unknown as T,
+      getNext: () => undefined,
+    }),
+    getHandler: () => handler,
+    getClass: () => controller,
+    getType: () => 'http',
+    getArgs: () => [request, response],
+    getArgByIndex: (index: number) => [request, response][index],
+    switchToRpc: () => {
+      throw new Error('not an rpc context');
+    },
+    switchToWs: () => {
+      throw new Error('not a ws context');
+    },
+  } as unknown as ExecutionContext;
+
+  return { context, request, response };
+}
+
 /** Shorthand: build both halves in one call. */
 export function guardContext(overrides: RequestOverrides = {}): GuardHarness {
   return makeExecutionContext(makeRequest(overrides));
@@ -94,3 +147,16 @@ export function makeReflector(metadata: Record<string | symbol, unknown> = {}): 
   } as unknown as Reflector;
 }
 
+/** Assert a promise rejects with a specific exception class, and hand the error back. */
+export async function rejectsWith<T extends Error>(
+  promise: Promise<unknown>,
+  type: new (...args: never[]) => T,
+): Promise<T> {
+  try {
+    await promise;
+  } catch (err) {
+    expect(err).toBeInstanceOf(type);
+    return err as T;
+  }
+  throw new Error(`expected the call to reject with ${type.name}, but it resolved`);
+}
