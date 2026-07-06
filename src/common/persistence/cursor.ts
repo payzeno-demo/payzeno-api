@@ -38,6 +38,24 @@ export function applyCursor<T extends CursorRow>(
 ): SelectQueryBuilder<T> {
   const direction = options.direction ?? 'DESC';
   const cursor = decodeOptionalCursor(options.cursor);
+  const cmp = direction === 'DESC' ? '<' : '>';
+
+  if (cursor) {
+    qb.andWhere(
+      `(${options.alias}.created_at ${cmp} :cursorCreatedAt
+        OR (${options.alias}.created_at = :cursorCreatedAt AND ${options.alias}.id ${cmp} :cursorId))`,
+      { cursorCreatedAt: new Date(cursor.createdAt), cursorId: cursor.id },
+    );
+  }
+
+  return qb
+    .orderBy(`${options.alias}.created_at`, direction)
+    .addOrderBy(`${options.alias}.id`, direction)
+    .take(options.limit + 1);
+}
+
+/** Trims the sentinel row and mints the next cursor from the last row actually returned. */
+export function toPage<T extends CursorRow>(rows: T[], limit: number): Paginated<T> {
   const hasMore = rows.length > limit;
   const data = hasMore ? rows.slice(0, limit) : rows;
 }
