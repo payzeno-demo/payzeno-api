@@ -68,6 +68,8 @@ export class PaymentIntentsService extends BaseService<PaymentIntentEntity> {
    */
   async create(principal: AuthPrincipal, dto: CreatePaymentIntentDto): Promise<PaymentIntent> {
     const now = this.clock.now();
+    const id = this.ids.paymentIntentId() as PaymentIntentId;
+
     const row = await this.transactions.runInTransaction((manager) =>
       this.intents.insertIntent(manager, {
         id,

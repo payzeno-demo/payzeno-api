@@ -23,3 +23,11 @@ export interface Cursor {
   /** The row's public id, breaking ties within the same instant. */
   id: string;
 }
+
+const MAX_CURSOR_LENGTH = 256;
+
+export function encodeCursor(cursor: Cursor): string {
+  const json = JSON.stringify({ c: cursor.createdAt, i: cursor.id });
+  return Buffer.from(json, 'utf8').toString('base64url');
+}
+
