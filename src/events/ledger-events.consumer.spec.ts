@@ -27,8 +27,56 @@ describe('LedgerEventsConsumer', () => {
 
   let charges: { markSettledFromBatch: jest.Mock };
   let merchants: { findInternal: jest.Mock };
+  let audit: { record: jest.Mock };
   let supportTasks: { open: jest.Mock };
   let tx: { query: jest.Mock; findOneBy: jest.Mock; update: jest.Mock };
+  let consumer: LedgerEventsConsumer;
+
+  function completion(seen: number[], chunkCount: number): SettlementCompletion {
+    const row = new SettlementCompletion();
+    row.batchId = 'sbt_1';
+    row.runId = 'rec_1';
+    row.chunkCount = chunkCount;
+    row.chunksSeen = seen;
+    row.chargesMarked = seen.length * 1000;
+    row.completedAt = null;
+    return row;
+  }
+
+  function completedEvent(
+    overrides: Partial<SettlementCompletedPayload> = {},
+  ): PayzenoEvent {
+    return {
+      id: 'evt_c1',
+      type: 'settlement.completed',
+      version: 2,
+      occurred_at: '2026-03-01T02:00:00.000Z',
+      source: 'payzeno-ledger',
+      correlation_id: 'corr_1',
+      causation_id: null,
+      merchant_id: null,
+      livemode: true,
+      payload: {
+        batch_id: 'sbt_1',
+        run_id: 'rec_1',
+        acquirer: 'worldflow',
+        currency: 'USD',
+        processing_date: '2026-03-01',
+        items_total: 2000,
+        items_settled: 2000,
+        items_failed: 0,
+        posted_total_minor: 500000,
+        fee_total_minor: 12000,
+        net_total_minor: 488000,
+        settled_charge_ids: ['ch_1', 'ch_2'],
+        chunk_index: 0,
+        chunk_count: 2,
+        completed_at: '2026-03-01T02:00:00.000Z',
+        ...overrides,
+      },
+    } as PayzenoEvent;
+  }
+
   function duplicateEvent(
     overrides: Partial<SettlementDuplicateDetectedPayload> = {},
   ): PayzenoEvent {

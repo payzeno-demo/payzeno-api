@@ -97,4 +97,11 @@ export class EventOutboxRepository extends PayzenoRepository<EventOutbox> {
     return dead ? 'dead' : 'retrying';
   }
 
+  /** Rows the drain gave up on. Alarmed on by the infra `payzeno-api-outbox-dead` metric. */
+  async deadCount(): Promise<number> {
+    return this.manager
+      .createQueryBuilder(EventOutbox, 'e')
+      .where('e.dead_at is not null')
+      .getCount();
+  }
 }
