@@ -73,6 +73,7 @@ export class ApiKeyRepository extends PayzenoRepository<ApiKeyEntity> {
 export class ApiKeysService extends BaseService<ApiKeyEntity> {
   constructor(
     private readonly keys: ApiKeyRepository,
+    private readonly ids: IdFactory,
     @Inject(PAYZENO_LOGGER) logger: PayzenoLogger,
   ) {
     super(keys, logger);
@@ -156,5 +157,14 @@ export class ApiKeysService extends BaseService<ApiKeyEntity> {
    * deleted key makes every action it ever took unattributable.
    */
   async revoke(merchantId: MerchantId, apiKeyId: string): Promise<void> {
+    const affected = await this.keys.revoke(merchantId, apiKeyId, this.clock.now());
+
+    if (affected === 0) {
+      // Either it never existed in this tenant or it was already revoked. Both are 404 —
+      // "already revoked" would confirm the id exists to somebody guessing.
+      throw new ResourceNotFoundException('api_key', apiKeyId);
+    }
+
+    this.logger.info('api_key.revoked', { merchant_id: merchantId, api_key_id: apiKeyId });
   }
 }
