@@ -37,6 +37,11 @@ export abstract class PayzenoRepository<T extends ObjectLiteral & CursorRow> ext
   /** Query-builder alias. Subclasses set it; every generated predicate uses it. */
   protected abstract get alias(): string;
 
+  /** Column holding the tenant. Overridden by Merchant, whose tenant column is `id`. */
+  protected get scopeColumn(): string {
+    return 'merchant_id';
+  }
+
   /** A builder already narrowed to one tenant and one mode. The only entry point that is. */
   scopedQuery(scope: MerchantScope, manager?: EntityManager): SelectQueryBuilder<T> {
     const repo = manager ? manager.getRepository<T>(this.target) : this;
