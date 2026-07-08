@@ -41,6 +41,16 @@ describe('auth e2e', () => {
     const res = await request(ctx.app.getHttpServer())
       .post('/v1/auth/login')
       .send({ email: seeded.email, password: PASSWORD });
+    const setCookie = res.headers['set-cookie'] as unknown as string[];
+    return {
+      res,
+      session: cookieValue(setCookie, 'pz_session')!,
+      csrf: cookieValue(setCookie, 'pz_csrf')!,
+      setCookie,
+    };
+  }
+
+  it('logs in and returns the console bootstrap payload', async () => {
     const { setCookie } = await login();
 
     expect(cookieAttrs(setCookie, 'pz_session')).toMatch(/HttpOnly/i);
@@ -79,8 +89,38 @@ describe('auth e2e', () => {
   it('403s a mutating session request with no CSRF header', async () => {
     const { session, csrf } = await login();
 
+    const res = await request(ctx.app.getHttpServer())
+      .post('/v1/webhook_endpoints')
+      .set('Cookie', [`pz_session=${session}`, `pz_csrf=${csrf}`])
+      .set('Idempotency-Key', 'auth-csrf-missing')
+      .send({ url: 'https://aurora.example/hooks', enabled_events: ['payment.captured'] });
+
+    expect(res.status).toBe(403);
+    expect(res.body).toBeApiError('permission_denied');
+  });
+
+  it('403s a mutating session request whose CSRF header does not match the cookie', async () => {
     const { session, csrf } = await login();
 
+    const res = await request(ctx.app.getHttpServer())
+      .post('/v1/webhook_endpoints')
+      .set('Cookie', [`pz_session=${session}`, `pz_csrf=${csrf}`])
+      .set('X-Payzeno-CSRF', 'a-different-value')
+      .set('Idempotency-Key', 'auth-csrf-mismatch')
+      .send({ url: 'https://aurora.example/hooks', enabled_events: ['payment.captured'] });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('accepts a mutating session request with a matching CSRF header', async () => {
+    const res = await request(ctx.app.getHttpServer())
+      .get('/v1/payment_intents?limit=1')
+      .set('Authorization', `Bearer ${seeded.apiKey}`);
+
+    expect(res.status).toBe(200);
+  });
+
+  it('logs out, clears both cookies and invalidates the session', async () => {
     const { session, csrf } = await login();
 
     const out = await request(ctx.app.getHttpServer())

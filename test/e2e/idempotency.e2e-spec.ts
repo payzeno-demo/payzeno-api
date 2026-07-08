@@ -74,6 +74,7 @@ describe('idempotency e2e', () => {
   });
 
   it('does not create a second resource on replay', async () => {
+    const key = 'idem-replay-0002';
     const first = await post(key, seeded);
     await post(key, seeded);
 
@@ -104,8 +105,26 @@ describe('idempotency e2e', () => {
     // the in-progress lease. This is the branch `PostgresIdempotencyStore.begin` exists
     // for, and it is only reachable with real concurrency.
     const [a, b] = await Promise.all([post(key, seeded), post(key, seeded)]);
+    const inFlight = [a, b].find((r) => r.status === 409);
+
+    expect(inFlight).toBeDefined();
+    expect(inFlight!.body).toBeApiError('idempotency_in_progress');
+    expect(Number(inFlight!.headers['retry-after'])).toBeGreaterThan(0);
+  });
+
+  it('scopes keys per merchant — the same key from another merchant is a fresh request', async () => {
     const key = 'idem-shared-0005';
 
+    const mine = await post(key, seeded);
+    const theirs = await post(key, other);
+
+    expect(mine.status).toBe(201);
+    expect(theirs.status).toBe(201);
+    expect(theirs.body.id).not.toBe(mine.body.id);
+    expect(theirs.body.merchant_id).toBe(other.merchant.id);
+  });
+
+  it('does not replay a failed request — the key is released for a retry', async () => {
     const key = 'idem-failure-0006';
 
     const failed = await post(key, seeded, { ...body, currency: 'CHF' });

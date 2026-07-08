@@ -75,6 +75,16 @@ describe('LedgerHttpClient ↔ payzeno-ledger OpenAPI contract', () => {
       expect(typeof impl).toBe('function');
     });
 
+    it('is described by the checked-in ledger OpenAPI', () => {
+      expect(Object.keys(openapi.paths)).toContain(path);
+    });
+
+    it('is described for the verb the client uses', () => {
+      const operations = openapi.paths[path];
+      expect(operations).toBeDefined();
+      expect(Object.keys(operations)).toContain(verb);
+    });
+
     it('has an operationId, so a rename is a diff and not a silent 404', () => {
       expect(openapi.paths[path][verb].operationId).toEqual(expect.any(String));
     });

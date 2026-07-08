@@ -39,6 +39,37 @@ export async function withTransactionalRollback<T>(
   fn: (manager: EntityManager) => Promise<T>,
 ): Promise<T> {
   const dataSource = await getTestDataSource();
+  const runner: QueryRunner = dataSource.createQueryRunner();
+  await runner.connect();
+  await runner.startTransaction();
+  try {
+    return await fn(runner.manager);
+  } finally {
+    if (runner.isTransactionActive) {
+      await runner.rollbackTransaction();
+    }
+    await runner.release();
+  }
+}
+
+/**
+ * Applies every migration in `src/migrations/`, then reverts them all, then applies them
+ * again. `test/e2e/migrations.e2e-spec.ts` asserts on it; nothing else should call it.
+ */
+export async function runMigrationsUpDownUp(): Promise<{ applied: number; reverted: number }> {
+  const dataSource = await getTestDataSource();
+  const applied = await dataSource.runMigrations({ transaction: 'each' });
+  let reverted = 0;
+  for (let i = 0; i < applied.length; i += 1) {
+    await dataSource.undoLastMigration({ transaction: 'each' });
+    reverted += 1;
+  }
+  await dataSource.runMigrations({ transaction: 'each' });
+  return { applied: applied.length, reverted };
+}
+
+/** Row count helper — reads nicer than `.query()` in an assertion. */
+export async function countRows(manager: EntityManager, table: string): Promise<number> {
   const rows: Array<{ count: string }> = await manager.query(
     `SELECT COUNT(*)::text AS count FROM "${table}"`,
   );
