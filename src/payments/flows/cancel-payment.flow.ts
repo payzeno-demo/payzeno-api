@@ -37,6 +37,9 @@ export class CancelPaymentFlow extends PaymentFlow<CancelPaymentIntentRequest> {
     states: PaymentIntentStateMachine,
     transactions: TransactionManager,
     private readonly charges: ChargeRepository,
+    private readonly chargeStates: ChargeStateMachine,
+    private readonly router: ProcessorRouter,
+    private readonly ledger: LedgerReadThroughService,
     @Inject(EVENT_PUBLISHER) private readonly events: EventPublisher,
     @Inject(CLOCK) private readonly clock: Clock,
     const reason: CancellationReason = request.cancellation_reason ?? 'requested_by_customer';
