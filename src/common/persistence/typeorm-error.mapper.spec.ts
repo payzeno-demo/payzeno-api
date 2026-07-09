@@ -39,6 +39,18 @@ describe('typeorm-error.mapper', () => {
       expect(isUniqueViolation(err, 'uq_charge_processor_reference')).toBe(false);
     });
 
+    it('rejects a different sqlstate', () => {
+      expect(isUniqueViolation(driverError('23503'))).toBe(false);
+    });
+
+    it('rejects a non-driver error', () => {
+      expect(isUniqueViolation(new Error('plain'))).toBe(false);
+      expect(isUniqueViolation(null)).toBe(false);
+      expect(isUniqueViolation('nope')).toBe(false);
+    });
+  });
+
+  describe('isSerializationFailure', () => {
     it('recognises 40001', () => {
       expect(isSerializationFailure(driverError('40001'))).toBe(true);
     });
@@ -66,6 +78,14 @@ describe('typeorm-error.mapper', () => {
   describe('mapTypeOrmError', () => {
     it('maps a 23505 onto a ConflictException', () => {
       expect(mapTypeOrmError(driverError('23505'))).toBeInstanceOf(ConflictException);
+    });
+
+    it('carries the constraint name into the mapped exception', () => {
+      const mapped = mapTypeOrmError(
+        driverError('23505', 'uq_charge_processor_reference'),
+      ) as ConflictException;
+
+      expect(mapped.message).toContain('uq_charge_processor_reference');
     });
 
     it('returns a non-driver error unchanged, so business exceptions survive', () => {
