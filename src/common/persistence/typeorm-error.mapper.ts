@@ -33,6 +33,12 @@ export const SQLSTATE = {
   QUERY_CANCELED: '57014',
 } as const;
 
+function asDriverError(err: unknown): DriverError | null {
+  if (typeof err !== 'object' || err === null) return null;
+  const candidate = err as DriverError;
+  return typeof candidate.code === 'string' ? candidate : null;
+}
+
 export function isUniqueViolation(err: unknown, constraint?: string): boolean {
   const driver = asDriverError(err);
   if (!driver || driver.code !== SQLSTATE.UNIQUE_VIOLATION) return false;

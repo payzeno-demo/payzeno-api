@@ -83,3 +83,13 @@ export class HttpExceptionFilter implements ExceptionFilter {
     // ApiException by now.
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
+      return {
+        status,
+        body: envelope(status === 404 ? 'not_found' : 'invalid_request', exception.message, requestId),
+      };
+    }
+
+    return { status: 500, body: envelope('internal_error', 'An unexpected error occurred', requestId) };
+  }
+
+  private statusForContractsError(err: PayzenoError): number {

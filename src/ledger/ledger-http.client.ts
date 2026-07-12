@@ -103,6 +103,12 @@ export class LedgerHttpClient extends BaseHttpClient {
     return this.get<Balance>(`/internal/v1/balances/${encodeURIComponent(merchantId)}`, { ...query });
   }
 
+  getBalanceHistory(merchantId: MerchantId, query: BalanceHistoryQuery): Promise<BalanceHistoryResponse> {
+    return this.get<BalanceHistoryResponse>(`/internal/v1/balances/${encodeURIComponent(merchantId)}/history`, {
+      ...query,
+    });
+  }
+
   listAccounts(merchantId: MerchantId, currency?: CurrencyCode): Promise<{ data: Account[] }> {
     return this.get<{ data: Account[] }>('/internal/v1/accounts', { merchant_id: merchantId, currency });
   }

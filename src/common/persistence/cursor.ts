@@ -58,4 +58,17 @@ export function applyCursor<T extends CursorRow>(
 export function toPage<T extends CursorRow>(rows: T[], limit: number): Paginated<T> {
   const hasMore = rows.length > limit;
   const data = hasMore ? rows.slice(0, limit) : rows;
+  const last = data[data.length - 1];
+
+  return {
+    data,
+    has_more: hasMore,
+    next_cursor:
+      hasMore && last ? encodeCursor({ createdAt: last.createdAt.toISOString(), id: last.id }) : null,
+  };
+}
+
+/** Maps a page's rows through a serialiser while preserving the cursor metadata. */
+export function mapPage<T extends CursorRow, R>(page: Paginated<T>, fn: (row: T) => R): Paginated<R> {
+  return { data: page.data.map(fn), has_more: page.has_more, next_cursor: page.next_cursor };
 }
