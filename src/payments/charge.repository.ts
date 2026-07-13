@@ -93,6 +93,43 @@ export class ChargeRepository extends PayzenoRepository<ChargeEntity> {
     return this.lockForUpdate(manager, chargeId);
   }
 
+  async markAuthorized(manager: EntityManager, chargeId: ChargeId, write: AuthorizationWrite): Promise<void> {
+    await manager
+      .createQueryBuilder()
+      .update(ChargeEntity)
+      .set({
+        status: 'authorized',
+        network_transaction_id: write.networkTransactionId,
+        authorization_code: write.authorizationCode,
+        processor_reference: write.processorReference,
+        authorized_at: write.authorizedAt,
+        authorization_expires_at: write.authorizationExpiresAt,
+        risk_score: write.riskScore,
+      })
+      .where('id = :id AND status = :expected', { id: chargeId, expected: 'pending' })
+      .execute();
+  }
+
+  async markDeclined(
+    manager: EntityManager,
+    chargeId: ChargeId,
+    failureCode: string,
+    failureMessage: string,
+  ): Promise<void> {
+    await manager
+      .createQueryBuilder()
+      .update(ChargeEntity)
+      .set({ status: 'failed', failure_code: failureCode as never, failure_message: failureMessage })
+      .where('id = :id', { id: chargeId })
+      .execute();
+  }
+
+  /**
+   * The capture write. Guarded on `status = 'authorized'` in the WHERE clause, not only by the
+   * FSM: two concurrent captures with the same idempotency key are rejected by the
+   * interceptor, but two captures with *different* keys are not, and the `affected` count is
+   * what tells `ChargeCaptureService` it lost that race.
+   */
   async markCaptured(manager: EntityManager, chargeId: ChargeId, write: CaptureWrite): Promise<number> {
     const result = await manager
       .createQueryBuilder()
@@ -104,6 +141,38 @@ export class ChargeRepository extends PayzenoRepository<ChargeEntity> {
         captured_at: write.capturedAt,
       })
       .where('id = :id AND status = :expected', { id: chargeId, expected: 'authorized' })
+      .execute();
+    return result.affected ?? 0;
+  }
+
+  async markVoided(manager: EntityManager, chargeId: ChargeId): Promise<number> {
+    const result = await manager
+      .createQueryBuilder()
+      .update(ChargeEntity)
+      .set({ status: 'voided' })
+      .where('id = :id AND status = :expected', { id: chargeId, expected: 'authorized' })
+      .execute();
+    return result.affected ?? 0;
+  }
+
+  /**
+   * Driven only by `settlement.completed` (LedgerEventsConsumer) and by
+   * `POST /internal/v1/charges/:chargeId/settled` when a single orphan is resolved out of band.
+   */
+  async markSettled(
+    manager: EntityManager,
+    chargeIds: ChargeId[],
+    batchId: SettlementBatchId,
+    settledAt: Date,
+  ): Promise<number> {
+    if (chargeIds.length === 0) {
+      return 0;
+    }
+    const result = await manager
+      .createQueryBuilder()
+      .update(ChargeEntity)
+      .set({ status: 'settled', settlement_batch_id: batchId, settled_at: settledAt })
+      .where({ id: In(chargeIds), status: 'captured' })
       .execute();
     return result.affected ?? 0;
   }

@@ -70,6 +70,10 @@ export class PaymentIntentsService extends BaseService<PaymentIntentEntity> {
     const now = this.clock.now();
     const id = this.ids.paymentIntentId() as PaymentIntentId;
 
+    const status: PaymentIntentStatus = dto.payment_method_token
+      ? 'requires_confirmation'
+      : 'requires_payment_method';
+
     const row = await this.transactions.runInTransaction((manager) =>
       this.intents.insertIntent(manager, {
         id,
