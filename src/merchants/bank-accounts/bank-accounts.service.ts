@@ -107,7 +107,18 @@ export class BankAccountsService extends BaseService<BankAccountEntity> {
   constructor(
     private readonly accounts: BankAccountRepository,
     private readonly transactions: TransactionManager,
+    private readonly ids: IdFactory,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(PAYZENO_LOGGER) logger: PayzenoLogger,
+  ) {
+    super(accounts, logger);
+  }
+
+  get entityName(): string {
+    return 'bank_account';
+  }
+
+  async list(scope: MerchantScope, query: ListQuery): Promise<Paginated<BankAccount>> {
     const page = await this.paginate(query, scope);
     return {
       data: page.data.map((account) => account.toBankAccount()),
@@ -123,6 +134,14 @@ export class BankAccountsService extends BaseService<BankAccountEntity> {
 
   /** Internal read for `InternalController#getBankAccount` — the ledger's stale-projection fallback. */
   async getForInternal(bankAccountId: string): Promise<BankAccountEntity> {
+    const account = await this.accounts.findOne({ where: { id: bankAccountId } });
+    if (!account) throw new ResourceNotFoundException('bank_account', bankAccountId);
+    return account;
+  }
+
+  async create(scope: MerchantScope, request: CreateBankAccountRequest): Promise<BankAccount> {
+    this.assertSchemeMatchesCurrency(request.scheme, request.currency);
+
     const saved = await this.transactions.runInTransaction(async (manager) => {
       if (account.isDefault) {
         await this.accounts.clearDefault(scope.merchantId, account.currency, scope.livemode, manager);
@@ -193,6 +212,7 @@ export class BankAccountsService extends BaseService<BankAccountEntity> {
   }
 
   private build(scope: MerchantScope, request: CreateBankAccountRequest): BankAccountEntity {
+    const account = new BankAccountEntity();
     const now = this.clock.now();
 
     account.id = this.ids.bankAccountId();
