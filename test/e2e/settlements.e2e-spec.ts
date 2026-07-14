@@ -128,6 +128,17 @@ describe('settlements e2e', () => {
     expect(ctx.ledger.callsTo('getSettlementBatch')).toHaveLength(1);
   });
 
+  it('lists the merchant’s items in the batch', async () => {
+    const res = await request(ctx.app.getHttpServer())
+      .get(`/v1/settlements/${BATCH_ID}/items`)
+      .set('Authorization', bearer(seeded));
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(2);
+    const [, q] = ctx.ledger.callsTo('listSettlementItems')[0].args as [string, { merchant_id: string }];
+    expect(q.merchant_id).toBe(seeded.merchant.id);
+  });
+
   it('403s a merchant session on the staff-only retry route', async () => {
     const res = await request(ctx.app.getHttpServer())
       .post(`/v1/settlements/${BATCH_ID}/items/ri_000042/retry`)
@@ -175,4 +186,13 @@ describe('settlements e2e', () => {
     expect(res.body).toBeApiError('batch_not_reconcilable');
   });
 
+  it('404s a batch the merchant has no item in', async () => {
+    const stranger = await seedMerchant(ctx, { display_name: 'Borealis' });
+
+    const res = await request(ctx.app.getHttpServer())
+      .get(`/v1/settlements/${BATCH_ID}`)
+      .set('Authorization', bearer(stranger));
+
+    expect(res.status).toBe(404);
+  });
 });

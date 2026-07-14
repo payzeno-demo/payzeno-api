@@ -18,6 +18,38 @@ describe('merchant scope e2e', () => {
   let own: SeededMerchant;
   let other: SeededMerchant;
   let otherIntentId: string;
+  let otherChargeId: string;
+
+  beforeAll(async () => {
+    ctx = await createTestApp();
+    const pair = await seedTwoMerchants(ctx);
+    own = pair.own;
+    other = pair.other;
+
+    const created = await request(ctx.app.getHttpServer())
+      .post('/v1/payment_intents')
+      .set('Authorization', bearer(other))
+      .set('Idempotency-Key', 'scope-seed-intent')
+      .send({
+        amount_minor: 7_700,
+        currency: 'GBP',
+        capture_method: 'automatic',
+        payment_method_token: 'pmt_visa_4242',
+      });
+    otherIntentId = created.body.id;
+
+    const confirmed = await request(ctx.app.getHttpServer())
+      .post(`/v1/payment_intents/${otherIntentId}/confirm`)
+      .set('Authorization', bearer(other))
+      .set('Idempotency-Key', 'scope-seed-confirm')
+      .send({});
+    otherChargeId = confirmed.body.latest_charge_id;
+  });
+
+  afterAll(async () => {
+    await ctx.close();
+  });
+
   it('404s — not 403 — reading another merchant’s payment intent', async () => {
     const res = await request(ctx.app.getHttpServer())
       .get(`/v1/payment_intents/${otherIntentId}`)
@@ -67,6 +99,14 @@ describe('merchant scope e2e', () => {
       .set('Authorization', bearer(own))
       .set('Idempotency-Key', 'scope-refund-foreign')
       .send({ charge_id: otherChargeId, amount_minor: 100 });
+
+    expect(res.status).toBe(404);
+  });
+
+  it('404s a merchant reading another merchant by id', async () => {
+    const res = await request(ctx.app.getHttpServer())
+      .get(`/v1/merchants/${other.merchant.id}`)
+      .set('Authorization', bearer(own));
 
     expect(res.status).toBe(404);
   });
