@@ -93,3 +93,14 @@ export class HttpExceptionFilter implements ExceptionFilter {
   }
 
   private statusForContractsError(err: PayzenoError): number {
+    if (err instanceof ValidationError) return 422;
+    if (err instanceof NotFoundError) return 404;
+    if (err instanceof CurrencyMismatchError) return 400;
+    return err.httpStatus ?? 500;
+  }
+
+  /** `Retry-After` on 429 and on 409 idempotency_in_progress — api-surface.md §1.3. */
+  private applyHeaders(res: HttpResponse, exception: unknown): void {
+    if (exception instanceof RateLimitedException) {
+      res.setHeader('Retry-After', String(exception.retryAfterSec));
+    }

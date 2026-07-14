@@ -24,3 +24,11 @@
 /Dockerfile                         @payzeno/platform @payzeno/infrastructure
 /docker-compose.override.yml        @payzeno/infrastructure
 /.github/workflows/                 @payzeno/platform @payzeno/infrastructure
+/.env.example                       @payzeno/platform @payzeno/infrastructure
+
+# --- the money boundary: Core Payments co-owns ---------------------------------
+# Anything that talks to payzeno-ledger or the legacy biller changes a contract that
+# Core has to keep on the other side. arc MIG lives on both sides of this line.
+/src/ledger/                        @payzeno/platform @payzeno/core
+/src/billing/                       @payzeno/core @nmigration
+/src/events/                        @payzeno/platform @payzeno/core

@@ -31,3 +31,12 @@ export function encodeCursor(cursor: Cursor): string {
   return Buffer.from(json, 'utf8').toString('base64url');
 }
 
+export function encodeFrom(row: { createdAt: Date; id: string }): string {
+  return encodeCursor({ createdAt: row.createdAt.toISOString(), id: row.id });
+}
+
+export function decodeCursor(raw: string): Cursor {
+  if (raw.length > MAX_CURSOR_LENGTH) {
+    throw invalidCursor('cursor is too long');
+  }
+
