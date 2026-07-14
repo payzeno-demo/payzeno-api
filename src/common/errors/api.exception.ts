@@ -16,6 +16,11 @@ export abstract class ApiException extends PayzenoError {
   /** Stamped by HttpExceptionFilter from the request-scoped id; null until then. */
   private requestId: string | null = null;
 
+  constructor(message: string, details?: Record<string, unknown>) {
+    super(message, details);
+    this.name = new.target.name;
+  }
+
   withRequestId(requestId: string): this {
     this.requestId = requestId;
     return this;
