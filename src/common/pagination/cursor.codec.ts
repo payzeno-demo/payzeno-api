@@ -40,3 +40,11 @@ export function decodeCursor(raw: string): Cursor {
     throw invalidCursor('cursor is too long');
   }
 
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8'));
+  } catch {
+    throw invalidCursor('cursor is not decodable');
+  }
+
+  if (typeof parsed !== 'object' || parsed === null) {

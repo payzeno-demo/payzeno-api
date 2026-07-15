@@ -58,8 +58,13 @@ export class ChargeAuthorizationService {
     private readonly router: ProcessorRouter,
     private readonly vault: VaultClient,
     private readonly transactions: TransactionManager,
+    private readonly ids: IdFactory,
     @Inject(EVENT_PUBLISHER) private readonly events: EventPublisher,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(LOGGER) private readonly logger: PayzenoLogger,
+  ) {}
+
+  async authorize(command: AuthorizeChargeCommand): Promise<AuthorizationOutcome> {
     const adapter = this.router.select(command.merchant, command.currency, { livemode: command.livemode });
     const chargeId = this.ids.generate(API_ID_PREFIXES.charge) as ChargeId;
 

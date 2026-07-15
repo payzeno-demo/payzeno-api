@@ -145,3 +145,28 @@ The 80% gate is real and two directories are permanently dragging us toward it â
 leave it better than you found it.
 
 ---
+
+## Gotchas
+
+These are the things that have actually bitten someone.
+
+**The two idempotency stores do not behave identically.** `IDEMPOTENCY_BACKEND` selects
+Postgres or Redis, and `POST /v1/payment_intents` is the only route that runs on Redis in
+production. The two stores compute `Retry-After` differently on an in-progress lease. Both
+behaviours are asserted by their own spec, which is why it has survived this long. It is a
+bug. Nobody has filed it. Consider this the filing.
+
+**`LedgerUnavailableException` is transport-only.** Any non-2xx from the ledger with a
+parseable `ApiError` body becomes `LedgerRejectedException` and we pass the ledger's code,
+status and details through **verbatim** to the caller. Connect/read timeouts, `ECONNRESET`
+and unparseable 5xx become `LedgerUnavailableException`. Swapping these two turns "your
+settlement batch is locked" into "the ledger is down", and the console renders those very
+differently. See `docs/runbooks/payzeno-api.md`.
+
+**`capture_at_settlement` is a merchant column, not a feature flag.** It is
+`merchant.capture_at_settlement` here and a projection column in the ledger, and
+`merchant.updated` is the *only* propagation path between them. If you change how that
+event is emitted you have changed the ledger's capture behaviour, whether you meant to or
+not. This has already cost us one incident.
+
+**`EventsModule` never imports a feature module.** Consumers resolve their handler through
