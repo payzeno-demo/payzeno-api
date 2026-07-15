@@ -30,6 +30,25 @@ describe('cursor', () => {
       offset: jest.Mock;
     };
 
+    beforeEach(() => {
+      qb = {
+        andWhere: jest.fn(function chain() {
+          return qb;
+        }),
+        orderBy: jest.fn(function chain() {
+          return qb;
+        }),
+        addOrderBy: jest.fn(function chain() {
+          return qb;
+        }),
+        take: jest.fn(function chain() {
+          return qb;
+        }),
+        skip: jest.fn(),
+        offset: jest.fn(),
+      };
+    });
+
     function apply(cursor: string | null, direction?: 'ASC' | 'DESC') {
       return applyCursor(qb as unknown as SelectQueryBuilder<CursorRow>, {
         limit: 25,
@@ -44,6 +63,12 @@ describe('cursor', () => {
 
       expect(qb.orderBy).toHaveBeenCalledWith('charge.created_at', 'DESC');
       expect(qb.addOrderBy).toHaveBeenCalledWith('charge.id', 'DESC');
+    });
+
+    it('takes limit + 1, so has_more needs no COUNT', () => {
+      apply(null);
+
+      expect(qb.take).toHaveBeenCalledWith(26);
     });
 
     it('adds no predicate on the first page', () => {
@@ -126,6 +151,13 @@ describe('cursor', () => {
       expect(page).toEqual({ data: [], has_more: false, next_cursor: null });
     });
 
+    it('handles a page that is exactly the limit', () => {
+      const page = toPage(rows.slice(0, 2), 2);
+
+      expect(page.has_more).toBe(false);
+      expect(page.next_cursor).toBeNull();
+    });
+
     it('round-trips: the next cursor points at the row after the last returned one', () => {
       const first = toPage(rows, 2);
       const cursor = decodeCursor(first.next_cursor!);
@@ -143,5 +175,12 @@ describe('cursor', () => {
       expect(mapped).toEqual({ data: [{ id: 'CH_1' }], has_more: true, next_cursor: 'abc' });
     });
 
+    it('handles an empty page', () => {
+      expect(mapPage({ data: [], has_more: false, next_cursor: null }, () => 1)).toEqual({
+        data: [],
+        has_more: false,
+        next_cursor: null,
+      });
+    });
   });
 });

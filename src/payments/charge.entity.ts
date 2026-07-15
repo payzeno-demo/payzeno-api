@@ -51,6 +51,9 @@ export class ChargeEntity extends MerchantScopedEntity {
   payment_intent_id: PaymentIntentId;
 
   @ManyToOne(() => PaymentIntentEntity, (intent) => intent.charges)
+  @JoinColumn({ name: 'payment_intent_id' })
+  payment_intent?: PaymentIntentEntity;
+
   @Column({ type: 'bigint', transformer: requiredMinorUnitsTransformer })
   amount_minor: number;
 
@@ -69,6 +72,9 @@ export class ChargeEntity extends MerchantScopedEntity {
     enumName: 'charge_status',
   })
   status: ChargeStatus;
+
+  @Column({ type: 'enum', enum: ['visa', 'mastercard', 'amex', 'discover'], enumName: 'card_brand' })
+  card_brand: CardBrand;
 
   @Column({ type: 'char', length: 4 })
   card_last_four: string;
@@ -98,6 +104,9 @@ export class ChargeEntity extends MerchantScopedEntity {
 
   @Column({ type: 'text', nullable: true })
   processor_reference: string | null;
+
+  @Column({ type: 'varchar', length: 6, nullable: true })
+  authorization_code: string | null;
 
   @Column({ type: 'enum', enum: ['automatic', 'manual'], enumName: 'capture_method' })
   capture_method: CaptureMethod;

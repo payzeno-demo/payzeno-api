@@ -211,6 +211,16 @@ export class ChargeRepository extends PayzenoRepository<ChargeEntity> {
       .getMany();
   }
 
+  async markExpired(manager: EntityManager, chargeId: ChargeId): Promise<number> {
+    const result = await manager
+      .createQueryBuilder()
+      .update(ChargeEntity)
+      .set({ status: 'expired' })
+      .where('id = :id AND status = :expected', { id: chargeId, expected: 'authorized' })
+      .execute();
+    return result.affected ?? 0;
+  }
+
   countByStatus(merchantId: MerchantId, statuses: ChargeStatus[]): Promise<number> {
     return this.createQueryBuilder('charge')
       .where('charge.merchant_id = :merchantId', { merchantId })

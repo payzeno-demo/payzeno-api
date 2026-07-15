@@ -96,6 +96,45 @@ export abstract class PayzenoRepository<T extends ObjectLiteral & CursorRow> ext
    * outside a transaction takes a lock and drops it on the next statement, which reads as
    * working and protects nothing.
    */
+  async lockForUpdate(id: string, manager: EntityManager): Promise<T | null> {
+    return manager
+      .getRepository<T>(this.target)
+      .createQueryBuilder(this.alias)
+      .setLock('pessimistic_write')
+      .where(`${this.alias}.id = :id`, { id })
+      .getOne();
+  }
+
+  /**
+   * Conditional scoped update. Returns rows affected — 0 means the predicate no longer held,
+   * which for a state transition means somebody else got there first.
+   */
+  async updateScoped(
+    id: string,
+    scope: MerchantScope,
+    patch: QueryDeepPartialEntity<T>,
+    extraWhere?: FindOptionsWhere<T>,
+    manager?: EntityManager,
+  ): Promise<number> {
+    const repo = manager ? manager.getRepository<T>(this.target) : this;
+
+    try {
+      const result = await repo
+        .createQueryBuilder()
+        .update()
+        .set(patch)
+        .where('id = :id', { id })
+        .andWhere(`${this.scopeColumn} = :merchantId`, { merchantId: scope.merchantId })
+        .andWhere('livemode = :livemode', { livemode: scope.livemode })
+        .andWhere(extraWhere ?? {})
+        .execute();
+
+      return result.affected ?? 0;
+    } catch (err) {
+      throw mapTypeOrmError(err);
+    }
+  }
+
   /** Insert that translates 23505 into the right business exception. */
   async insertMapped(entity: QueryDeepPartialEntity<T>, manager?: EntityManager): Promise<void> {
     const repo = manager ? manager.getRepository<T>(this.target) : this;
