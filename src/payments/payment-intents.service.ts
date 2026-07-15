@@ -67,6 +67,7 @@ export class PaymentIntentsService extends BaseService<PaymentIntentEntity> {
    * payable to a real bank account (domain-model §11.5).
    */
   async create(principal: AuthPrincipal, dto: CreatePaymentIntentDto): Promise<PaymentIntent> {
+    const scope = scopeFrom(principal);
     const now = this.clock.now();
     const id = this.ids.paymentIntentId() as PaymentIntentId;
 
@@ -166,5 +167,47 @@ export class PaymentIntentsService extends BaseService<PaymentIntentEntity> {
     metadata: Record<string, string>,
   ): Promise<PaymentIntent> {
     const scope = scopeFrom(principal);
+    const intent = await this.findOneOrThrow(id, scope);
+    await this.intents.updateScoped(id, scope, { metadata } as never);
+    intent.metadata = metadata;
+    return toPaymentIntent(intent);
+  }
+}
+
+function scopeFrom(principal: AuthPrincipal): MerchantScope {
+  return { merchantId: merchantIdOf(principal), livemode: livemodeOf(principal) };
+}
+
+/**
+ * `pi_<ulid>_secret_<32 hex>`. Browser-visible, so it is minted from a CSPRNG and never
+ * derived from the id — a derivable client secret is a merchant-wide read for anyone who can
+ * guess an id.
+ */
+function mintClientSecret(id: PaymentIntentId): string {
+  return `${id}_secret_${randomBytes(16).toString('hex')}`;
+}
+
+export function toPaymentIntent(row: PaymentIntentEntity): PaymentIntent {
+  return {
+    id: row.id,
+    object: 'payment_intent',
+    merchant_id: row.merchantId,
+    amount_minor: Number(row.amount_minor),
+    currency: row.currency,
+    status: row.status,
+    capture_method: row.capture_method,
+    payment_method_token: row.payment_method_token,
+    customer_reference: row.customer_reference,
+    description: row.description,
+    statement_descriptor: row.statement_descriptor,
+    latest_charge_id: row.latest_charge_id,
+    client_secret: row.client_secret,
+    next_action: row.next_action,
+    livemode: row.livemode,
+    metadata: row.metadata,
+    created_at: row.createdAt.toISOString(),
+    updated_at: row.updatedAt.toISOString(),
+    canceled_at: row.canceled_at ? row.canceled_at.toISOString() : null,
+    cancellation_reason: row.cancellation_reason,
   } as PaymentIntent;
 }

@@ -208,3 +208,23 @@ export class LedgerEventsConsumer extends BaseEventConsumer implements OnModuleI
         existing_transaction_id: payload.existing_transaction_id,
         detected_by: payload.detected_by,
         amount_minor: payload.amount_minor,
+        currency: payload.currency,
+      },
+      livemode: true,
+    });
+
+    if (!payload.charge_id || !payload.merchant_id) {
+      this.logger.warn('settlement.duplicate_unattributed', {
+        batch_id: payload.batch_id,
+        item_id: payload.item_id,
+        detected_by: payload.detected_by,
+      });
+      return;
+    }
+
+    const merchant = await this.merchants.findInternal(payload.merchant_id);
+    if (!merchant?.capture_at_settlement) {
+      return;
+    }
+
+    await this.supportTasks.open(tx, {

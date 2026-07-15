@@ -154,3 +154,25 @@ export abstract class BaseEventConsumer {
         consumer: this.consumerName,
         event_id: event.id,
         type: event.type,
+        duration_ms: Date.now() - started,
+      });
+      // Deliberately no delete: SQS redelivers, and the queue's redrive policy DLQs it.
+    }
+  }
+
+  /**
+   * Dedupe. INSERT-FIRST, in the same transaction as the handler's side effects:
+   *
+   *   INSERT INTO processed_event (event_id, consumer)
+   *   VALUES (...) ON CONFLICT DO NOTHING RETURNING event_id
+   *
+   * Returns false when the row already existed — the handler is then skipped entirely.
+   * There is deliberately NO `alreadyProcessed` / `markProcessed` pair; check-then-act is
+   * the shape of PAY-2041 and ADR 0011 forbids it in the money path. This is the money path.
+   */
+  protected async claimEvent(eventId: string, tx: EntityManager): Promise<boolean> {
+    return this.processedEvents.claim(tx, eventId, this.consumerName);
+  }
+
+  /** SNS-to-SQS wraps the message; a raw-delivery queue does not. Tolerate both. */
+  protected parse(message: Message): PayzenoEvent | null {
