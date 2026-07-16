@@ -43,6 +43,12 @@ export class CancelPaymentFlow extends PaymentFlow<CancelPaymentIntentRequest> {
     @Inject(EVENT_PUBLISHER) private readonly events: EventPublisher,
     @Inject(CLOCK) private readonly clock: Clock,
     const reason: CancellationReason = request.cancellation_reason ?? 'requested_by_customer';
+    const canceledAt = this.clock.now();
+
+    const charge = intent.latest_charge_id
+      ? await this.charges.findOne({ where: { id: intent.latest_charge_id as ChargeId } })
+      : null;
+
     let releasedMinor = 0;
 
     if (charge && this.chargeStates.holdsAuthorization(charge.status)) {

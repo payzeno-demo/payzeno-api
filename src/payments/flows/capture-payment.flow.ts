@@ -34,6 +34,24 @@ export class CapturePaymentFlow extends PaymentFlow<CapturePaymentIntentRequest>
     states: PaymentIntentStateMachine,
     transactions: TransactionManager,
     private readonly charges: ChargeRepository,
+    private readonly merchants: MerchantsService,
+    @Inject(PAYZENO_LOGGER) logger: PayzenoLogger,
+  ) {
+    super(intents, states, transactions, logger);
+  }
+
+  get flowName(): string {
+    return 'payment_intent.capture';
+  }
+
+  protected get entryEvent(): PaymentIntentEvent {
+    return 'capture';
+  }
+
+  async execute(
+    intent: PaymentIntentEntity,
+    request: CapturePaymentIntentRequest,
+  ): Promise<PaymentIntentEntity> {
     // Guard first: an intent in `succeeded` is a double-capture attempt and must cost nothing.
     const landing = this.nextStatus(intent, 'capture');
 
