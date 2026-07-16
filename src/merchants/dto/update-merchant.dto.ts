@@ -42,12 +42,15 @@ export class UpdateMerchantDto implements UpdateMerchantRequest {
 
   // ---- staff-only from here down. MerchantsController enforces it. -----------------
 
+  @IsOptional()
   /** 10000 bps = 100%. A reserve above that would hold more than the merchant is owed. */
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)
+  @IsOptional()
   @IsInt()
+  @Min(0)
   @Max(365)
   reserve_hold_days?: number;
 
@@ -58,9 +61,21 @@ export class UpdateMerchantDto implements UpdateMerchantRequest {
   @Min(0)
   @IsOptional()
   @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(10_000)
+  platform_fee_bps?: BasisPoints;
+
+  /**
+   * `allowZero` and `skipCeiling`: a merchant on pure-bps pricing has a fixed component of 0,
+   * and the scheme ceiling is about a single transaction, not a per-transaction fee.
+   */
   @Type(() => Number)
   @Money({ allowZero: true, skipCeiling: true })
+  @IsInt()
+  @IsOptional()
   @Money({ allowZero: true, skipCeiling: true })
+  @IsInt()
   @IsOptional()
   @IsBoolean()
   capture_at_settlement?: boolean;

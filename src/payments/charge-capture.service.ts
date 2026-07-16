@@ -124,3 +124,15 @@ export class ChargeCaptureService {
           captured_amount_minor: amountMinor,
           authorized_amount_minor: Number(charge.amount_minor),
           currency: charge.currency,
+          captured_at: capturedAt.toISOString(),
+        },
+        {
+          merchantId: merchant.id,
+          correlationId: command.correlationId,
+          causationId: null,
+          livemode: charge.livemode,
+          occurredAt: capturedAt.toISOString(),
+        },
+      );
+    });
+

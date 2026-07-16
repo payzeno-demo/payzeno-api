@@ -38,6 +38,13 @@ export class MerchantStatusStateMachine extends StateMachine<MerchantStatus, Mer
     closed: {},
   };
 
+  readonly terminalStates: ReadonlySet<MerchantStatus> = new Set<MerchantStatus>(['rejected', 'closed']);
+
+  /**
+   * The status-oriented form `MerchantsService.changeStatus` uses: the console and the staff
+   * console both speak "put this merchant in state X", not "fire event Y". Translating here
+   * keeps the table the only place the graph is written down.
+   */
   eventFor(from: MerchantStatus, to: MerchantStatus): MerchantStatusEvent {
     const event = (Object.keys(this.transitions[from] ?? {}) as MerchantStatusEvent[]).find(
       (candidate) => this.transitions[from]?.[candidate] === to,
