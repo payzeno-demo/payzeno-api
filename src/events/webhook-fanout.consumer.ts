@@ -32,6 +32,20 @@ export class WebhookFanoutConsumer extends BaseEventConsumer implements OnModule
   readonly queueUrl: string;
   readonly consumerName = 'webhook-fanout';
 
+  private events!: WebhookEventsService;
+
+  constructor(
+    sqs: SQSClient,
+    transactions: TransactionManager,
+    processedEvents: ProcessedEventRepository,
+    @Inject(PAYZENO_LOGGER) logger: PayzenoLogger,
+    @Inject(API_CONFIG) private readonly config: ApiConfig,
+    private readonly moduleRef: ModuleRef,
+  ) {
+    super(sqs, transactions, processedEvents, logger);
+    this.queueUrl = this.config.aws.sqsApiWebhooksUrl;
+  }
+
   onModuleInit(): void {
     this.endpoints = this.moduleRef.get(WebhookEndpointsService, { strict: false });
     this.events = this.moduleRef.get(WebhookEventsService, { strict: false });
