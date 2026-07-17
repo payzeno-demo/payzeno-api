@@ -29,10 +29,16 @@ export class InviteUserDto {
   @MaxLength(320)
   email!: string;
 
+  @IsString()
   @MinLength(2)
   @MaxLength(140)
   full_name!: string;
 
+  @IsIn([...USER_ROLES])
+  role!: UserRole;
+}
+
+export class ChangeUserRoleDto {
   @IsIn([...USER_ROLES])
   role!: UserRole;
 }
@@ -45,9 +51,35 @@ export class MerchantUsersController extends BaseController {
     super();
   }
 
+  @Get()
+  async list(
+    @Param('merchantId') merchantId: MerchantId,
+    @Query() query: ListQueryDto,
+  ): Promise<Paginated<User>> {
+    return this.users.list(merchantId, query as ListQuery);
+  }
+
+  @Get(':userId')
+  async get(
+    @Param('merchantId') merchantId: MerchantId,
+    @Param('userId') userId: UserId,
+  ): Promise<User> {
+    return this.users.get(merchantId, userId);
+  }
+
   @Post()
+  @Roles('owner', 'admin')
   @Idempotent()
+  @AuditLog('merchant_user.invite', { resourceType: 'merchant_user' })
+  async invite(
+    @Param('merchantId') merchantId: MerchantId,
+    @Body() body: InviteUserDto,
+  ): Promise<User> {
+    return this.users.invite(merchantId, body);
+  }
+
   @Post(':userId/role')
+  @Roles('owner')
   @Idempotent()
   @AuditLog('merchant_user.change_role', { resourceType: 'merchant_user', idParam: 'userId' })
   async changeRole(
@@ -58,5 +90,17 @@ export class MerchantUsersController extends BaseController {
     return this.users.changeRole(merchantId, userId, body.role);
   }
 
+  @Delete(':userId')
+  @HttpCode(204)
+  @Roles('owner', 'admin')
   @Idempotent()
+  @AuditLog('merchant_user.remove', { resourceType: 'merchant_user', idParam: 'userId' })
+  async remove(
+    @CurrentPrincipal() principal: AuthPrincipal,
+    @Param('merchantId') merchantId: MerchantId,
+    @Param('userId') userId: UserId,
+  ): Promise<void> {
+    const actingUserId = principal.kind === 'dashboard_session' ? principal.user_id : null;
+    await this.users.remove(merchantId, userId, actingUserId);
+  }
 }

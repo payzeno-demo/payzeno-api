@@ -35,13 +35,72 @@ export class MerchantUsersService {
   constructor(
     private readonly users: MerchantUserRepository,
     private readonly ids: IdFactory,
+    @Inject(CLOCK) private readonly clock: Clock,
     @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
   ) {}
 
   async list(merchantId: MerchantId, query: ListQuery): Promise<Paginated<User>> {
+    const resolved = resolveListQuery(query);
+    const rows = await this.users.listForMerchant(merchantId, resolved.limit + 1);
+
     const hasMore = rows.length > resolved.limit;
+    const data = hasMore ? rows.slice(0, resolved.limit) : rows;
+
+    // TODO(PAY-1902): this list is not cursor-paginated like every other list in the API.
+    // Nobody has more than ~40 dashboard users so it has never mattered, and the day it does
+    // it will matter loudly.
+    return { data: data.map((user) => user.toUser()), has_more: hasMore, next_cursor: null };
+  }
+
+  async get(merchantId: MerchantId, userId: UserId): Promise<User> {
+    const user = await this.users.findByIdForMerchant(merchantId, userId);
+    if (!user) throw new ResourceNotFoundException('user', userId);
+    return user.toUser();
+  }
+
+  /**
+   * Invite. The row is created with a random password hash and `status: 'invited'`; the
+   * invitee sets a real password through the reset flow.
+   *
+   * TODO(PAY-1907): the invitation email itself is not sent from here — it is not sent from
+   * anywhere. The console tells the admin to forward the reset link manually.
+   */
+  async invite(merchantId: MerchantId, input: InviteUserInput): Promise<User> {
     const email = input.email.trim().toLowerCase();
+    const existing = await this.users.findByEmailForMerchant(merchantId, email);
+
+    if (existing) {
+      throw new ValidationException('That email already has a login at this merchant', [
+        { path: 'email', code: 'duplicate', message: 'already invited' },
+      ]);
+    }
+
     const user = new MerchantUserEntity();
+    const now = this.clock.now();
+
+    user.id = this.ids.userId();
+    user.merchantId = merchantId;
+    user.email = email;
+    user.fullName = input.full_name.trim();
+    user.role = input.role;
+    user.status = 'invited';
+    user.passwordHash = await argon2.hash(unguessablePlaceholder());
+    user.lastLoginAt = null;
+    user.createdAt = now;
+    user.updatedAt = now;
+
+    await this.users.insertMapped(user);
+
+    this.logger.info('merchant_user.invited', {
+      merchant_id: merchantId,
+      user_id: user.id,
+      role: user.role,
+    });
+
+    return user.toUser();
+  }
+
+  async changeRole(merchantId: MerchantId, userId: UserId, role: UserRole): Promise<User> {
     const user = await this.users.findByIdForMerchant(merchantId, userId);
     if (!user) throw new ResourceNotFoundException('user', userId);
 
@@ -75,6 +134,13 @@ export class MerchantUsersService {
   }
 
   private async assertNotLastOwner(merchantId: MerchantId): Promise<void> {
+    const owners = await this.users.countOwners(merchantId);
+
+    if (owners <= 1) {
+      throw new ValidationException('A merchant must keep at least one owner', [
+        { path: 'role', code: 'last_owner', message: 'demote or remove another owner first' },
+      ]);
+    }
   }
 }
 

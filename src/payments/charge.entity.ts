@@ -114,6 +114,20 @@ export class ChargeEntity extends MerchantScopedEntity {
   @Column({ type: 'smallint', default: 0 })
   risk_score: number;
 
+  @Column({ type: 'enum', enumName: 'decline_code', nullable: true, enum: [
+    'do_not_honor',
+    'insufficient_funds',
+    'lost_card',
+    'stolen_card',
+    'expired_card',
+    'incorrect_cvc',
+    'processing_error',
+    'issuer_unavailable',
+    'velocity_exceeded',
+    'fraud_suspected',
+  ] })
+  failure_code: DeclineCode | null;
+
   @Column({ type: 'text', nullable: true })
   failure_message: string | null;
 
@@ -132,6 +146,12 @@ export class ChargeEntity extends MerchantScopedEntity {
   /** The ledger's id. No FK — different database (migration 12). */
   @Column({ type: 'text', nullable: true })
   settlement_batch_id: SettlementBatchId | null;
+
+  @Column({ type: 'jsonb', default: () => "'{}'::jsonb" })
+  metadata: Metadata;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  authorized_at: Date | null;
 
   @Column({ type: 'timestamptz', nullable: true })
   captured_at: Date | null;

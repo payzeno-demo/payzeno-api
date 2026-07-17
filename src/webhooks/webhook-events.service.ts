@@ -87,6 +87,7 @@ export class WebhookEventsService {
       limit + 1,
     );
 
+    const hasMore = rows.length > limit;
     const page = hasMore ? rows.slice(0, limit) : rows;
 
     return {
