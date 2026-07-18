@@ -29,6 +29,7 @@ export class ConfigSchema {
   @IsIn(['development', 'test', 'production'])
   NODE_ENV!: string;
 
+  @Type(() => Number)
   @IsInt()
   @Min(1)
   @Max(65535)
@@ -37,6 +38,7 @@ export class ConfigSchema {
   @IsUrl(URL_OPTS)
   OTEL_EXPORTER_OTLP_ENDPOINT!: string;
 
+  @IsString()
   @IsNotEmpty()
   REDIS_URL!: string;
 
@@ -53,6 +55,10 @@ export class ConfigSchema {
   @IsString()
   @MinLength(8)
   INTERNAL_API_SECRET!: string;
+
+  // --- payzeno-billing-legacy ----------------------------------------------
+  @IsUrl(URL_OPTS)
+  BILLING_LEGACY_BASE_URL!: string;
 
   @IsString()
   @IsNotEmpty()
@@ -91,6 +97,8 @@ export class ConfigSchema {
   @MinLength(8)
   API_KEY_PEPPER!: string;
 
+  // --- webhooks -------------------------------------------------------------
+  @IsString()
   @IsNotEmpty()
   WEBHOOK_SIGNING_KEK!: string;
 
@@ -108,6 +116,9 @@ export class ConfigSchema {
   AWS_ENDPOINT_URL?: string;
 
   @IsString()
+  @IsNotEmpty()
+  SNS_PAYMENTS_TOPIC_ARN!: string;
+
   @IsString()
   @IsString()
   @IsNotEmpty()
@@ -137,6 +148,7 @@ export class ConfigSchema {
   RATE_LIMIT_DEFAULT_RPM!: number;
 
   @Type(() => Number)
+  @IsInt()
   @Min(1)
   @Max(730)
   REFUND_WINDOW_DAYS!: number;
@@ -165,4 +177,20 @@ export class ConfigValidationError extends Error {
  * environment should be fixed in one pass.
  */
 export function validateEnv(raw: Record<string, unknown>): ConfigSchema {
+  const instance = plainToInstance(ConfigSchema, raw, { enableImplicitConversion: false });
+  const errors = validateSync(instance, {
+    skipMissingProperties: false,
+    whitelist: false,
+    forbidUnknownValues: false,
+  });
+
+  if (errors.length > 0) {
+    const failures = errors.map((e) => {
+      const constraints = e.constraints ? Object.values(e.constraints) : ['is invalid'];
+      return `${e.property}: ${constraints.join('; ')}`;
+    });
+    throw new ConfigValidationError(failures);
+  }
+
+  return instance;
 }

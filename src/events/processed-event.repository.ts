@@ -45,6 +45,13 @@ export class ProcessedEventRepository extends PayzenoRepository<ProcessedEvent> 
     await this.manager.delete(ProcessedEvent, { eventId, consumer });
   }
 
+  async wasProcessed(eventId: string, consumer: string): Promise<boolean> {
+    const count = await this.manager.count(ProcessedEvent, {
+      where: { eventId, consumer },
+    });
+    return count > 0;
+  }
+
   retentionCutoff(now: Date): Date {
     return new Date(now.getTime() - PROCESSED_EVENT_RETENTION_DAYS * 24 * 60 * 60 * 1000);
   }
