@@ -186,6 +186,10 @@ export class LedgerHttpClient extends BaseHttpClient {
 
   // -- payouts -------------------------------------------------------------
 
+  listPayouts(query: PayoutListQuery): Promise<Paginated<Payout>> {
+    return this.get<Paginated<Payout>>('/internal/v1/payouts', { ...query });
+  }
+
   getPayout(payoutId: PayoutId): Promise<Payout> {
     return this.get<Payout>(`/internal/v1/payouts/${encodeURIComponent(payoutId)}`);
   }
@@ -198,6 +202,17 @@ export class LedgerHttpClient extends BaseHttpClient {
       idempotencyKey,
     });
   }
+
+  cancelPayout(payoutId: PayoutId): Promise<Payout> {
+    return this.request<Payout, Record<string, never>>({
+      method: 'POST',
+      path: `/internal/v1/payouts/${encodeURIComponent(payoutId)}/cancel`,
+      body: {},
+      idempotencyKey: `payout_cancel:${payoutId}`,
+    });
+  }
+
+  // -- error translation ---------------------------------------------------
 
   protected mapUpstreamFailure(failure: UpstreamFailure): never {
     if (failure.apiError) {

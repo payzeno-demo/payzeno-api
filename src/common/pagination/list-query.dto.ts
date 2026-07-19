@@ -15,10 +15,16 @@ export const MAX_PAGE_SIZE = 100;
 
 export class ListQueryDto implements ListQuery {
   @IsOptional()
+  @Type(() => Number)
+  @Min(1)
+  @Max(MAX_PAGE_SIZE)
+  limit?: number;
+
   @IsString()
   @MaxLength(256)
   cursor?: string;
 
+  @IsOptional()
   @IsISO8601({ strict: true })
   created_after?: IsoTimestamp;
 

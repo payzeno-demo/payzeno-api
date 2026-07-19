@@ -29,6 +29,21 @@ import { validateEnv, type ConfigSchema } from './config.schema';
 /** Bumped by the release pipeline; surfaces on `GET /healthz`. */
 const SERVICE_VERSION = process.env.npm_package_version ?? '1.34.0';
 
+function asBool(value: string): boolean {
+  return value === 'true' || value === '1';
+}
+
+function runtime(env: ConfigSchema): RuntimeConfig {
+  return {
+    nodeEnv: env.NODE_ENV as NodeEnv,
+    port: env.PORT,
+    logLevel: env.LOG_LEVEL as RuntimeConfig['logLevel'],
+    otelExporterOtlpEndpoint: env.OTEL_EXPORTER_OTLP_ENDPOINT,
+    serviceName: 'payzeno-api',
+    serviceVersion: SERVICE_VERSION,
+  };
+}
+
 function database(env: ConfigSchema): DatabaseConfig {
   return {
     url: env.DATABASE_URL,
