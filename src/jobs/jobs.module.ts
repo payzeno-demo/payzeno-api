@@ -51,3 +51,11 @@ export const ALL_JOB_NAMES: readonly string[] = [
 @Module({
   imports: [
     ScheduleModule.forRoot(),
+    CommonModule,
+    EventsModule,
+    WebhooksModule,
+    MerchantsModule,
+    PaymentsModule,
+    DisputesModule,
+    LedgerModule,
+    TypeOrmModule.forFeature([IdempotencyRecord]),

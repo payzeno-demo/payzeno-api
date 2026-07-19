@@ -60,6 +60,21 @@ export function makeDeferredCaptureMerchant(overrides: Partial<Merchant> = {}): 
   });
 }
 
+export function makeCreateMerchantRequest(
+  overrides: Partial<CreateMerchantRequest> = {},
+): CreateMerchantRequest {
+  return {
+    legal_name: 'Aurora Retail Ltd',
+    display_name: 'Aurora',
+    country: 'GB',
+    default_currency: 'GBP',
+    mcc: '5732',
+    payout_schedule: 'daily',
+    metadata: {},
+    ...overrides,
+  };
+}
+
 export function makeUser(overrides: Partial<User> = {}): User {
   const merchantId = overrides.merchant_id ?? nextId('mch_');
   return {

@@ -43,6 +43,9 @@ export class MerchantEntity extends BaseEntity {
   @Column({ name: 'legal_name', type: 'text' })
   legalName!: string;
 
+  @Column({ name: 'display_name', type: 'text' })
+  displayName!: string;
+
   @Column({ name: 'default_currency', type: 'char', length: 3, transformer: currencyTransformer })
   defaultCurrency!: CurrencyCode;
 
@@ -60,6 +63,9 @@ export class MerchantEntity extends BaseEntity {
   @Column({ name: 'reserve_hold_days', type: 'integer', default: 0 })
   reserveHoldDays!: number;
 
+  @Column({ name: 'platform_fee_bps', type: 'integer', default: 290 })
+  platformFeeBps!: BasisPoints;
+
   @Column({ name: 'platform_fee_fixed_minor', type: 'bigint', default: 30, transformer: requiredMinorUnitsTransformer })
   platformFeeFixedMinor!: MinorUnits;
 
@@ -69,6 +75,9 @@ export class MerchantEntity extends BaseEntity {
 
   @Column({ name: 'capture_at_settlement', type: 'boolean', default: false })
   captureAtSettlement!: boolean;
+
+  @Column({ name: 'statement_descriptor', type: 'varchar', length: 22, nullable: true })
+  statementDescriptor!: string | null;
 
   @Column({ name: 'livemode', type: 'boolean', default: false })
   livemode!: boolean;

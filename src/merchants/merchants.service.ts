@@ -59,6 +59,8 @@ export const STAFF_ONLY_MERCHANT_FIELDS: readonly (keyof UpdateMerchantRequest)[
 export class MerchantsService extends BaseService<MerchantEntity> {
   constructor(
     private readonly merchants: MerchantRepository,
+    private readonly onboarding: MerchantOnboardingService,
+    private readonly statuses: MerchantStatusStateMachine,
     private readonly transactions: TransactionManager,
     @Inject(EVENT_PUBLISHER) private readonly events: EventPublisher,
     @Inject(CLOCK) private readonly clock: Clock,

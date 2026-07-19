@@ -45,6 +45,7 @@ export class RiskEvaluationService {
   constructor(
     private readonly merchants: MerchantRepository,
     private readonly merchantsService: MerchantsService,
+    private readonly charges: ChargeRepository,
     private readonly disputes: DisputeRepository,
     private readonly calculator: DisputeRateCalculator,
     @Inject(CLOCK) private readonly clock: Clock,
@@ -60,5 +61,26 @@ export class RiskEvaluationService {
       this.disputes.countOpenedSince(merchant.id, since),
     ]);
 
+    let afterId: string | null = null;
+
+    for (;;) {
+      const page: MerchantEntity[] = await this.merchants.listActiveLive(PAGE_SIZE, afterId);
+      if (page.length === 0) break;
+
+      for (const merchant of page) {
+        try {
+          results.push(await this.evaluate(merchant));
+        } catch (err) {
+          // One merchant's evaluation failing must not stop the sweep. The next run picks it
+          // up; a half-swept population is the failure mode that hides a bad actor.
+          this.logger.error('risk.evaluation_failed', err, { merchant_id: merchant.id });
+        }
+      }
+
+      afterId = page[page.length - 1].id;
+      if (page.length < PAGE_SIZE) break;
+    }
+
+    return results;
   }
 }
