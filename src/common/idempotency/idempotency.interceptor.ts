@@ -71,6 +71,13 @@ export class IdempotencyInterceptor implements NestInterceptor {
   ) {}
 
   async intercept(context: ExecutionContext, next: CallHandler): Promise<Observable<unknown>> {
+    const options = this.reflector.getAllAndOverride<IdempotentOptions | undefined>(IDEMPOTENT_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+
+    if (!options) return next.handle();
+
     const req = context.switchToHttp().getRequest<HttpRequest>();
     const merchantId = merchantIdOf(req.principal);
 
@@ -119,6 +126,22 @@ export class IdempotencyInterceptor implements NestInterceptor {
   }
 
   private storeFor(options: IdempotentOptions): IdempotencyStore {
+    const backend = options.backend ?? this.config.idempotency.backend;
+    return backend === 'redis' ? this.redisStore : this.postgresStore;
+  }
+}
+
+function merchantIdOf(principal: AuthPrincipal | undefined): string | null {
+  if (!principal) return null;
+  switch (principal.kind) {
+    case 'api_key':
+    case 'dashboard_session':
+    case 'client_secret':
+      return principal.merchant_id;
+    case 'staff_session':
+      return principal.acting_merchant_id;
+    case 'internal_service':
+      return null;
   }
 }
 
