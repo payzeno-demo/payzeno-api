@@ -51,6 +51,7 @@ export class RefundsService extends BaseService<RefundEntity> {
     private readonly policy: RefundPolicyService,
     private readonly states: RefundStateMachine,
     private readonly router: ProcessorRouter,
+    private readonly transactions: TransactionManager,
     private readonly ids: IdFactory,
     const scope = scopeFrom(principal);
 
@@ -215,6 +216,14 @@ export class RefundsService extends BaseService<RefundEntity> {
     processorReference: string,
     outcome: { failed: boolean; failureReason: string },
   ): Promise<RefundEntity | null> {
+    const row = await this.findOneOrThrow(refundId, scopeFrom(principal));
+    return toRefund(row);
+  }
+
+  async list(
+    principal: AuthPrincipal,
+    query: ListQuery & { charge_id?: ChargeId },
+  ): Promise<Paginated<Refund>> {
     const scope = scopeFrom(principal);
     const page = await this.paginate(query, scope, (qb) =>
       query.charge_id ? qb.andWhere('refund.charge_id = :chargeId', { chargeId: query.charge_id }) : qb,

@@ -128,6 +128,74 @@ export class MerchantsService extends BaseService<MerchantEntity> {
     actor: string,
   ): Promise<Merchant> {
     const before = await this.getById(merchantId);
+    const patch = toPatch(request);
+
+    const after = await this.transactions.runInTransaction(async (manager) => {
+      const affected = await this.merchants.applyPatch(merchantId, patch, manager);
+      if (affected === 0) throw new MerchantNotFoundException(merchantId);
+
+      const updated = await this.merchants.findById(merchantId, manager);
+      if (!updated) throw new MerchantNotFoundException(merchantId);
+
+      await this.events.publish(
+        'merchant.updated',
+        {
+          merchant_id: updated.id,
+          display_name: updated.displayName,
+          status: updated.status,
+          risk_tier: updated.riskTier,
+          payout_schedule: updated.payoutSchedule,
+          pricing_model: updated.pricingModel,
+          reserve_bps: updated.reserveBps,
+          reserve_hold_days: updated.reserveHoldDays,
+          payout_delay_days: updated.payoutDelayDays,
+          settlement_tolerance_minor: Number(updated.settlementToleranceMinor),
+          capture_at_settlement: updated.captureAtSettlement,
+          platform_fee_bps: updated.platformFeeBps,
+          platform_fee_fixed_minor: Number(updated.platformFeeFixedMinor),
+          statement_descriptor: updated.statementDescriptor,
+          changed_by: actor,
+          changed_at: this.clock.nowIso(),
+        },
+        {
+          merchantId: updated.id,
+          correlationId: currentCorrelationId(),
+          causationId: null,
+          livemode: updated.livemode,
+          occurredAt: this.clock.nowIso(),
+        },
+      );
+
+      return updated;
+    });
+
+    if (before.captureAtSettlement !== after.captureAtSettlement) {
+      // The one field change worth a line of its own: it moves the merchant onto the deferred
+      // capture path, which is where PAY-2041 happened. docs/runbooks/payzeno-api.md.
+      this.logger.warn('merchant.capture_at_settlement_changed', {
+        merchant_id: merchantId,
+        from: before.captureAtSettlement,
+        to: after.captureAtSettlement,
+        changed_by: actor,
+      });
+    }
+
+    return toMerchantResponse(after);
+  }
+
+  /**
+   * `POST /v1/merchants/:merchantId/status`. Staff (risk) only.
+   *
+   * The state machine decides legality; the conditional UPDATE decides who won. A zero-row
+   * result means somebody else moved the merchant between our read and our write, and it
+   * surfaces as the same 409 an illegal transition would.
+   */
+  async changeStatus(
+    merchantId: MerchantId,
+    to: MerchantStatus,
+    reason: string,
+    actor: string,
+  ): Promise<Merchant> {
     const merchant = await this.getById(merchantId);
     const next = this.statuses.apply(merchant.status, event);
 

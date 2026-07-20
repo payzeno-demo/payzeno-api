@@ -44,6 +44,7 @@ export class CreateBankAccountDto implements CreateBankAccountRequest {
   @MaxLength(140)
   account_holder_name!: string;
 
+  @IsOptional()
   @IsBoolean()
   is_default?: boolean;
 }

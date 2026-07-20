@@ -57,6 +57,16 @@ describe('MerchantStatusStateMachine', () => {
     });
   });
 
+  it('raises the merchant-specific subclass, not the generic one', () => {
+    try {
+      machine.apply('closed', 'approve');
+      throw new Error('expected an InvalidMerchantTransitionException');
+    } catch (err) {
+      expect(err).toBeInstanceOf(InvalidMerchantTransitionException);
+      expect((err as InvalidMerchantTransitionException).httpStatus).toBe(409);
+    }
+  });
+
   it('declares rejected and closed terminal, and nothing else', () => {
     for (const status of MERCHANT_STATUSES) {
       expect(machine.terminalStates.has(status)).toBe(status === 'rejected' || status === 'closed');

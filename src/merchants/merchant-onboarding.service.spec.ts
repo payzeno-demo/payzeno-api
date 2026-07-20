@@ -25,6 +25,7 @@ import { FixedClock } from 'test/support/fixed-clock';
 describe('MerchantOnboardingService', () => {
   const clock = new FixedClock('2026-02-01T10:00:00.000Z');
 
+  let merchants: { insertMapped: jest.Mock; findByLegalName: jest.Mock };
   let ledger: { bootstrapAccounts: jest.Mock };
   let events: { publish: jest.Mock };
   let transactions: TransactionManager;
@@ -52,6 +53,23 @@ describe('MerchantOnboardingService', () => {
       clock,
       new NoopLogger(),
     );
+  });
+
+  const request = makeCreateMerchantRequest({
+    legal_name: '  Aurora Coffee Roasters Ltd  ',
+    display_name: '  Aurora Coffee  ',
+    country: 'gb',
+    default_currency: 'GBP',
+    mcc: '5812',
+  });
+
+  it('inserts, publishes and bootstraps in one transaction', async () => {
+    await service.onboard(request, true, 'stf_operator');
+
+    expect(transactions.runInTransaction).toHaveBeenCalledTimes(1);
+    expect(merchants.insertMapped).toHaveBeenCalledTimes(1);
+    expect(events.publish).toHaveBeenCalledTimes(1);
+    expect(ledger.bootstrapAccounts).toHaveBeenCalledTimes(1);
   });
 
   it('normalises the inputs the console lets a human type', async () => {

@@ -59,6 +59,9 @@ export class MerchantEntity extends BaseEntity {
   @Column({ name: 'payout_schedule', type: 'text', default: 'daily' })
   payoutSchedule!: PayoutSchedule;
 
+  @Column({ name: 'reserve_bps', type: 'integer', default: 0 })
+  reserveBps!: BasisPoints;
+
   /** Drives `reserve_hold.release_on` in the ledger. 0 = no rolling reserve. */
   @Column({ name: 'reserve_hold_days', type: 'integer', default: 0 })
   reserveHoldDays!: number;
@@ -73,6 +76,10 @@ export class MerchantEntity extends BaseEntity {
   @Column({ name: 'payout_delay_days', type: 'integer', default: 2 })
   payoutDelayDays!: number;
 
+  /** Per-item acquirer-vs-authorised variance tolerated before `variance_exceeded`. */
+  @Column({ name: 'settlement_tolerance_minor', type: 'bigint', default: 100, transformer: requiredMinorUnitsTransformer })
+  settlementToleranceMinor!: MinorUnits;
+
   @Column({ name: 'capture_at_settlement', type: 'boolean', default: false })
   captureAtSettlement!: boolean;
 
@@ -84,6 +91,9 @@ export class MerchantEntity extends BaseEntity {
 
   @Column({ name: 'metadata', type: 'jsonb', default: () => "'{}'::jsonb" })
   metadata!: Metadata;
+
+  @OneToMany(() => MerchantUserEntity, (user) => user.merchant)
+  users?: MerchantUserEntity[];
 
   @OneToMany(() => ApiKeyEntity, (key) => key.merchant)
   apiKeys?: ApiKeyEntity[];
