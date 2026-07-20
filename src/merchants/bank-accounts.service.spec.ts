@@ -32,6 +32,8 @@ import { FixedClock } from 'test/support/fixed-clock';
 describe('BankAccountsService', () => {
   const clock = new FixedClock('2026-04-10T09:00:00.000Z');
   const scope: MerchantScope = { merchantId: TEST_MERCHANT_ID, livemode: true };
+  const BANK_ACCOUNT_ID = fixedId('ba_', 'aurora-gbp');
+
   const request: CreateBankAccountRequest = {
     country: 'gb',
     currency: 'GBP',
@@ -41,7 +43,48 @@ describe('BankAccountsService', () => {
     is_default: true,
   };
 
+  let accounts: {
+    insertMapped: jest.Mock;
+    clearDefault: jest.Mock;
+    markDefault: jest.Mock;
+    findScoped: jest.Mock;
+    findOne: jest.Mock;
+    paginateCursor: jest.Mock;
+  };
   let transactions: TransactionManager;
+  function storedAccount(overrides: Record<string, unknown> = {}) {
+    const account = {
+      id: BANK_ACCOUNT_ID,
+      merchantId: TEST_MERCHANT_ID,
+      currency: 'GBP',
+      scheme: 'uk_sort_code',
+      status: 'validated',
+      isDefault: false,
+      livemode: true,
+      isPayable: () => account.status === 'validated',
+      toBankAccount: () => ({
+        id: BANK_ACCOUNT_ID,
+        object: 'bank_account' as const,
+        merchant_id: TEST_MERCHANT_ID,
+        country: 'GB',
+        currency: 'GBP' as const,
+        bank_name: 'Pending validation',
+        scheme: 'uk_sort_code' as const,
+        last_four: '0000',
+        routing_last_four: null,
+        iban_last_four: null,
+        bic: null,
+        sort_code_last_four: null,
+        status: account.status as 'validated',
+        is_default: account.isDefault,
+        livemode: true,
+        created_at: '2026-04-10T09:00:00.000Z',
+      }),
+      ...overrides,
+    };
+    return account;
+  }
+
   beforeEach(() => {
     accounts = {
       insertMapped: jest.fn().mockResolvedValue(undefined),

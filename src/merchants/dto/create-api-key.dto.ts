@@ -20,6 +20,13 @@ export class CreateApiKeyDto implements CreateApiKeyRequest {
   @MaxLength(80)
   name!: string;
 
+  @IsIn([...API_KEY_MODES])
+  mode!: ApiKeyMode;
+
+  /**
+   * `ArrayUnique` because a duplicated scope is a merchant integration bug worth surfacing,
+   * and because `expandScopes` would silently dedupe it and hide the mistake.
+   */
   @IsOptional()
   @ArrayUnique()
   @ArrayMaxSize(API_KEY_SCOPES.length)

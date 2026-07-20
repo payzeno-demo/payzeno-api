@@ -129,6 +129,8 @@ export class MerchantsService extends BaseService<MerchantEntity> {
   ): Promise<Merchant> {
     const before = await this.getById(merchantId);
     const merchant = await this.getById(merchantId);
+    const next = this.statuses.apply(merchant.status, event);
+
     const updated = await this.transactions.runInTransaction(async (manager) => {
       const affected = await this.merchants.transitionStatus(merchantId, merchant.status, next, manager);
 
