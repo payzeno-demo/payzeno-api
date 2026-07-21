@@ -51,8 +51,20 @@ export class RefundsService extends BaseService<RefundEntity> {
     private readonly policy: RefundPolicyService,
     private readonly states: RefundStateMachine,
     private readonly router: ProcessorRouter,
+    private readonly ledger: LedgerReadThroughService,
     private readonly transactions: TransactionManager,
     private readonly ids: IdFactory,
+    @Inject(EVENT_PUBLISHER) private readonly events: EventPublisher,
+    @Inject(PAYZENO_LOGGER) logger: PayzenoLogger,
+  ) {
+    super(refunds, logger);
+  }
+
+  get entityName(): string {
+    return 'refund';
+  }
+
+  async create(principal: AuthPrincipal, dto: CreateRefundDto, correlationId: string): Promise<Refund> {
     const scope = scopeFrom(principal);
 
     const { refund, netsAgainstSettlement } = await this.transactions.runInTransaction(async (manager) => {
