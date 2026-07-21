@@ -32,6 +32,15 @@ export class WebhookFanoutConsumer extends BaseEventConsumer implements OnModule
   readonly queueUrl: string;
   readonly consumerName = 'webhook-fanout';
 
+  readonly handledTypes = new Set<EventType>([
+    'payment.failed',
+    'refund.succeeded',
+    'refund.failed',
+    'dispute.evidence_submitted',
+    'payout.scheduled',
+    'settlement.item_settled',
+  ]);
+
   private events!: WebhookEventsService;
 
   constructor(

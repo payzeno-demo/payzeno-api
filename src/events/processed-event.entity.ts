@@ -14,6 +14,7 @@ import { Column, Entity, Index, PrimaryColumn } from 'typeorm';
  * ADR 0011 forbids it in the money path.
  */
 @Entity({ name: 'processed_event' })
+@Index('ix_processed_event_processed_at', ['processedAt'])
 export class ProcessedEvent {
   /** The bus `EventEnvelope.id`. */
   @PrimaryColumn({ name: 'event_id', type: 'text' })
