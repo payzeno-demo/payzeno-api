@@ -68,6 +68,24 @@ export class InvoiceSourceResolver {
     // merchant. It goes away when every merchant has been backfilled into the projection —
     // a data task, not a code one, and nobody has scheduled it. docs/adr/0012-invoice-cutover.md.
     const response = await this.legacy.listInvoices(merchantId, filter);
+    const warmed = await this.projection.warm(merchantId, response.data);
+
+    this.logger.info('invoice_projection_miss', {
+      merchant_id: merchantId,
+      fetched: response.data.length,
+      warmed,
+      source: 'billing-legacy',
+    });
+
+    return { source: 'billing-legacy', page: response };
+  }
+
+  async get(merchantId: MerchantId, invoiceId: string): Promise<{ source: InvoiceSource; invoice: Invoice }> {
+    if (this.flags.isEnabled(FLAG_NAMES.LEDGER_OWNS_INVOICES)) {
+      const lines = await this.ledger.listStagedInvoiceLines(merchantId, invoiceId);
+      return { source: 'ledger', invoice: this.assembleFromStagedLines(merchantId, invoiceId, lines.lines) };
+    }
+
     const cached = await this.projection.get(merchantId, invoiceId);
     if (cached) {
       return { source: 'projection', invoice: cached };

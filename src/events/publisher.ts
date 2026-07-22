@@ -45,3 +45,20 @@ const TOPIC_OF_TYPE: ReadonlyMap<EventType, TopicName> = new Map(
   }),
 );
 
+export function topicOf(type: EventType): TopicName {
+  const topic = TOPIC_OF_TYPE.get(type);
+  if (!topic) {
+    throw new Error(`no SNS topic is declared for event type "${type}"`);
+  }
+  return topic;
+}
+
+/**
+ * True for the events payzeno-api is allowed to originate. `OutboxEventPublisher` asserts
+ * this: a service that tries to publish `settlement.completed` has misunderstood who owns
+ * settlement, and the ledger will happily consume its own event back off the topic.
+ */
+export function isApiOwnedEvent(type: EventType): boolean {
+  const topic = topicOf(type);
+  return topic === 'payzeno-payments-events' || topic === 'payzeno-merchant-events';
+}

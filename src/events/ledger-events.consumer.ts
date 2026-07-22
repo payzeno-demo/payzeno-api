@@ -228,3 +228,22 @@ export class LedgerEventsConsumer extends BaseEventConsumer implements OnModuleI
     }
 
     await this.supportTasks.open(tx, {
+      kind: 'duplicate_settlement',
+      merchantId: payload.merchant_id,
+      chargeId: payload.charge_id,
+      severity: 'high',
+      title: `Possible double charge on ${payload.charge_id}`,
+      body:
+        `The ledger refused a second posting for item ${payload.item_id} in batch ` +
+        `${payload.batch_id} (detected_by=${payload.detected_by}, ` +
+        `existing_transaction=${payload.existing_transaction_id}). This merchant captures at ` +
+        `settlement, so verify the acquirer only captured once before refunding.`,
+      sourceEventId,
+    });
+  }
+
+  /**
+   * The acquirer settled a different amount than we authorised. Nothing is posted beyond
+   * tolerance, so the merchant's balance is right and the file is wrong — which is exactly
+   * the failure the PAY-2041 postmortem calls undetectable without this branch.
+   */
