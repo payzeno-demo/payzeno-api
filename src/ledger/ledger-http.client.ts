@@ -144,6 +144,10 @@ export class LedgerHttpClient extends BaseHttpClient {
 
   // -- settlement ----------------------------------------------------------
 
+  listSettlementBatches(query: SettlementBatchListQuery): Promise<Paginated<SettlementBatch>> {
+    return this.get<Paginated<SettlementBatch>>('/internal/v1/settlement-batches', { ...query });
+  }
+
   getSettlementBatch(batchId: SettlementBatchId, merchantId?: MerchantId): Promise<SettlementBatch> {
     return this.get<SettlementBatch>(`/internal/v1/settlement-batches/${encodeURIComponent(batchId)}`, {
       merchant_id: merchantId,

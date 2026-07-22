@@ -12,6 +12,11 @@ import { TEST_CHARGE_ID, TEST_MERCHANT_ID } from './ids';
 
 let seq = 0;
 
+function nextEventId(): string {
+  seq += 1;
+  return `evt_${seq.toString(36).padStart(10, '0')}`;
+}
+
 export interface EnvelopeOverrides {
   id?: string;
   occurred_at?: string;
@@ -28,6 +33,26 @@ export interface EnvelopeOverrides {
  * version **2** and `LedgerEventsConsumer` branches on that, so a factory that always
  * emitted `1` would make the v2 chunk-tracking branch unreachable from any test.
  */
+export function makeEnvelope<T extends EventType>(
+  type: T,
+  payload: PayloadOfType<T>,
+  overrides: EnvelopeOverrides = {},
+): PayzenoEvent {
+  const envelope = {
+    id: overrides.id ?? nextEventId(),
+    type,
+    version: EVENT_SCHEMA_VERSIONS[type],
+    occurred_at: overrides.occurred_at ?? '2026-01-13T04:00:00.000Z',
+    source: overrides.source ?? 'payzeno-ledger',
+    correlation_id: overrides.correlation_id ?? 'req_test_correlation',
+    causation_id: overrides.causation_id ?? null,
+    merchant_id: overrides.merchant_id === undefined ? TEST_MERCHANT_ID : overrides.merchant_id,
+    livemode: overrides.livemode ?? true,
+    payload,
+  };
+  return envelope as unknown as PayzenoEvent;
+}
+
 /** The arc-INC event: the ledger telling us a settlement posting was already made. */
 export function makeDuplicateDetectedEvent(
   payload: Partial<SettlementDuplicateDetectedPayload> = {},
