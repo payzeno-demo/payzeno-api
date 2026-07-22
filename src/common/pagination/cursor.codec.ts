@@ -48,3 +48,11 @@ export function decodeCursor(raw: string): Cursor {
   }
 
   if (typeof parsed !== 'object' || parsed === null) {
+    throw invalidCursor('cursor is not an object');
+  }
+
+  const { c, i } = parsed as { c?: unknown; i?: unknown };
+
+  if (typeof c !== 'string' || Number.isNaN(Date.parse(c))) {
+    throw invalidCursor('cursor timestamp is not a valid instant');
+  }
