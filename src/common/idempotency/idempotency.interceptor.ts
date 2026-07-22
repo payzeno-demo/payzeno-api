@@ -66,6 +66,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
   constructor(
     private readonly reflector: Reflector,
     @Inject(API_CONFIG) private readonly config: ApiConfig,
+    @Inject(POSTGRES_IDEMPOTENCY_STORE) private readonly postgresStore: IdempotencyStore,
     @Inject(REDIS_IDEMPOTENCY_STORE) private readonly redisStore: IdempotencyStore,
     @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
   ) {}
@@ -92,6 +93,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
       );
     }
 
+    const store = this.storeFor(options);
     const path = req.originalUrl ?? req.url;
     const print = fingerprint(req.method, stripQuery(path), req.body);
 
