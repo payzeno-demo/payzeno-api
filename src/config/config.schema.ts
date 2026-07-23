@@ -72,13 +72,23 @@ export class ConfigSchema {
   @IsUrl(URL_OPTS)
   VAULT_BASE_URL!: string;
 
+  @IsUrl(URL_OPTS)
+  VAULT_PUBLIC_URL!: string;
+
   @IsString()
   @IsNotEmpty()
   VAULT_API_KEY!: string;
 
+  // --- acquirers ------------------------------------------------------------
+  @IsUrl(URL_OPTS)
+  WORLDFLOW_BASE_URL!: string;
+
   @IsString()
   @IsNotEmpty()
   WORLDFLOW_API_KEY!: string;
+
+  @IsUrl(URL_OPTS)
+  NORDPAY_BASE_URL!: string;
 
   @IsString()
   @IsNotEmpty()
@@ -89,6 +99,9 @@ export class ConfigSchema {
 
   // --- auth -----------------------------------------------------------------
   @IsString()
+  @MinLength(32, { message: 'SESSION_SECRET must be at least 32 bytes of entropy' })
+  SESSION_SECRET!: string;
+
   @IsString()
   @IsNotEmpty()
   CSRF_COOKIE_NAME!: string;
@@ -103,11 +116,17 @@ export class ConfigSchema {
   WEBHOOK_SIGNING_KEK!: string;
 
   @Type(() => Number)
+  @Min(1)
+  @Max(24)
+  WEBHOOK_MAX_ATTEMPTS!: number;
+
   @Type(() => Number)
   @IsInt()
   @Min(1)
   WEBHOOK_RETRY_WINDOW_HOURS!: number;
 
+  // --- bus ------------------------------------------------------------------
+  @IsString()
   @IsNotEmpty()
   AWS_REGION!: string;
 
@@ -124,6 +143,7 @@ export class ConfigSchema {
   @IsNotEmpty()
   SQS_LEDGER_QUEUE_URL!: string;
 
+  @IsString()
   @IsNotEmpty()
   SQS_API_WEBHOOKS_URL!: string;
 
@@ -144,6 +164,7 @@ export class ConfigSchema {
 
   // --- limits ---------------------------------------------------------------
   @Type(() => Number)
+  @IsInt()
   @Min(1)
   RATE_LIMIT_DEFAULT_RPM!: number;
 

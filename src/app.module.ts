@@ -126,3 +126,10 @@ const REQUEST_CHAIN = [
     NotificationsModule,
     InternalModule,
     JobsModule,
+    ReportingModule,
+  ],
+  controllers: [MetaController],
+  providers: [...REQUEST_CHAIN],
+})
+export class AppModule implements NestModule {
+  /**
