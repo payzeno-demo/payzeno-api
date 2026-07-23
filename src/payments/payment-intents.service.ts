@@ -145,6 +145,15 @@ export class PaymentIntentsService extends BaseService<PaymentIntentEntity> {
     request: ConfirmPaymentIntentRequest,
   ): Promise<PaymentIntent> {
     const intent = await this.findOneOrThrow(id, scopeFrom(principal));
+    return toPaymentIntent(await this.confirmFlow.execute(intent, request));
+  }
+
+  async capture(
+    principal: AuthPrincipal,
+    id: PaymentIntentId,
+    request: CapturePaymentIntentRequest,
+  ): Promise<PaymentIntent> {
+    const intent = await this.findOneOrThrow(id, scopeFrom(principal));
     return toPaymentIntent(await this.captureFlow.execute(intent, request));
   }
 

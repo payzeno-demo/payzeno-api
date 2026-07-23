@@ -12,6 +12,7 @@ describe('InternalService', () => {
   let bankAccounts: { findInternal: jest.Mock };
   let webhookEndpoints: { listForInternalCaller: jest.Mock };
   let supportTasks: { open: jest.Mock };
+  let audit: { record: jest.Mock };
   let logger: Record<string, jest.Mock>;
   let service: InternalService;
   const tx = { id: 'tx' } as unknown as EntityManager;
@@ -46,6 +47,14 @@ describe('InternalService', () => {
 
     await expect(service.getMerchant('mch_missing', 'payzeno-ledger')).rejects.toBeInstanceOf(
       MerchantNotFoundException,
+    );
+  });
+
+  it('getCharge raises ChargeNotFoundException for an orphan the ledger cannot resolve', async () => {
+    charges.findInternal.mockResolvedValueOnce(null);
+
+    await expect(service.getCharge('ch_missing', 'payzeno-ledger')).rejects.toBeInstanceOf(
+      ChargeNotFoundException,
     );
   });
 
@@ -85,6 +94,31 @@ describe('InternalService', () => {
       );
       expect(audit.record).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('createSupportTask opens the task and audits it in one transaction', async () => {
+    const result = await service.createSupportTask(
+      {
+        kind: 'duplicate_settlement',
+        merchant_id: 'mch_1',
+        charge_id: 'ch_9',
+        severity: 'high',
+        title: 'Possible double charge on ch_9',
+        body: 'ledger refused a second posting',
+        source_event_id: 'evt_1',
+      },
+      'payzeno-ledger',
+    );
+
+    expect(result).toEqual({ id: 'sup_1' });
+    expect(supportTasks.open).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({ kind: 'duplicate_settlement', chargeId: 'ch_9' }),
+    );
+    expect(audit.record).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({ action: 'support_task.open', resourceId: 'sup_1' }),
+    );
   });
 
   it('listWebhookEndpoints answers from the table, never from a projection', async () => {

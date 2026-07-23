@@ -19,6 +19,17 @@ describe('UnsettledChargeSweepJob', () => {
     child: jest.fn(),
   };
 
+  function charge(id: string) {
+    return {
+      id,
+      merchantId: 'mch_1',
+      captured_at: new Date('2026-05-01T00:00:00.000Z'),
+      amount_minor: 10_000,
+      currency: 'USD',
+      livemode: true,
+    };
+  }
+
   const settlementTransaction = {
     id: 'txn_1',
     purpose: 'settle',
@@ -26,7 +37,10 @@ describe('UnsettledChargeSweepJob', () => {
     metadata: { settlement_batch_id: 'sb_1' },
   };
 
+  let charges: { findStrandedCaptures: jest.Mock; markSettled: jest.Mock };
   let ledger: { listTransactions: jest.Mock };
+  let job: UnsettledChargeSweepJob;
+
   beforeEach(() => {
     jest.clearAllMocks();
     charges = {
@@ -49,6 +63,13 @@ describe('UnsettledChargeSweepJob', () => {
     );
   });
 
+  it('only looks at charges captured outside the settlement SLA', async () => {
+    await job.runOnce();
+
+    const [cutoff] = charges.findStrandedCaptures.mock.calls[0];
+    expect(now.getTime() - (cutoff as Date).getTime()).toBe(72 * 3_600_000);
+  });
+
   it('heals a charge the ledger settled, stamping the batch from the transaction', async () => {
     const result = await job.runOnce();
 
@@ -67,6 +88,20 @@ describe('UnsettledChargeSweepJob', () => {
     expect(result.details).toMatchObject({ healed: 1, unresolved: 0 });
   });
 
+  it('alarms — loudly — on a charge the ledger has never settled', async () => {
+    ledger.listTransactions.mockResolvedValueOnce({ data: [], has_more: false });
+
+    const result = await job.runOnce();
+
+    expect(charges.markSettled).not.toHaveBeenCalled();
+    expect(result.details).toMatchObject({ healed: 0, unresolved: 1 });
+    expect(logger.error).toHaveBeenCalledWith(
+      'sweep.unresolved_charges',
+      null,
+      expect.objectContaining({ unresolved: 1 }),
+    );
+  });
+
   it('will not guess a batch id when the settle posting carries none', async () => {
     ledger.listTransactions.mockResolvedValueOnce({
       data: [{ ...settlementTransaction, metadata: {} }],
@@ -80,6 +115,28 @@ describe('UnsettledChargeSweepJob', () => {
       'sweep.settlement_without_batch',
       expect.objectContaining({ charge_id: 'ch_1' }),
     );
+  });
+
+  it('ignores non-settlement postings on the same charge', async () => {
+    ledger.listTransactions.mockResolvedValueOnce({
+      data: [
+        { id: 'txn_hold', purpose: 'auth_hold', posted_at: '2026-05-01T00:00:00.000Z', metadata: {} },
+      ],
+      has_more: false,
+    });
+
+    const result = await job.runOnce();
+
+    expect(result.details).toMatchObject({ unresolved: 1 });
+  });
+
+  it('treats a lost race as nothing wrong when the chunk arrived meanwhile', async () => {
+    charges.markSettled.mockResolvedValueOnce(0);
+
+    const result = await job.runOnce();
+
+    expect(result.details).toMatchObject({ healed: 0, unresolved: 1 });
+    expect(result.failed).toBe(0);
   });
 
   it('counts a throwing charge as failed and carries on', async () => {

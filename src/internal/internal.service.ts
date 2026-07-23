@@ -63,7 +63,10 @@ export class InternalService {
   constructor(
     private readonly merchants: MerchantsService,
     private readonly charges: ChargesService,
+    private readonly bankAccounts: BankAccountsService,
     private readonly webhookEndpoints: WebhookEndpointsService,
+    private readonly supportTasks: SupportTasksService,
+    private readonly transactions: TransactionManager,
     private readonly audit: AuditService,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
@@ -71,6 +74,18 @@ export class InternalService {
 
   /** `GET /internal/v1/merchants/:merchantId`. Ledger config reads and the legacy profile sync. */
   async getMerchant(merchantId: MerchantId, caller: InternalCallerName): Promise<Merchant> {
+    const merchant = await this.merchants.findInternal(merchantId);
+
+    if (!merchant) {
+      throw new MerchantNotFoundException(merchantId);
+    }
+
+    this.logger.debug('internal.merchant_read', { merchant_id: merchantId, caller });
+    return merchant;
+  }
+
+  /** `GET /internal/v1/charges/:chargeId`. The ledger reconciling an orphaned item. */
+  async getCharge(chargeId: string, caller: InternalCallerName): Promise<Charge> {
     const charge = await this.charges.findInternal(chargeId);
 
     if (!charge) {
@@ -220,5 +235,21 @@ export class InternalService {
     bankAccountId: string,
     caller: InternalCallerName,
   ): Promise<BankAccount> {
+    const account = await this.bankAccounts.findInternal(bankAccountId);
+
+    if (!account) {
+      throw new ResourceNotFoundException('bank_account', bankAccountId);
+    }
+
+    this.logger.debug('internal.bank_account_read', {
+      bank_account_id: bankAccountId,
+      caller,
+    });
+    return account;
+  }
+
+  /** Stamped on responses so a caller can tell a cold read from a cached one. */
+  readAt(): IsoTimestamp {
+    return this.clock.nowIso();
   }
 }
