@@ -66,6 +66,20 @@ describe('TransactionManager', () => {
     expect(received).toBe(existing);
   });
 
+  it('opens its own transaction when the supplied manager has no active one', async () => {
+    const idle = { queryRunner: { isTransactionActive: false } } as unknown as EntityManager;
+
+    await manager.runInTransaction(async () => undefined, idle);
+
+    expect(transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens its own transaction when the supplied manager has no query runner', async () => {
+    await manager.runInTransaction(async () => undefined, {} as EntityManager);
+
+    expect(transaction).toHaveBeenCalledTimes(1);
+  });
+
   describe('retries', () => {
     it('does not retry by default', async () => {
       transaction.mockRejectedValue(serializationFailure());

@@ -121,6 +121,12 @@ describe('PayzenoRepository', () => {
       expect(builder.state.wheres[1][1]).toEqual({ livemode: true });
     });
 
+    it('scopes test mode separately from live', () => {
+      repo.scopedQuery({ merchantId: TEST_MERCHANT_ID, livemode: false });
+
+      expect(builder.state.wheres[1][1]).toEqual({ livemode: false });
+    });
+
     it('uses the subclass alias throughout', () => {
       repo.scopedQuery(scope);
 
@@ -138,6 +144,14 @@ describe('PayzenoRepository', () => {
       expect(builder.state.wheres[2][0]).toContain('charge.id = :id');
     });
 
+    it('returns null rather than throwing, so the service picks the 404 subclass', async () => {
+      (builder.qb as unknown as { getOne: () => Promise<unknown> }).getOne = async () => null;
+
+      await expect(repo.findScoped(TEST_CHARGE_ID, scope)).resolves.toBeNull();
+    });
+  });
+
+  describe('existsScoped', () => {
     it('counts within the scope', async () => {
       await expect(repo.existsScoped(TEST_CHARGE_ID, scope)).resolves.toBe(true);
     });
@@ -157,6 +171,12 @@ describe('PayzenoRepository', () => {
         ['charge.created_at', 'DESC'],
         ['charge.id', 'DESC'],
       ]);
+    });
+
+    it('takes limit + 1 so has_more needs no COUNT', async () => {
+      await repo.paginateCursor(scope, { limit: 25, cursor: null } as never);
+
+      expect(builder.state.taken).toBe(26);
     });
 
     it('applies created_after and created_before when supplied', async () => {
@@ -199,6 +219,14 @@ describe('PayzenoRepository', () => {
       expect(builder.state.locks).toContain('pessimistic_write');
     });
 
+    it('requires a manager — a FOR UPDATE outside a transaction protects nothing', () => {
+      // The signature makes it impossible to call without one; this asserts the intent
+      // survives a refactor that tries to make it optional.
+      expect(repo.lockForUpdate.length).toBe(2);
+    });
+  });
+
+  describe('updateScoped', () => {
     function managerWithBuilder(): EntityManager {
       return {
         getRepository: () => ({ createQueryBuilder: () => builder.qb }),
