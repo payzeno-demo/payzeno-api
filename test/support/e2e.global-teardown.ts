@@ -35,3 +35,19 @@ const TABLES_IN_DEPENDENCY_ORDER = [
   'merchant',
 ];
 
+export default async function globalTeardown(): Promise<void> {
+  if (process.env.KEEP_E2E_DATA === '1') {
+    // eslint-disable-next-line no-console
+    console.log('[e2e] KEEP_E2E_DATA=1 — leaving data in place');
+    return;
+  }
+
+  const dataSource = new DataSource({ ...dataSourceOptions, logging: false });
+  await dataSource.initialize();
+  try {
+    const quoted = TABLES_IN_DEPENDENCY_ORDER.map((t) => `"${t}"`).join(', ');
+    await dataSource.query(`TRUNCATE ${quoted} RESTART IDENTITY CASCADE`);
+  } finally {
+    await dataSource.destroy();
+  }
+}

@@ -41,5 +41,9 @@ async function assertCleanStart(dataSource: DataSource): Promise<void> {
     const rows: Array<{ count: string }> = await dataSource.query(
       `SELECT COUNT(*)::text AS count FROM "${table}"`,
     );
+    const count = Number(rows[0]?.count ?? '0');
+    if (count > 0) {
+      await dataSource.query(`TRUNCATE "${table}" RESTART IDENTITY CASCADE`);
+    }
   }
 }
