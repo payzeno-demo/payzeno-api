@@ -55,6 +55,7 @@ export class RefundsService extends BaseService<RefundEntity> {
     private readonly transactions: TransactionManager,
     private readonly ids: IdFactory,
     @Inject(EVENT_PUBLISHER) private readonly events: EventPublisher,
+    @Inject(CLOCK) private readonly clock: Clock,
     @Inject(PAYZENO_LOGGER) logger: PayzenoLogger,
   ) {
     super(refunds, logger);
@@ -228,6 +229,40 @@ export class RefundsService extends BaseService<RefundEntity> {
     processorReference: string,
     outcome: { failed: boolean; failureReason: string },
   ): Promise<RefundEntity | null> {
+    const refund = await this.refunds.findByProcessorReference(processorReference);
+    if (!refund) {
+      return null;
+    }
+
+    if (this.states.isSettlementNoop(refund.status)) {
+      return refund;
+    }
+
+    await this.transactions.runInTransaction(async (manager) => {
+      if (outcome.failed) {
+        await this.refunds.markFailed(manager, refund.id, outcome.failureReason);
+        await this.charges.addRefundedAmount(manager, refund.charge_id, -Number(refund.amount_minor));
+        refund.status = 'failed';
+        refund.failure_reason = outcome.failureReason;
+        return;
+      }
+
+      const succeededAt = this.clock.now();
+      await this.refunds.markSucceeded(manager, refund.id, processorReference, succeededAt);
+      refund.status = 'succeeded';
+      refund.succeeded_at = succeededAt;
+    });
+
+    this.logger.info('refund_settled_from_webhook', {
+      refund_id: refund.id,
+      charge_id: refund.charge_id,
+      failed: outcome.failed,
+    });
+
+    return refund;
+  }
+
+  async get(principal: AuthPrincipal, refundId: RefundId): Promise<Refund> {
     const row = await this.findOneOrThrow(refundId, scopeFrom(principal));
     return toRefund(row);
   }

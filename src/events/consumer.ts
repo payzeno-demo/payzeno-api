@@ -176,3 +176,26 @@ export abstract class BaseEventConsumer {
 
   /** SNS-to-SQS wraps the message; a raw-delivery queue does not. Tolerate both. */
   protected parse(message: Message): PayzenoEvent | null {
+    if (!message.Body) {
+      return null;
+    }
+    try {
+      const outer = JSON.parse(message.Body) as Record<string, unknown>;
+      const body =
+        typeof outer.Message === 'string'
+          ? (JSON.parse(outer.Message) as Record<string, unknown>)
+          : outer;
+
+      if (typeof body.id !== 'string' || typeof body.type !== 'string') {
+        return null;
+      }
+      return body as unknown as PayzenoEvent;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Consumers switch on `(type, version)`. Anything newer than we know how to read is a
+   * DLQ case, not a best-effort read: an added optional field does not bump the version, so
+   * a bump means the shape genuinely changed.

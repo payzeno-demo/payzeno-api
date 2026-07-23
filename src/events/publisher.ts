@@ -38,6 +38,21 @@ export interface EventPublisher {
  */
 export const EVENT_PUBLISHER = Symbol('EVENT_PUBLISHER');
 
+/** Bound to `SnsEventPublisher`. Only `OutboxDrainJob` asks for this one. */
+export const BUS_PUBLISHER = Symbol('BUS_PUBLISHER');
+
+/**
+ * Which SNS topic an event type belongs on.
+ *
+ * This is `EVENT_TOPICS` from @payzeno/contracts/events, inverted once at module load so a
+ * publisher can look it up by type in O(1). It used to be a hand-maintained copy of the same
+ * twenty-eight rows, and the copy is exactly the thing `topics.ts` warns about: those strings
+ * have to match payzeno-infrastructure's `sns.tf` and nothing checks it across repos, so a
+ * second transcription is a second place to get it wrong.
+ *
+ * payzeno-api only publishes on two of the four topics; the ledger and billing entries matter
+ * because `DeadLetterConsumer` redrives events it did not originate and must route them back.
+ */
 const TOPIC_OF_TYPE: ReadonlyMap<EventType, TopicName> = new Map(
   (Object.keys(EVENT_TOPICS) as TopicName[]).flatMap((topic): Array<[EventType, TopicName]> => {
     const types: readonly EventType[] = EVENT_TOPICS[topic];

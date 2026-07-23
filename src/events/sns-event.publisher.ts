@@ -31,6 +31,7 @@ export class SnsEventPublisher implements EventPublisher {
   constructor(
     @Inject(API_CONFIG) private readonly config: ApiConfig,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
     private readonly ids: IdFactory,
   ) {
     this.sns = new SNSClient({
@@ -44,6 +45,37 @@ export class SnsEventPublisher implements EventPublisher {
     payload: PayloadOfType<T>,
     ctx: PublishContext,
   ): Promise<string> {
+    const envelope = this.envelope(type, payload, ctx);
+    await this.send(envelope);
+    return envelope.id;
+  }
+
+  /**
+   * SNS caps a batch at 10 entries, so the drain's page size and this chunk size are
+   * related on purpose: a 100-row drain becomes ten batch calls, not a hundred.
+   */
+  async publishBatch(events: ReadonlyArray<PayzenoEvent>): Promise<string[]> {
+    const published: string[] = [];
+    for (const group of this.groupByTopic(events)) {
+      for (let i = 0; i < group.events.length; i += 10) {
+        const chunk = group.events.slice(i, i + 10);
+        await this.sns.send(
+          new PublishBatchCommand({
+            TopicArn: this.topicArn(group.topic),
+            PublishBatchRequestEntries: chunk.map((event) => ({
+              Id: event.id,
+              Message: JSON.stringify(event),
+              MessageAttributes: this.attributes(event),
+            })),
+          }),
+        );
+        published.push(...chunk.map((event) => event.id));
+      }
+    }
+    return published;
+  }
+
+  private async send(event: PayzenoEvent): Promise<void> {
     const topic = topicOf(event.type);
     await this.sns.send(
       new PublishCommand({

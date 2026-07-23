@@ -133,6 +133,21 @@ export class LedgerHttpClient extends BaseHttpClient {
     return this.get<Paginated<LedgerTransaction>>('/internal/v1/transactions', { ...query });
   }
 
+  reverseTransaction(transactionId: string, body: ReverseTransactionBody): Promise<LedgerTransaction> {
+    return this.request<LedgerTransaction, ReverseTransactionBody>({
+      method: 'POST',
+      path: `/internal/v1/transactions/${encodeURIComponent(transactionId)}/reverse`,
+      body,
+      idempotencyKey: body.idempotency_key,
+    });
+  }
+
+  // -- settlement ----------------------------------------------------------
+
+  listSettlementBatches(query: SettlementBatchListQuery): Promise<Paginated<SettlementBatch>> {
+    return this.get<Paginated<SettlementBatch>>('/internal/v1/settlement-batches', { ...query });
+  }
+
   getSettlementBatch(batchId: SettlementBatchId, merchantId?: MerchantId): Promise<SettlementBatch> {
     return this.get<SettlementBatch>(`/internal/v1/settlement-batches/${encodeURIComponent(batchId)}`, {
       merchant_id: merchantId,
