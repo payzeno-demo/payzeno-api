@@ -35,6 +35,21 @@ import { MerchantEntity } from '../merchant.entity';
 })
 export class BankAccountEntity extends MerchantScopedEntity {
   @ManyToOne(() => MerchantEntity, (merchant) => merchant.bankAccounts)
+  @JoinColumn({ name: 'merchant_id' })
+  merchant?: MerchantEntity;
+
+  @Column({ name: 'country', type: 'char', length: 2, transformer: trimmedCharTransformer })
+  country!: string;
+
+  @Column({ name: 'bank_name', type: 'text' })
+  bankName!: string;
+
+  @Column({ name: 'scheme', type: 'text' })
+  scheme!: BankAccountScheme;
+
+  @Column({ name: 'iban_last_four', type: 'char', length: 4, nullable: true })
+  ibanLastFour!: string | null;
+
   @Column({ name: 'bic', type: 'varchar', length: 11, nullable: true })
   bic!: string | null;
 
@@ -59,6 +74,10 @@ export class BankAccountEntity extends MerchantScopedEntity {
       default:
         return [];
     }
+  }
+
+  isPayable(): boolean {
+    return this.status === 'validated';
   }
 
 }
