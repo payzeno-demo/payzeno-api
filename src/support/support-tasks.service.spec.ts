@@ -24,6 +24,8 @@ import { SupportTasksService } from 'src/support/support-tasks.service';
 describe('SupportTasksService', () => {
   const NOW = new Date('2026-04-28T09:14:00.000Z');
   const MERCHANT = 'mch_01HQ8ZZZ0000000000000001';
+  const CHARGE = 'ch_01HQ8ZZZ0000000000000002';
+
   interface InsertBuilder {
     insert: jest.Mock;
     into: jest.Mock;
@@ -33,10 +35,43 @@ describe('SupportTasksService', () => {
     execute: jest.Mock;
   }
 
+  interface UpdateBuilder {
+    update: jest.Mock;
+    set: jest.Mock;
+    where: jest.Mock;
+    andWhere: jest.Mock;
+    execute: jest.Mock;
+  }
+
+  interface SelectBuilder {
+    where: jest.Mock;
+    andWhere: jest.Mock;
+    orderBy: jest.Mock;
+    addOrderBy: jest.Mock;
+    take: jest.Mock;
+    getMany: jest.Mock;
+  }
+
+  let insertBuilder: InsertBuilder;
+  let updateBuilder: UpdateBuilder;
+  let selectBuilder: SelectBuilder;
   let repositoryFindOne: jest.Mock;
   let manager: EntityManager;
   let dataSource: DataSource;
   let ids: jest.Mocked<Pick<IdFactory, 'opaque'>>;
+  let logger: NoopLogger;
+  let service: SupportTasksService;
+
+  const input = {
+    kind: 'duplicate_settlement' as const,
+    merchantId: MERCHANT,
+    chargeId: CHARGE,
+    severity: 'critical' as const,
+    title: 'Possible double capture on ch_01HQ8ZZZ0000000000000002',
+    body: 'settlement.duplicate_detected arrived for a capture_at_settlement merchant',
+    sourceEventId: 'evt_01HQ8ZZZ0000000000000003',
+  };
+
   beforeEach(() => {
     insertBuilder = {
       insert: jest.fn(() => insertBuilder),
@@ -87,6 +122,120 @@ describe('SupportTasksService', () => {
     );
   });
 
+  describe('open', () => {
+    it('writes through the caller EntityManager, never its own transaction', async () => {
+      await service.open(manager, input);
+
+      expect(manager.createQueryBuilder).toHaveBeenCalled();
+      expect(dataSource.transaction).not.toHaveBeenCalled();
+    });
+
+    it('inserts a task built from the input', async () => {
+      await service.open(manager, input);
+
+      const [task] = insertBuilder.values.mock.calls[0] as [SupportTaskEntity];
+
+      expect(task).toMatchObject({
+        merchantId: MERCHANT,
+        chargeId: CHARGE,
+        kind: 'duplicate_settlement',
+        severity: 'critical',
+        status: 'open',
+        sourceEventId: 'evt_01HQ8ZZZ0000000000000003',
+      });
+    });
+
+    it('mints an sup_ prefixed id', async () => {
+      await service.open(manager, input);
+
+      expect(ids.opaque).toHaveBeenCalledWith('sup_');
+    });
+
+    it('stamps both timestamps from the injected clock', async () => {
+      await service.open(manager, input);
+
+      const [task] = insertBuilder.values.mock.calls[0] as [SupportTaskEntity];
+
+      expect(task.createdAt).toEqual(NOW);
+      expect(task.updatedAt).toEqual(NOW);
+    });
+
+    it('opens unassigned and unresolved', async () => {
+      await service.open(manager, input);
+
+      const [task] = insertBuilder.values.mock.calls[0] as [SupportTaskEntity];
+
+      expect(task.assignedTo).toBeNull();
+      expect(task.resolvedAt).toBeNull();
+      expect(task.resolutionNote).toBeNull();
+    });
+
+    it('defaults livemode to true — the incident was a livemode event', async () => {
+      await service.open(manager, input);
+
+      const [task] = insertBuilder.values.mock.calls[0] as [SupportTaskEntity];
+
+      expect(task.livemode).toBe(true);
+    });
+
+    it('honours an explicit livemode false', async () => {
+      await service.open(manager, { ...input, livemode: false });
+
+      const [task] = insertBuilder.values.mock.calls[0] as [SupportTaskEntity];
+
+      expect(task.livemode).toBe(false);
+    });
+
+    it('uses ON CONFLICT DO NOTHING with RETURNING', async () => {
+      await service.open(manager, input);
+
+      expect(insertBuilder.orIgnore).toHaveBeenCalled();
+      expect(insertBuilder.returning).toHaveBeenCalledWith('id');
+    });
+
+    it('returns the new id when the insert took', async () => {
+      await expect(service.open(manager, input)).resolves.toBe('sup_01HQ8ZZZ0000000000000009');
+    });
+
+    describe('when the same source event is redelivered', () => {
+      beforeEach(() => {
+        insertBuilder.execute.mockResolvedValue({ raw: [] });
+      });
+
+      it('returns the EXISTING task id, not the one it just minted', async () => {
+        repositoryFindOne.mockResolvedValue({ id: 'sup_already_there' });
+
+        // Logging an id that is not in the table cost two people an hour on 2026-04-28.
+        await expect(service.open(manager, input)).resolves.toBe('sup_already_there');
+      });
+
+      it('looks the existing task up by kind and source event', async () => {
+        repositoryFindOne.mockResolvedValue({ id: 'sup_already_there' });
+
+        await service.open(manager, input);
+
+        expect(repositoryFindOne).toHaveBeenCalledWith({
+          where: { kind: 'duplicate_settlement', sourceEventId: 'evt_01HQ8ZZZ0000000000000003' },
+        });
+      });
+
+      it('logs the suppression rather than the creation', async () => {
+        const info = jest.spyOn(logger, 'info');
+        repositoryFindOne.mockResolvedValue({ id: 'sup_already_there' });
+
+        await service.open(manager, input);
+
+        expect(info).toHaveBeenCalledWith('support_task.duplicate_suppressed', expect.anything());
+      });
+
+      it('falls back to the minted id when there is no source event to look up by', async () => {
+        await expect(
+          service.open(manager, { ...input, sourceEventId: null }),
+        ).resolves.toBe('sup_01HQ8ZZZ0000000000000009');
+      });
+    });
+  });
+
   describe('openStandalone', () => {
     it('wraps open() in its own transaction for callers with no ambient one', async () => {
       await service.openStandalone(input);
@@ -94,6 +243,31 @@ describe('SupportTasksService', () => {
       // POST /internal/v1/support-tasks and the legacy biller's DunningService.
       expect(dataSource.transaction).toHaveBeenCalled();
       expect(insertBuilder.execute).toHaveBeenCalled();
+    });
+  });
+
+  describe('listOpenForMerchant', () => {
+    it('filters to open and acknowledged tasks for that merchant', async () => {
+      await service.listOpenForMerchant(MERCHANT);
+
+      expect(selectBuilder.where).toHaveBeenCalledWith('support_task.merchant_id = :merchantId', {
+        merchantId: MERCHANT,
+      });
+      expect(selectBuilder.andWhere).toHaveBeenCalledWith(
+        "support_task.status in ('open', 'acknowledged')",
+      );
+    });
+
+    it('defaults to 50 rows', async () => {
+      await service.listOpenForMerchant(MERCHANT);
+
+      expect(selectBuilder.take).toHaveBeenCalledWith(50);
+    });
+
+    it('honours an explicit limit', async () => {
+      await service.listOpenForMerchant(MERCHANT, 5);
+
+      expect(selectBuilder.take).toHaveBeenCalledWith(5);
     });
   });
 

@@ -24,3 +24,4 @@ import { SupportTasksService } from './support-tasks.service';
   providers: [SupportTasksService],
   exports: [SupportTasksService, TypeOrmModule],
 })
+export class SupportModule {}

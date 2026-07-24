@@ -47,6 +47,29 @@ while the first is still running. Every job is written to tolerate that — batc
 
 ---
 
+## 3. Duplicate settlement remediation
+
+**When you need this section:** `settlement.duplicate_detected` is arriving, or a merchant is
+reporting that a cardholder was charged twice, or the `pix_charge_unsettled` count is moving.
+
+The defect is on the ledger side. This service carries the blast radius. The reference incident
+is PAY-2041; the postmortem is `payzeno-ledger/docs/postmortems/2041-duplicate-settlement.md`
+and its action items are all on the ledger.
+
+### What happens here, automatically
+
+`LedgerEventsConsumer` handles `settlement.duplicate_detected`. For every duplicate it:
+
+1. writes an `audit_log` row under the `internal_service` actor type;
+2. checks `charge.capture_at_settlement`;
+3. **if that flag is set on the merchant**, opens a support task via `SupportTasksService`.
+
+Step 3 is the one that matters. `capture_at_settlement` merchants are the ones whose capture is
+driven by the settlement file, so a duplicate settlement is a duplicate *capture* — a real second
+charge on a real card. Merchants without the flag get a duplicate ledger posting, which is a
+reconciliation problem, not a cardholder problem. The consumer only opens tasks for the first
+group because those are the merchants who can actually be double-charged.
+
 ### What you do
 
 1. **Scope it.** Query `support_task` for `type = 'duplicate_settlement'` opened in the window.

@@ -52,6 +52,71 @@ export class SupportTasksService {
     @Inject(CLOCK) private readonly clock: Clock,
     const task = this.build(input);
 
+    const created = inserted.raw.length > 0;
+
+    this.logger.info(created ? 'support_task.opened' : 'support_task.duplicate_suppressed', {
+      support_task_id: task.id,
+      kind: task.kind,
+      severity: task.severity,
+      merchant_id: task.merchantId,
+      charge_id: task.chargeId,
+      source_event_id: task.sourceEventId,
+    });
+
+    return created ? task.id : (await this.findBySourceEvent(input)) ?? task.id;
+  }
+
+  /** For callers with no ambient transaction — the internal route, and the dunning webhook. */
+  async openStandalone(input: OpenSupportTaskInput): Promise<string> {
+    return this.dataSource.transaction((manager) => this.open(manager, input));
+  }
+
+  async listOpenForMerchant(merchantId: MerchantId, limit = 50): Promise<SupportTaskEntity[]> {
+    return this.dataSource
+      .getRepository(SupportTaskEntity)
+      .createQueryBuilder('support_task')
+      .where('support_task.merchant_id = :merchantId', { merchantId })
+      .andWhere("support_task.status in ('open', 'acknowledged')")
+      .orderBy('support_task.created_at', 'DESC')
+      .take(limit)
+      .getMany();
+  }
+
+  /** The remediation queue the incident channel worked off. Severity first, then age. */
+  async listOpenByKind(kind: SupportTaskKind, limit = 200): Promise<SupportTaskEntity[]> {
+    return this.dataSource
+      .getRepository(SupportTaskEntity)
+      .createQueryBuilder('support_task')
+      .where('support_task.kind = :kind', { kind })
+      .andWhere("support_task.status in ('open', 'acknowledged')")
+      .orderBy(
+        `case support_task.severity
+           when 'critical' then 0 when 'high' then 1 when 'normal' then 2 else 3 end`,
+        'ASC',
+      )
+      .addOrderBy('support_task.created_at', 'ASC')
+      .take(limit)
+      .getMany();
+  }
+
+  async resolve(taskId: string, note: string, resolvedBy: string): Promise<void> {
+    const affected = await this.dataSource
+      .getRepository(SupportTaskEntity)
+      .createQueryBuilder()
+      .update()
+      .set({ status: 'resolved', resolvedAt: this.clock.now(), resolutionNote: note, assignedTo: resolvedBy })
+      .where('id = :taskId', { taskId })
+      .andWhere("status in ('open', 'acknowledged')")
+      .execute();
+
+    this.logger.info('support_task.resolved', {
+      support_task_id: taskId,
+      resolved_by: resolvedBy,
+      affected: affected.affected ?? 0,
+    });
+  }
+
+  private build(input: OpenSupportTaskInput): SupportTaskEntity {
     const now = this.clock.now();
 
     task.id = this.ids.opaque('sup_');

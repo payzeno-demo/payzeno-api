@@ -73,6 +73,11 @@ export class MarkChargeSettledDto implements MarkChargeSettledInput {
   @IsISO8601({ strict: true })
   settled_at!: IsoTimestamp;
 
+  @IsPayzenoId('txn_')
+  transaction_id!: string;
+}
+
+export class CreateSupportTaskDto implements CreateSupportTaskInput {
   @IsPayzenoId('mch_')
   merchant_id!: MerchantId;
 
@@ -80,6 +85,11 @@ export class MarkChargeSettledDto implements MarkChargeSettledInput {
   @IsOptional()
   @IsIn(['low', 'medium', 'high', 'critical'])
   severity!: 'low' | 'medium' | 'high' | 'critical';
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(200)
+  title!: string;
 
   @IsString()
   @MaxLength(20_000)
@@ -98,6 +108,8 @@ export class MarkChargeSettledDto implements MarkChargeSettledInput {
 @Controller('internal/v1')
 @UseGuards(InternalServiceGuard)
 export class InternalController {
+  constructor(private readonly internal: InternalService) {}
+
   @InternalOnly('payzeno-ledger', 'payzeno-billing-legacy')
   async getMerchant(
     @Param('merchantId') merchantId: MerchantId,
@@ -141,6 +153,14 @@ export class InternalController {
   @Post('support-tasks')
   @HttpCode(201)
   @InternalOnly('payzeno-ledger', 'payzeno-billing-legacy')
+  @AuditLog('support_task.open', { resourceType: 'support_task' })
+  async createSupportTask(
+    @Body() body: CreateSupportTaskDto,
+    @CurrentPrincipal() principal: AuthPrincipal,
+  ): Promise<{ id: string }> {
+    return this.internal.createSupportTask(body, callerOf(principal));
+  }
+
   /** Fallback for a stale `bank_account_projection`. Token only, never the number. */
   @Get('bank-accounts/:bankAccountId')
 }
