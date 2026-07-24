@@ -174,3 +174,21 @@ export class ChargesService extends BaseService<ChargeEntity> {
 
   /** `GET /internal/v1/charges/:chargeId` — the ledger reconciling an orphaned item. */
   async getInternal(chargeId: ChargeId): Promise<Charge> {
+    const charge = await this.charges.findOne({ where: { id: chargeId } });
+    if (!charge) {
+      throw new ChargeNotFoundException(chargeId);
+    }
+    return toCharge(charge);
+  }
+
+  /** `UnsettledChargeSweepJob`'s input (PAY-2058). Rides `pix_charge_unsettled`. */
+  findStranded(olderThan: Date, limit: number): Promise<ChargeEntity[]> {
+    return this.charges.findStrandedCaptures(olderThan, limit);
+  }
+}
+
+function scopeFrom(principal: AuthPrincipal): MerchantScope {
+  return { merchantId: merchantIdOf(principal), livemode: livemodeOf(principal) };
+}
+
+export function toCharge(row: ChargeEntity): Charge {

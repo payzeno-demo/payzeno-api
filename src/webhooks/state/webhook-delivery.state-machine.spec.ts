@@ -26,6 +26,11 @@ describe('WebhookDeliveryStateMachine', () => {
     expect(fsm.apply('delivering', 'exhaust')).toBe('dead');
   });
 
+  it('dead → pending on an operator redelivery', () => {
+    // POST /v1/webhook_events/:eventId/redeliver. Without this edge the route is a 409.
+    expect(fsm.apply('dead', 'redeliver')).toBe('pending');
+  });
+
   it('delivered → pending on an operator redelivery', () => {
     expect(fsm.apply('delivered', 'redeliver')).toBe('pending');
   });
@@ -39,4 +44,8 @@ describe('WebhookDeliveryStateMachine', () => {
     expect(fsm.can('pending', 'succeed')).toBe(false);
   });
 
+  it('has no terminal state — redelivery can always revive an event', () => {
+    expect(fsm.terminalStates.size).toBe(0);
+    expect(() => fsm.assertNotTerminal('dead')).not.toThrow();
+  });
 });

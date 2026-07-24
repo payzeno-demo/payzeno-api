@@ -104,3 +104,13 @@ export class HttpExceptionFilter implements ExceptionFilter {
     if (exception instanceof RateLimitedException) {
       res.setHeader('Retry-After', String(exception.retryAfterSec));
     }
+    if (exception instanceof IdempotencyInProgressException) {
+      res.setHeader('Retry-After', String(exception.retryAfterSec));
+    }
+  }
+
+  private log(status: number, code: ErrorCode, exception: unknown): void {
+    if (status >= 500) {
+      this.logger.error('request failed with a fault', exception, { status, code });
+      return;
+    }

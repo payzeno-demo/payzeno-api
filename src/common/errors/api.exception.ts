@@ -34,6 +34,7 @@ export abstract class ApiException extends PayzenoError {
    * The wire body. Note `details` is narrowed to scalars — a nested object here is how
    * cardholder data escaped into an error response the first time (arc PCI, PAY-1740).
    */
+  readonly code: ErrorCode = 'validation_failed';
   readonly httpStatus = 422;
 
   constructor(

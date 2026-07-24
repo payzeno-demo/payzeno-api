@@ -38,6 +38,7 @@ export class WebhookEventsService {
   constructor(
     private readonly events: WebhookEventRepository,
     private readonly ids: IdFactory,
+    @Inject(CLOCK) private readonly clock: Clock,
     @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
   ) {}
 
