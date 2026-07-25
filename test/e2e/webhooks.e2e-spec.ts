@@ -110,9 +110,20 @@ describe('webhooks e2e', () => {
 
     await ctx.dataSource.transaction(async (tx) => consumer.handle(event, tx));
 
+    const list = await request(ctx.app.getHttpServer())
+      .get('/v1/webhook_events?limit=50')
+      .set('Authorization', bearer(seeded));
+
+    const delivered = list.body.data.find(
+      (e: { status: string }) => e.status === 'delivered' || e.status === 'delivering',
+    );
+    expect(delivered).toBeDefined();
+    expect(delivered.signature_version).toBe('v1');
+
     // The scheme the merchant verifies against, reproduced here from the spec rather
     // than from the implementation.
     const timestamp = 1_768_478_400;
+    const body = JSON.stringify({ id: delivered.id });
     const expected = createHmac('sha256', signingSecret)
       .update(`${timestamp}.${body}`)
       .digest('hex');
@@ -120,8 +131,24 @@ describe('webhooks e2e', () => {
   });
 
   it('redelivers an event on demand and increments attempt_count', async () => {
+    const list = await request(ctx.app.getHttpServer())
+      .get('/v1/webhook_events?limit=50')
+      .set('Authorization', bearer(seeded));
     const target = list.body.data[0];
 
+    const res = await request(ctx.app.getHttpServer())
+      .post(`/v1/webhook_events/${target.id}/redeliver`)
+      .set('Authorization', bearer(seeded))
+      .set('Idempotency-Key', 'wh-redeliver-1')
+      .send({});
+
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe(target.id);
+    expect(res.body.status).toBe('pending');
+    expect(res.body.next_attempt_at).toEqual(expect.any(String));
+  });
+
+  it('404s a redelivery of another merchant’s event', async () => {
     const stranger = await seedMerchant(ctx, { display_name: 'Borealis' });
     const list = await request(ctx.app.getHttpServer())
       .get('/v1/webhook_events?limit=1')
@@ -137,6 +164,13 @@ describe('webhooks e2e', () => {
   });
 
   it('deletes an endpoint without deleting its delivery history', async () => {
+    const res = await request(ctx.app.getHttpServer())
+      .delete(`/v1/webhook_endpoints/${endpointId}`)
+      .set('Authorization', bearer(seeded))
+      .set('Idempotency-Key', 'wh-delete-endpoint');
+
+    expect(res.status).toBe(204);
+
     const events = await request(ctx.app.getHttpServer())
       .get('/v1/webhook_events?limit=50')
       .set('Authorization', bearer(seeded));

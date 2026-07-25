@@ -15,5 +15,29 @@ export function nextId(prefix: string): string {
   return `${prefix}${body(prefix, n)}`;
 }
 
+function body(prefix: string, seed: number): string {
+  // A ULID body is time-ordered; seeding from a counter keeps the ordering property the
+  // cursor tiebreaker relies on without pulling in a real ULID generator.
+  let value = seed;
+  const chars: string[] = [];
+  for (let i = 0; i < 26; i += 1) {
+    const index = (value + i * 7 + prefix.charCodeAt(0)) % CROCKFORD.length;
+    chars.push(CROCKFORD[index]);
+    value = Math.floor(value / 2) + 13;
+  }
+  // Keep the leading characters monotonic in `seed` so ids from one prefix sort by
+  // creation order, exactly like the monotonic ULID factory in production.
+  chars[0] = CROCKFORD[Math.min(seed, CROCKFORD.length - 1)];
+  return chars.join('');
+}
+
+/**
+ * Stable ids the factories and the guard specs share. `MerchantScopeGuard`'s specs need
+ * two factories to agree on "the same merchant" without threading an argument through
+ * every call site.
+ */
+export const TEST_MERCHANT_ID = fixedId('mch_', 'aurora');
 export const TEST_OTHER_MERCHANT_ID = fixedId('mch_', 'borealis');
+export const TEST_USER_ID = fixedId('usr_', 'aurora-owner');
+export const TEST_API_KEY_ID = fixedId('key_', 'aurora-live');
 export const TEST_CHARGE_ID = fixedId('ch_', 'aurora-order-4471');
