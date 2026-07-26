@@ -59,3 +59,11 @@ export const ALL_JOB_NAMES: readonly string[] = [
     DisputesModule,
     LedgerModule,
     TypeOrmModule.forFeature([IdempotencyRecord]),
+  ],
+  providers: [
+    OutboxDrainJob,
+    WebhookDeliveryJob,
+    IdempotencyRetentionJob,
+    ProcessedEventRetentionJob,
+    DisputeDeadlineReminderJob,
+    RiskEvaluationJob,

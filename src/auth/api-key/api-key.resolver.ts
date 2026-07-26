@@ -44,6 +44,7 @@ export class ApiKeyResolver {
   constructor(
     @InjectRepository(ApiKeyEntity) private readonly keys: Repository<ApiKeyEntity>,
     private readonly hasher: ApiKeyHasher,
+    private readonly principals: PrincipalFactory,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 

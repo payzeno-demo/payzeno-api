@@ -68,3 +68,21 @@ const GUARDS = [
     AuthService,
     RedisSessionStore,
     {
+      provide: SESSION_STORE,
+      inject: [API_CONFIG, RedisSessionStore],
+      useFactory: (config: ApiConfig, redis: RedisSessionStore): SessionStore =>
+        config.runtime.nodeEnv === 'test' ? new InMemorySessionStore() : redis,
+    },
+    ...GUARDS,
+  ],
+  exports: [
+    AuthService,
+    SessionService,
+    CsrfService,
+    PrincipalFactory,
+    ApiKeyResolver,
+    SESSION_STORE,
+    ...GUARDS,
+  ],
+})
+export class AuthModule {}

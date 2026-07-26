@@ -52,3 +52,17 @@ export class RolesGuard implements CanActivate {
         }
         return true;
 
+      case 'staff_session':
+        return true;
+
+      case 'api_key':
+        return true;
+
+      case 'client_secret':
+      case 'internal_service':
+        throw new PermissionDeniedException('This credential cannot perform role-gated actions', {
+          kind: principal.kind,
+        });
+    }
+  }
+}

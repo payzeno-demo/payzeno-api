@@ -51,6 +51,17 @@ describe('auth e2e', () => {
   }
 
   it('logs in and returns the console bootstrap payload', async () => {
+    const { res } = await login();
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      object: 'login',
+      user: { email: seeded.email, role: 'owner' },
+      merchant: { id: seeded.merchant.id },
+    });
+  });
+
+  it('sets pz_session HttpOnly and pz_csrf readable', async () => {
     const { setCookie } = await login();
 
     expect(cookieAttrs(setCookie, 'pz_session')).toMatch(/HttpOnly/i);
@@ -64,6 +75,16 @@ describe('auth e2e', () => {
       .post('/v1/auth/login')
       .send({ email: seeded.email, password: 'not-the-password' });
 
+    const unknown = await request(ctx.app.getHttpServer())
+      .post('/v1/auth/login')
+      .send({ email: 'nobody@nowhere.example', password: PASSWORD });
+
+    expect(res.status).toBe(401);
+    expect(unknown.status).toBe(401);
+    expect(res.body.error.message).toBe(unknown.body.error.message);
+  });
+
+  it('serves GET /v1/auth/me for a live session', async () => {
     const { session, csrf } = await login();
 
     const res = await request(ctx.app.getHttpServer())
@@ -113,6 +134,20 @@ describe('auth e2e', () => {
   });
 
   it('accepts a mutating session request with a matching CSRF header', async () => {
+    const { session, csrf } = await login();
+
+    const res = await request(ctx.app.getHttpServer())
+      .post('/v1/webhook_endpoints')
+      .set('Cookie', [`pz_session=${session}`, `pz_csrf=${csrf}`])
+      .set('X-Payzeno-CSRF', csrf)
+      .set('Idempotency-Key', 'auth-csrf-ok')
+      .send({ url: 'https://aurora.example/hooks', enabled_events: ['payment.captured'] });
+
+    expect(res.status).toBe(201);
+    expect(res.body.signing_secret).toEqual(expect.any(String));
+  });
+
+  it('does not require CSRF on an api-key request — there is no ambient credential', async () => {
     const res = await request(ctx.app.getHttpServer())
       .get('/v1/payment_intents?limit=1')
       .set('Authorization', `Bearer ${seeded.apiKey}`);
