@@ -42,6 +42,28 @@ describe('DeadLetterConsumer', () => {
   let sent: Array<Record<string, unknown>>;
   let consumer: DeadLetterConsumer;
 
+  beforeEach(() => {
+    jest.clearAllMocks();
+    sent = [];
+    const sqs = {
+      send: jest.fn(async (command: { input: Record<string, unknown>; constructor: { name: string } }) => {
+        sent.push({ name: command.constructor.name, ...command.input });
+        if (command.constructor.name === 'ReceiveMessageCommand') {
+          return { Messages: [parked('evt_1')] };
+        }
+        return {};
+      }),
+    };
+
+    consumer = new DeadLetterConsumer(
+      sqs as never,
+      { runInTransaction: async (fn: (tx: EntityManager) => Promise<unknown>) => fn({} as EntityManager) } as never,
+      { claim: async () => true } as never,
+      logger as never,
+      config as never,
+    );
+  });
+
   it('claims every event type — the DLQ has no vocabulary of its own', () => {
     expect(consumer.handledTypes.size).toBe(EVENT_TYPES.length);
   });
@@ -67,4 +89,17 @@ describe('DeadLetterConsumer', () => {
     expect(send?.QueueUrl).toBe('http://localstack:4566/000000000000/payzeno-api-ledger');
   });
 
+  it('parks an envelope after three redrives instead of looping forever', async () => {
+    await consumer.runOnce();
+    await consumer.runOnce();
+    await consumer.runOnce();
+    const fourth = await consumer.runOnce();
+
+    expect(fourth).toBe(0);
+    expect(logger.error).toHaveBeenCalledWith(
+      'dlq.parked_redrive_exhausted',
+      null,
+      expect.objectContaining({ event_id: 'evt_1', attempts: 4 }),
+    );
+  });
 });

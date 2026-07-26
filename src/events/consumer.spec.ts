@@ -55,6 +55,12 @@ describe('BaseEventConsumer', () => {
   let claim: jest.Mock;
   let consumer: RecordingConsumer;
 
+  const transactions = {
+    runInTransaction: jest.fn(async (fn: (tx: EntityManager) => Promise<unknown>) =>
+      fn({} as EntityManager),
+    ),
+  };
+
   const logger = {
     debug: jest.fn(),
     info: jest.fn(),
@@ -62,6 +68,26 @@ describe('BaseEventConsumer', () => {
     error: jest.fn(),
     child: jest.fn(),
   };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    sqs = new FakeSqs();
+    claim = jest.fn(async () => true);
+    consumer = new RecordingConsumer(
+      sqs as never,
+      transactions as never,
+      { claim } as never,
+      logger as never,
+    );
+  });
+
+  it('handles an event it declares and deletes the message', async () => {
+    await consumer.processMessage(sqsMessage(envelope()));
+
+    expect(consumer.handled).toHaveLength(1);
+    expect(claim).toHaveBeenCalledWith(expect.anything(), 'evt_01HZZZ', 'recording');
+    expect(sqs.deleted).toEqual(['rh-1']);
+  });
 
   it('unwraps the SNS-to-SQS envelope', async () => {
     await consumer.processMessage(sqsMessage({ Message: JSON.stringify(envelope()) }));

@@ -34,6 +34,28 @@ export abstract class ApiException extends PayzenoError {
    * The wire body. Note `details` is narrowed to scalars — a nested object here is how
    * cardholder data escaped into an error response the first time (arc PCI, PAY-1740).
    */
+  toResponse(requestId?: string): ApiError {
+    const id = requestId ?? this.requestId ?? 'unknown';
+    const body: ApiError = {
+      error: {
+        code: this.code,
+        message: this.message,
+        request_id: id,
+      },
+    };
+
+    const scalars = scalarDetails(this.details);
+    if (Object.keys(scalars).length > 0) {
+      body.error.details = scalars;
+    }
+
+    return body;
+  }
+}
+
+function scalarDetails(
+  details: Record<string, unknown>,
+): Record<string, string | number | boolean | null> {
   readonly code: ErrorCode = 'validation_failed';
   readonly httpStatus = 422;
 

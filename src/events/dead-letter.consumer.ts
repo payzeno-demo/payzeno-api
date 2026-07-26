@@ -35,6 +35,9 @@ export class DeadLetterConsumer extends BaseEventConsumer {
   readonly queueUrl: string;
   readonly consumerName = 'dead-letter';
 
+  /** Everything. The DLQ has no vocabulary of its own. */
+  readonly handledTypes = new Set<EventType>(EVENT_TYPES);
+
   /** In-memory, per-task. A restart resets it — that is acceptable and documented. */
   private readonly redriveCounts = new Map<string, number>();
 
