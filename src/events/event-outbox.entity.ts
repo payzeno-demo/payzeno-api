@@ -25,6 +25,9 @@ export class EventOutbox {
   @Column({ name: 'version', type: 'smallint' })
   version!: number;
 
+  @Column({ name: 'payload', type: 'jsonb' })
+  payload!: Record<string, unknown>;
+
   @Column({ name: 'merchant_id', type: 'text', nullable: true })
   merchantId!: MerchantId | null;
 
@@ -40,6 +43,9 @@ export class EventOutbox {
   /** When the fact became true in payzeno-api, not when the drain got to it. */
   @Column({ name: 'occurred_at', type: 'timestamptz' })
   occurredAt!: Date;
+
+  @Column({ name: 'published_at', type: 'timestamptz', nullable: true })
+  publishedAt!: Date | null;
 
   @Column({ name: 'attempt_count', type: 'smallint', default: 0 })
   attemptCount!: number;
@@ -57,6 +63,10 @@ export class EventOutbox {
   /** Task identity of the drain that holds the row. Diagnostic only — SKIP LOCKED is the lock. */
   @Column({ name: 'claimed_by', type: 'text', nullable: true })
   claimedBy!: string | null;
+
+  /** Set at `attempt_count = 12`. A dead row is never re-selected; ops redrives by hand. */
+  @Column({ name: 'dead_at', type: 'timestamptz', nullable: true })
+  deadAt!: Date | null;
 
   @Column({ name: 'last_error', type: 'text', nullable: true })
   lastError!: string | null;

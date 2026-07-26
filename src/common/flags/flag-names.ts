@@ -28,3 +28,5 @@ export const FLAG_NAMES = {
 
 export type FlagName = (typeof FLAG_NAMES)[keyof typeof FLAG_NAMES];
 
+export const ALL_FLAG_NAMES: readonly FlagName[] = Object.values(FLAG_NAMES);
+
