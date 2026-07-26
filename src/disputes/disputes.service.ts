@@ -64,6 +64,7 @@ export class DisputesService extends BaseService<DisputeEntity> {
   constructor(
     private readonly disputes: DisputeRepository,
     private readonly charges: ChargeRepository,
+    private readonly fees: DisputeFeeService,
     private readonly evidence: DisputeEvidenceService,
     private readonly states: DisputeStateMachine,
     private readonly ledger: LedgerReadThroughService,
@@ -102,7 +103,100 @@ export class DisputesService extends BaseService<DisputeEntity> {
       : await this.fees.feeFor(charge.acquirer, charge.currency);
 
     const status: DisputeStatus = command.isWarning ? 'warning_needs_response' : 'needs_response';
+    const dispute = await this.transactions
+      .runInTransaction(async (manager) => {
+        const row = await this.disputes.insertDispute(manager, {
+          id: this.ids.disputeId() as DisputeId,
+          merchantId: charge.merchantId,
+          chargeId: charge.id,
+          amountMinor: command.amountMinor,
+          feeMinor,
+          currency: charge.currency,
+          reason: command.reason,
+          networkReasonCode: command.networkReasonCode,
+          evidenceDueBy: dueBy,
+          isChargeRefundable: charge.refundableAmountMinor > 0,
+          liabilityShifted: charge.three_d_secure?.liability_shifted ?? false,
+          status,
+          livemode: charge.livemode,
+          openedAt,
+        });
+
+        await this.events.publish(
+          'dispute.opened',
+          {
+            dispute_id: row.id,
+            charge_id: charge.id,
+            merchant_id: charge.merchantId,
+            amount_minor: command.amountMinor,
+            fee_minor: feeMinor,
+            currency: charge.currency,
+            reason: command.reason,
+            network_reason_code: command.networkReasonCode,
+            evidence_due_by: (dueBy ?? openedAt).toISOString(),
+            opened_at: openedAt.toISOString(),
+          },
+          {
+            merchantId: charge.merchantId,
+            correlationId: command.correlationId,
+            causationId: null,
+            livemode: charge.livemode,
+            occurredAt: openedAt.toISOString(),
+          },
+        );
+
+        return row;
+      })
+      .catch((err: unknown) => {
+        // 23505 on uq_dispute_charge_open. The acquirer redelivers, and a second liability
+        // posting for the same chargeback is exactly the class of bug this repo is careful
+        // about — see docs/adr/0011 on the ledger side.
+        if (err instanceof ConflictException) {
+          throw new DuplicateDisputeException(command.chargeId);
+        }
+        throw err;
+      });
+
+    if (!command.isWarning) {
+      // Two legs: the disputed amount (reversed on a win) and the fee (never reversed).
+      await this.ledger.recordDispute({
+        disputeId: dispute.id,
+        chargeId: charge.id,
+        merchantId: charge.merchantId,
+        currency: charge.currency,
+        livemode: charge.livemode,
+        amountMinor: command.amountMinor,
+        feeMinor,
+      });
+    }
+
+    this.logger.info('dispute_opened', {
+      dispute_id: dispute.id,
+      charge_id: charge.id,
+      reason: command.reason,
+      network_reason_code: command.networkReasonCode,
+      fee_minor: feeMinor,
+      liability_shifted: dispute.liability_shifted,
+    });
+
+    return toDispute(dispute);
+  }
+
+  async submitEvidence(
+    principal: AuthPrincipal,
+    disputeId: DisputeId,
+    dto: SubmitDisputeEvidenceDto,
+    correlationId: string,
+  ): Promise<Dispute> {
     const scope = scopeFrom(principal);
+    const dispute = await this.findOneOrThrow(disputeId, scope);
+
+    this.evidence.assertSubmittable(dispute);
+    // TODO(PAY-1902): `normalise` merges the incoming evidence over whatever is stored, so a
+    // merchant cannot clear a field once they have set it — sending `null` is indistinguishable
+    // from not sending the key at all. Support clears them by hand. The fix is an explicit
+    // `unset: string[]` on the request, which needs an api-surface change nobody has scheduled.
+    const merged = this.evidence.normalise(dispute.evidence ?? {}, dto.evidence);
     const submit = dto.submit !== false;
     const submittedAt = submit ? this.clock.now() : null;
 

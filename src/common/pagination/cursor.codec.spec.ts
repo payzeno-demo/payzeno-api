@@ -58,6 +58,12 @@ describe('cursor.codec', () => {
       expect(() => decodeCursor('not-a-cursor-at-all')).toThrow(ValidationException);
     });
 
+    it('rejects a cursor whose payload is not an object', () => {
+      const encoded = Buffer.from('"just a string"', 'utf8').toString('base64url');
+
+      expect(() => decodeCursor(encoded)).toThrow(ValidationException);
+    });
+
     it('rejects a cursor with a non-instant timestamp', () => {
       const encoded = Buffer.from(
         JSON.stringify({ c: 'yesterday-ish', i: TEST_CHARGE_ID }),
@@ -89,6 +95,10 @@ describe('cursor.codec', () => {
   });
 
   describe('decodeOptionalCursor', () => {
+    it('returns null for undefined — the first page is not an error', () => {
+      expect(decodeOptionalCursor(undefined)).toBeNull();
+    });
+
     it('returns null for null and for an empty string', () => {
       expect(decodeOptionalCursor(null)).toBeNull();
       expect(decodeOptionalCursor('')).toBeNull();
@@ -98,5 +108,8 @@ describe('cursor.codec', () => {
       expect(() => decodeOptionalCursor('garbage')).toThrow(ValidationException);
     });
 
+    it('decodes a valid cursor', () => {
+      expect(decodeOptionalCursor(encodeCursor(cursor))).toEqual(cursor);
+    });
   });
 });
