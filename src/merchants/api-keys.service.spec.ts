@@ -100,6 +100,17 @@ describe('ApiKeysService', () => {
   describe('create', () => {
     const request = { name: '  Production server  ', mode: 'live' as const };
 
+    it('returns the plaintext token exactly once', async () => {
+      const created = await service.create(TEST_MERCHANT_ID, request, scope);
+
+      expect(created.secret).toContain('the-plaintext-secret-value-abc');
+      expect(hasher.formatToken).toHaveBeenCalledWith(
+        'live',
+        expect.stringMatching(/^key_/),
+        'the-plaintext-secret-value-abc',
+      );
+    });
+
     it('never puts the plaintext secret on the persisted row', async () => {
       await service.create(TEST_MERCHANT_ID, request, scope);
 
@@ -160,6 +171,16 @@ describe('ApiKeysService', () => {
       expect(key.object).toBe('api_key');
     });
 
+    it('404s a key from another tenant', async () => {
+      keys.findScoped.mockResolvedValue(null);
+
+      await expect(service.get(scope, TEST_API_KEY_ID)).rejects.toBeInstanceOf(
+        ResourceNotFoundException,
+      );
+    });
+  });
+
+  describe('list', () => {
     it('404s an unknown key and an already-revoked one alike', async () => {
       keys.revoke.mockResolvedValue(0);
 
