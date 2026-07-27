@@ -62,3 +62,5 @@ export interface DrainOutcome {
  * `OUTBOX_MAX_ATTEMPTS`. Without `next_attempt_at` a permanently failing event is
  * re-selected every 5 seconds forever (data-model.md §1.11).
  */
+export const OUTBOX_MAX_ATTEMPTS = 12;
+

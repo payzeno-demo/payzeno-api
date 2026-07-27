@@ -81,6 +81,10 @@ export class LedgerHttpClient extends BaseHttpClient {
     return this.ledgerConfig.baseUrl;
   }
 
+  protected get upstream(): string {
+    return 'payzeno-ledger';
+  }
+
   protected defaultHeaders(): Record<string, string> {
     return {
       'x-payzeno-service': 'payzeno-api',
