@@ -56,3 +56,12 @@ export function decodeCursor(raw: string): Cursor {
   if (typeof c !== 'string' || Number.isNaN(Date.parse(c))) {
     throw invalidCursor('cursor timestamp is not a valid instant');
   }
+  if (typeof i !== 'string' || !isPayzenoId(i)) {
+    throw invalidCursor('cursor id is not a Payzeno id');
+  }
+
+  return { createdAt: c, id: i };
+}
+
+/** Null-tolerant: an absent cursor means "first page", which is not an error. */
+export function decodeOptionalCursor(raw: string | undefined | null): Cursor | null {
