@@ -64,6 +64,28 @@ describe('SnsEventPublisher', () => {
     expect(command.input.MessageAttributes?.event_type?.StringValue).toBe('payment.failed');
   });
 
+  it('batches per topic and chunks at the SNS limit of ten', async () => {
+    const events = Array.from({ length: 12 }, (_, i) => event('payment.captured', `evt_${i}`));
+
+    const ids = await publisher.publishBatch(events);
+
+    expect(ids).toHaveLength(12);
+    expect(send).toHaveBeenCalledTimes(2);
+    const first = send.mock.calls[0][0] as unknown as PublishBatchCommand;
+    expect(first.input.PublishBatchRequestEntries).toHaveLength(10);
+  });
+
+  it('splits a mixed batch across the two topics payzeno-api owns', async () => {
+    await publisher.publishBatch([event('payment.captured', 'evt_a'), event('merchant.updated', 'evt_b')]);
+
+    const arns = send.mock.calls.map(
+      (call) => (call[0] as unknown as PublishBatchCommand).input.TopicArn,
+    );
+    expect(new Set(arns)).toEqual(
+      new Set([config.aws.snsPaymentsTopicArn, config.aws.snsMerchantTopicArn]),
+    );
+  });
+
   it('covers every event type in the contract', () => {
     expect(() => topicOf('invoice.issued')).not.toThrow();
     expect(topicOf('dispute.closed')).toBe('payzeno-payments-events');
