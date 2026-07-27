@@ -80,6 +80,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
     if (!options) return next.handle();
 
     const req = context.switchToHttp().getRequest<HttpRequest>();
+    const res = context.switchToHttp().getResponse<HttpResponse>();
     const merchantId = merchantIdOf(req.principal);
 
     // Internal and staff-without-merchant surfaces are not idempotency-scoped.

@@ -35,8 +35,16 @@ export class ConfigSchema {
   @Max(65535)
   PORT!: number;
 
+  @IsIn(['debug', 'info', 'warn', 'error'])
+  LOG_LEVEL!: string;
+
   @IsUrl(URL_OPTS)
   OTEL_EXPORTER_OTLP_ENDPOINT!: string;
+
+  // --- datastores -----------------------------------------------------------
+  @IsString()
+  @IsNotEmpty()
+  DATABASE_URL!: string;
 
   @IsString()
   @IsNotEmpty()
@@ -116,6 +124,7 @@ export class ConfigSchema {
   WEBHOOK_SIGNING_KEK!: string;
 
   @Type(() => Number)
+  @IsInt()
   @Min(1)
   @Max(24)
   WEBHOOK_MAX_ATTEMPTS!: number;
@@ -139,6 +148,9 @@ export class ConfigSchema {
   SNS_PAYMENTS_TOPIC_ARN!: string;
 
   @IsString()
+  @IsNotEmpty()
+  SNS_MERCHANT_TOPIC_ARN!: string;
+
   @IsString()
   @IsNotEmpty()
   SQS_LEDGER_QUEUE_URL!: string;
@@ -152,12 +164,19 @@ export class ConfigSchema {
   SQS_CONSOLE_NOTIFICATIONS_URL!: string;
 
   @IsString()
+  @IsNotEmpty()
+  SQS_DLQ_URL!: string;
+
   // --- idempotency ----------------------------------------------------------
   @IsIn(['postgres', 'redis'])
   IDEMPOTENCY_BACKEND!: string;
 
   @Type(() => Number)
   @IsInt()
+  @Min(1)
+  IDEMPOTENCY_TTL_HOURS!: number;
+
+  @Type(() => Number)
   @IsInt()
   @Min(5)
   IDEMPOTENCY_LEASE_SECONDS!: number;

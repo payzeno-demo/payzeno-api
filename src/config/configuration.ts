@@ -57,6 +57,16 @@ function redis(env: ConfigSchema): RedisConfig {
   return { url: env.REDIS_URL, keyPrefix: 'pz:api:' };
 }
 
+function ledger(env: ConfigSchema): LedgerConfig {
+  return {
+    baseUrl: env.LEDGER_BASE_URL,
+    internalApiSecret: env.INTERNAL_API_SECRET,
+    connectTimeoutMs: 2_000,
+    readTimeoutMs: 10_000,
+    retries: 2,
+  };
+}
+
 function billingLegacy(env: ConfigSchema): BillingLegacyConfig {
   return {
     baseUrl: env.BILLING_LEGACY_BASE_URL,
@@ -85,6 +95,14 @@ function auth(env: ConfigSchema): AuthConfig {
     apiKeyPepper: env.API_KEY_PEPPER,
     sessionTtlSeconds: 60 * 60 * 12,
     csrfTtlSeconds: 60 * 60 * 24,
+  };
+}
+
+function webhooks(env: ConfigSchema): WebhooksConfig {
+  return {
+    signingKek: env.WEBHOOK_SIGNING_KEK,
+    maxAttempts: env.WEBHOOK_MAX_ATTEMPTS,
+    retryWindowHours: env.WEBHOOK_RETRY_WINDOW_HOURS,
   };
 }
 
