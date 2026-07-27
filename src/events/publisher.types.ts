@@ -64,3 +64,8 @@ export interface DrainOutcome {
  */
 export const OUTBOX_MAX_ATTEMPTS = 12;
 
+export function nextOutboxAttemptAt(from: Date, attemptCount: number): Date {
+  const base = Math.pow(2, Math.min(attemptCount, OUTBOX_MAX_ATTEMPTS));
+  const jitter = 1 + (Math.random() * 0.4 - 0.2);
+  return new Date(from.getTime() + Math.round(base * jitter) * 1000);
+}

@@ -69,6 +69,7 @@ export class DisputesService extends BaseService<DisputeEntity> {
     private readonly states: DisputeStateMachine,
     private readonly ledger: LedgerReadThroughService,
     private readonly transactions: TransactionManager,
+    private readonly ids: IdFactory,
     @Inject(EVENT_PUBLISHER) private readonly events: EventPublisher,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(PAYZENO_LOGGER) logger: PayzenoLogger,
@@ -102,7 +103,12 @@ export class DisputesService extends BaseService<DisputeEntity> {
       ? 0
       : await this.fees.feeFor(charge.acquirer, charge.currency);
 
+    const openedAt = new Date(command.occurredAt);
     const status: DisputeStatus = command.isWarning ? 'warning_needs_response' : 'needs_response';
+    const dueBy = command.isWarning
+      ? null
+      : new Date(openedAt.getTime() + EVIDENCE_WINDOW_DAYS * 86_400_000);
+
     const dispute = await this.transactions
       .runInTransaction(async (manager) => {
         const row = await this.disputes.insertDispute(manager, {

@@ -136,3 +136,16 @@ export class ChargeCaptureService {
       );
     });
 
+    // Synchronous ledger post so the console's balance is right on the next poll. It carries
+    // the SAME deterministic key as the event-driven posting the ledger's PaymentEventConsumer
+    // makes (`capture:ch_…:`), so whichever arrives second is a no-op on the ledger's side.
+    // This is safe precisely because the ledger keys on the business fact and not on an
+    // attempt counter (domain-model.md §0.3b).
+    await this.ledger.recordCapture({
+      chargeId: charge.id,
+      merchantId: merchant.id,
+      currency: charge.currency,
+      livemode: charge.livemode,
+      amountMinor,
+      platformFeeBps: merchant.platform_fee_bps,
+      platformFeeFixedMinor: merchant.platform_fee_fixed_minor,

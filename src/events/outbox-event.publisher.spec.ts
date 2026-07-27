@@ -16,6 +16,8 @@ describe('OutboxEventPublisher', () => {
 
   let outbox: { enqueue: jest.Mock };
   let transactions: { currentManager: jest.Mock; isInTransaction: jest.Mock };
+  let publisher: OutboxEventPublisher;
+
   beforeEach(() => {
     outbox = { enqueue: jest.fn(async () => 'evt_1') };
     transactions = {
@@ -49,6 +51,25 @@ describe('OutboxEventPublisher', () => {
 
     expect(transactions.currentManager).toHaveBeenCalled();
     expect(outbox.enqueue).toHaveBeenCalledWith(tx, expect.objectContaining({ id: 'evt_01HTEST' }));
+  });
+
+  it('stamps the contracted schema version, not a literal', async () => {
+    await publisher.publish(
+      'merchant.status_changed',
+      {
+        merchant_id: 'mer_1',
+        previous_status: 'active',
+        status: 'restricted',
+        reason: 'dispute_rate',
+        changed_by: 'system',
+        changed_at: '2026-04-01T11:59:59.000Z',
+      },
+      ctx,
+    );
+
+    const [, row] = outbox.enqueue.mock.calls[0];
+    expect(row.version).toBe(1);
+    expect(row.type).toBe('merchant.status_changed');
   });
 
   it('starts a fresh row unpublished and immediately due', async () => {

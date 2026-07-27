@@ -247,3 +247,22 @@ export class LedgerEventsConsumer extends BaseEventConsumer implements OnModuleI
    * tolerance, so the merchant's balance is right and the file is wrong — which is exactly
    * the failure the PAY-2041 postmortem calls undetectable without this branch.
    */
+  private async onVarianceDetected(
+    payload: SettlementVarianceDetectedPayload,
+    sourceEventId: string,
+    tx: EntityManager,
+  ): Promise<void> {
+    await this.audit.record(tx, {
+      merchantId: payload.merchant_id,
+      actorType: 'system',
+      actorId: 'payzeno-ledger',
+      action: 'settlement.variance_detected',
+      resourceType: 'settlement_batch',
+      resourceId: payload.batch_id,
+      before: { expected_gross_minor: payload.expected_gross_minor },
+      after: {
+        actual_gross_minor: payload.actual_gross_minor,
+        variance_minor: payload.variance_minor,
+        tolerance_minor: payload.tolerance_minor,
+        line_type: payload.line_type,
+      },
