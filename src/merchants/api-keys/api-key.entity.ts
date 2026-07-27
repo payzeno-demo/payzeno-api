@@ -26,12 +26,22 @@ import { MerchantEntity } from '../merchant.entity';
 @Index('pix_api_key_active', ['merchantId'], { where: 'revoked_at is null' })
 export class ApiKeyEntity extends MerchantScopedEntity {
   @ManyToOne(() => MerchantEntity, (merchant) => merchant.apiKeys)
+  @JoinColumn({ name: 'merchant_id' })
+  merchant?: MerchantEntity;
+
+  /** Merchant-chosen label. Shown in the console key list and in nothing else. */
+  @Column({ name: 'name', type: 'text' })
+  name!: string;
+
   /** `sk_live_` / `sk_test_`. Stored so the console can render it without the secret. */
   @Column({ name: 'prefix', type: 'varchar', length: 12 })
   prefix!: string;
 
   @Column({ name: 'lookup_hash', type: 'char', length: 64 })
   lookupHash!: string;
+
+  @Column({ name: 'secret_hash', type: 'text', select: false })
+  secretHash!: string;
 
   @Column({ name: 'scopes', type: 'text', array: true, default: () => "'{}'" })
   scopes!: ApiKeyScope[];
