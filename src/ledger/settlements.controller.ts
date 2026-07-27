@@ -52,6 +52,7 @@ export class SettlementsController {
     @CurrentPrincipal() principal: AuthPrincipal,
     @Query('currency') currency?: MerchantSettlementBatch['currency'],
     @Query('status') status?: SettlementBatchStatus,
+    @Query('cursor') cursor?: string,
     @Query('limit') limit?: number,
   ): Promise<Paginated<MerchantSettlementBatch>> {
     return this.readThrough.listSettlementBatches(merchantIdOf(principal), {
@@ -73,7 +74,9 @@ export class SettlementsController {
 
   @Get(':batchId/items')
   listItems(
+    @CurrentPrincipal() principal: AuthPrincipal,
     @Param('batchId') batchId: string,
+    @Query('status') status?: ReconciliationItemStatus,
     @Query('cursor') cursor?: string,
     @Query('limit') limit?: number,
   ): Promise<Paginated<ReconciliationItem>> {

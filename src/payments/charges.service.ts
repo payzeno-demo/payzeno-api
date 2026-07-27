@@ -192,3 +192,20 @@ function scopeFrom(principal: AuthPrincipal): MerchantScope {
 }
 
 export function toCharge(row: ChargeEntity): Charge {
+  return {
+    id: row.id,
+    object: 'charge',
+    merchant_id: row.merchantId,
+    payment_intent_id: row.payment_intent_id,
+    amount_minor: Number(row.amount_minor),
+    captured_amount_minor: Number(row.captured_amount_minor),
+    refunded_amount_minor: Number(row.refunded_amount_minor),
+    currency: row.currency,
+    status: row.status,
+    // The six flat card_* columns become the one nested object, in exactly one place.
+    card: row.toCardSummary(),
+    acquirer: row.acquirer,
+    network_transaction_id: row.network_transaction_id,
+    processor_reference: row.processor_reference,
+    authorization_code: row.authorization_code,
+    capture_method: row.capture_method,

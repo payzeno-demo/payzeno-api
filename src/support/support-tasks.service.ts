@@ -50,7 +50,26 @@ export class SupportTasksService {
     private readonly dataSource: DataSource,
     private readonly ids: IdFactory,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
+  ) {}
+
+  /**
+   * Opens a task inside the caller's transaction. Returns the id.
+   *
+   * `ON CONFLICT DO NOTHING` on `uq_support_task_source_event`, so a redelivered event is a
+   * no-op rather than a second row. The `RETURNING` tells us which happened.
+   */
+  async open(manager: EntityManager, input: OpenSupportTaskInput): Promise<string> {
     const task = this.build(input);
+
+    const inserted = (await manager
+      .createQueryBuilder()
+      .insert()
+      .into(SupportTaskEntity)
+      .values(task)
+      .orIgnore()
+      .returning('id')
+      .execute()) as { raw: Array<{ id: string }> };
 
     const created = inserted.raw.length > 0;
 

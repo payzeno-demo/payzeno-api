@@ -114,6 +114,24 @@ where our view and the ledger's view disagree. Take it to the ledger on-call wit
 
 ---
 
+## 5. Events are not reaching the ledger
+
+Symptom: the ledger is behind, or a merchant update has not propagated.
+
+1. **Is `outbox-drain` running?** Absence of `job.finished` for `outbox-drain` for more than a
+   minute is the alarm. If the job is dead, everything below is noise.
+2. **Is `event_outbox` growing?** Undrained rows with `next_attempt_at` in the past means the
+   drain is running and failing. Check SNS reachability and IAM.
+3. **Tombstoned rows.** On failure the row is not deleted and not retried in line: `markFailed`
+   pushes `next_attempt_at` out exponentially and tombstones at attempt 12. A tombstoned row has
+   failed twelve times over hours and will never be retried. Those are a page. Requeueing one is
+   a manual `UPDATE` of `next_attempt_at` and `attempts`, and you should understand why it failed
+   first.
+4. **Never publish directly to SNS to "catch up".** ADR 0011. A direct publish bypasses the
+   outbox's ordering and its dedupe, and you will not know which of your manual publishes landed.
+
+---
+
 ## 7. Config drift
 
 Every environment variable has to exist in **three** places:
@@ -138,6 +156,23 @@ Two failure modes that look like application bugs:
 Boot fails loudly on invalid config — `ConfigValidationError` lists every failing var at once,
 not the first one. That is intentional: fixing config one restart at a time is how a ten-minute
 deploy becomes an hour.
+
+---
+
+## 8. Traces are missing
+
+`src/instrumentation.ts` is imported on **line one** of `main.ts`, before anything else, because
+OpenTelemetry has to patch the runtime before Nest loads. There is an `eslint-disable` on that
+import and a comment telling you not to sort it. Do not sort it.
+
+If traces stop:
+
+1. Check the collector endpoint, not the app. Instrumentation failures are swallowed at boot on
+   purpose — a tracing collector being down must never stop the API from taking payments.
+2. Confirm `instrumentation.ts` is still the first import in `main.ts`. An automated import sort
+   has moved it before.
+3. Spans exist but are empty of HTTP attributes: usually means the auto-instrumentation loaded
+   after `undici`, which is the same root cause as (2).
 
 ---
 

@@ -78,11 +78,17 @@ export class MarkChargeSettledDto implements MarkChargeSettledInput {
 }
 
 export class CreateSupportTaskDto implements CreateSupportTaskInput {
+  @MaxLength(64)
+  kind!: string;
+
   @IsPayzenoId('mch_')
   merchant_id!: MerchantId;
 
   /** Null for a task that is about a merchant rather than a single charge. */
   @IsOptional()
+  @IsPayzenoId('ch_')
+  charge_id?: string | null;
+
   @IsIn(['low', 'medium', 'high', 'critical'])
   severity!: 'low' | 'medium' | 'high' | 'critical';
 
@@ -110,6 +116,8 @@ export class CreateSupportTaskDto implements CreateSupportTaskInput {
 export class InternalController {
   constructor(private readonly internal: InternalService) {}
 
+  /** payzeno-ledger config reads; payzeno-billing-legacy `MerchantBillingProfile` sync. */
+  @Get('merchants/:merchantId')
   @InternalOnly('payzeno-ledger', 'payzeno-billing-legacy')
   async getMerchant(
     @Param('merchantId') merchantId: MerchantId,
