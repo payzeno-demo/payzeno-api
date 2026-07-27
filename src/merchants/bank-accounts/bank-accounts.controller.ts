@@ -32,7 +32,16 @@ export class BankAccountsController extends BaseController {
     super();
   }
 
+  @Get()
+  async list(
+    @CurrentPrincipal() principal: AuthPrincipal,
+    @Query() query: ListQueryDto,
+  ): Promise<Paginated<BankAccount>> {
+    return this.accounts.list(this.scopeOf(principal), query as ListQuery);
+  }
+
   @Roles('owner', 'admin')
+  @Idempotent()
   @AuditLog('bank_account.create', { resourceType: 'bank_account' })
   async create(
     @CurrentPrincipal() principal: AuthPrincipal,
@@ -42,4 +51,12 @@ export class BankAccountsController extends BaseController {
   }
 
   @Post(':bankAccountId/default')
+  @Idempotent()
+  @AuditLog('bank_account.make_default', { resourceType: 'bank_account', idParam: 'bankAccountId' })
+  async makeDefault(
+    @CurrentPrincipal() principal: AuthPrincipal,
+    @Param('bankAccountId') bankAccountId: string,
+  ): Promise<BankAccount> {
+    return this.accounts.makeDefault(this.scopeOf(principal), bankAccountId);
+  }
 }
