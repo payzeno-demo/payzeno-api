@@ -46,6 +46,10 @@ export class MerchantEntity extends BaseEntity {
   @Column({ name: 'display_name', type: 'text' })
   displayName!: string;
 
+  /** ISO-3166-1 alpha-2. */
+  @Column({ name: 'country', type: 'char', length: 2, transformer: trimmedCharTransformer })
+  country!: string;
+
   @Column({ name: 'default_currency', type: 'char', length: 3, transformer: currencyTransformer })
   defaultCurrency!: CurrencyCode;
 
@@ -56,8 +60,14 @@ export class MerchantEntity extends BaseEntity {
   @Column({ name: 'mcc', type: 'char', length: 4 })
   mcc!: string;
 
+  @Column({ name: 'risk_tier', type: 'text', default: 'standard' })
+  riskTier!: RiskTier;
+
   @Column({ name: 'payout_schedule', type: 'text', default: 'daily' })
   payoutSchedule!: PayoutSchedule;
+
+  @Column({ name: 'pricing_model', type: 'text', default: 'blended' })
+  pricingModel!: PricingModel;
 
   @Column({ name: 'reserve_bps', type: 'integer', default: 0 })
   reserveBps!: BasisPoints;

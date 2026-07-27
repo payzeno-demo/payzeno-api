@@ -61,6 +61,43 @@ export class RiskEvaluationService {
       this.disputes.countOpenedSince(merchant.id, since),
     ]);
 
+    const rate = this.calculator.calculate({ capturedCharges, disputesOpened });
+
+    this.logger.debug('risk.evaluated', {
+      merchant_id: merchant.id,
+      bps: rate.bps,
+      captured: capturedCharges,
+      disputes: disputesOpened,
+      actionable: rate.actionable,
+    });
+
+    if (merchant.status === 'active' && this.calculator.shouldRestrict(rate)) {
+      await this.merchantsService.restrictForRisk(merchant.id, rate.bps);
+      this.logger.warn('risk.merchant_restricted', { merchant_id: merchant.id, bps: rate.bps });
+      return { merchantId: merchant.id, rate, action: 'restricted' };
+    }
+
+    if (merchant.status === 'restricted' && this.calculator.shouldReinstate(rate)) {
+      await this.merchantsService.changeStatus(
+        merchant.id,
+        'active',
+        `trailing-30d dispute rate recovered to ${rate.bps} bps`,
+        'system:risk_evaluation',
+      );
+      this.logger.info('risk.merchant_reinstated', { merchant_id: merchant.id, bps: rate.bps });
+      return { merchantId: merchant.id, rate, action: 'reinstated' };
+    }
+
+    return { merchantId: merchant.id, rate, action: 'none' };
+  }
+
+  /**
+   * The whole live population, one page at a time. Returns every evaluation so the job can
+   * report `itemsProcessed` honestly — a job that reports the page size instead is a job
+   * whose metric lies the moment the population outgrows one page.
+   */
+  async evaluateAll(): Promise<RiskEvaluation[]> {
+    const results: RiskEvaluation[] = [];
     let afterId: string | null = null;
 
     for (;;) {

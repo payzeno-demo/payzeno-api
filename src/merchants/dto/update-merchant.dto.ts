@@ -35,6 +35,9 @@ export class UpdateMerchantDto implements UpdateMerchantRequest {
   display_name?: string;
 
   @IsOptional()
+  @IsIn([...PAYOUT_SCHEDULES])
+  payout_schedule?: PayoutSchedule;
+
   /** ≤ 22 chars, `[A-Za-z0-9 .,\-]` only. It is what the cardholder sees on their statement. */
   @IsOptional()
   @IsStatementDescriptor()
@@ -43,12 +46,19 @@ export class UpdateMerchantDto implements UpdateMerchantRequest {
   // ---- staff-only from here down. MerchantsController enforces it. -----------------
 
   @IsOptional()
+  @IsIn([...RISK_TIERS])
+  risk_tier?: RiskTier;
+
   /** 10000 bps = 100%. A reserve above that would hold more than the merchant is owed. */
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)
+  @Max(10_000)
+  reserve_bps?: BasisPoints;
+
   @IsOptional()
+  @Type(() => Number)
   @IsInt()
   @Min(0)
   @Max(365)
@@ -59,6 +69,9 @@ export class UpdateMerchantDto implements UpdateMerchantRequest {
   @Type(() => Number)
   @IsInt()
   @Min(0)
+  @Max(30)
+  payout_delay_days?: number;
+
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -70,12 +83,25 @@ export class UpdateMerchantDto implements UpdateMerchantRequest {
    * `allowZero` and `skipCeiling`: a merchant on pure-bps pricing has a fixed component of 0,
    * and the scheme ceiling is about a single transaction, not a per-transaction fee.
    */
+  @IsOptional()
   @Type(() => Number)
   @Money({ allowZero: true, skipCeiling: true })
   @IsInt()
+  @Min(0)
+  platform_fee_fixed_minor?: MinorUnits;
+
+  /**
+   * Zero is meaningful — it means "every variance goes to a human". Default is 100 minor units
+   * (data-model.md §1.1), and the ceiling does not apply: a tolerance is not a chargeable
+   * amount.
+   */
   @IsOptional()
+  @Type(() => Number)
   @Money({ allowZero: true, skipCeiling: true })
   @IsInt()
+  @Min(0)
+  settlement_tolerance_minor?: MinorUnits;
+
   @IsOptional()
   @IsBoolean()
   capture_at_settlement?: boolean;

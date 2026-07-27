@@ -197,6 +197,7 @@ export class MerchantsService extends BaseService<MerchantEntity> {
     actor: string,
   ): Promise<Merchant> {
     const merchant = await this.getById(merchantId);
+    const event = this.statuses.eventFor(merchant.status, to);
     const next = this.statuses.apply(merchant.status, event);
 
     const updated = await this.transactions.runInTransaction(async (manager) => {
