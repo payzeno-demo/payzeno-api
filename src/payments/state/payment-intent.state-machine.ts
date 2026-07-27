@@ -48,3 +48,19 @@ const TRANSITIONS: TransitionTable<PaymentIntentStatus, PaymentIntentEvent> = {
     attach_payment_method: 'requires_confirmation',
     cancel: 'canceled',
   },
+  processing: {
+    require_action: 'requires_action',
+    authorize: 'requires_capture',
+    capture: 'succeeded',
+    // A retryable decline sends the buyer back for another payment method rather than
+    // terminating the intent. A non-retryable one takes `fail`.
+    decline: 'requires_payment_method',
+    fail: 'failed',
+    cancel: 'canceled',
+  },
+  requires_action: {
+    complete_action: 'processing',
+    fail: 'failed',
+    cancel: 'canceled',
+  },
+  requires_capture: {
