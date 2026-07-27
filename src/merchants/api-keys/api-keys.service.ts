@@ -73,6 +73,7 @@ export class ApiKeyRepository extends PayzenoRepository<ApiKeyEntity> {
 export class ApiKeysService extends BaseService<ApiKeyEntity> {
   constructor(
     private readonly keys: ApiKeyRepository,
+    private readonly hasher: ApiKeyHasher,
     private readonly ids: IdFactory,
     @Inject(PAYZENO_LOGGER) logger: PayzenoLogger,
   ) {
