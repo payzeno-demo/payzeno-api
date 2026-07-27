@@ -55,6 +55,13 @@ export class InternalServiceGuard extends BaseAuthGuard {
   }
 
   override async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
+    const principal = request.principal;
+
+    if (principal?.kind !== 'internal_service') {
+      throw new PermissionDeniedException('Internal surface requires an internal service principal');
+    }
+
     const spec = this.reflector.getAllAndOverride<InternalOnlySpec | undefined>(INTERNAL_ONLY_KEY, [
       context.getHandler(),
       context.getClass(),

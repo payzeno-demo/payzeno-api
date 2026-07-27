@@ -85,6 +85,15 @@ describe('MerchantScopeGuard', () => {
   it('403s a staff request that named no merchant — there would be no scope to check', async () => {
     const { context } = guardContext({ principal: makeStaffPrincipal({ acting_merchant_id: null }) });
 
+    const err = await rejectsWith(
+      guardWith(scoped).canActivate(context),
+      PermissionDeniedException,
+    );
+
+    expect(err.message).toContain('merchant_id');
+  });
+
+  it('admits a staff request that named one via ?merchant_id=', async () => {
     const { context } = guardContext({
       principal: makeStaffPrincipal({ acting_merchant_id: TEST_MERCHANT_ID }),
       params: { merchantId: TEST_MERCHANT_ID },
@@ -117,6 +126,36 @@ describe('MerchantScopeGuard', () => {
       );
 
       expect(err.message).toContain('test mode');
+    });
+
+    it('admits a dashboard session, which is always live', async () => {
+      const { context } = guardContext({ principal: makeSessionPrincipal() });
+
+      await expect(guardWith(livemodeOnly).canActivate(context)).resolves.toBe(true);
+    });
+  });
+
+  describe('write gating on merchant status', () => {
+    it.each(['GET', 'HEAD', 'OPTIONS'])('does not read the merchant row on %s', async (method) => {
+      const { context } = guardContext({ method, principal: makeSessionPrincipal() });
+
+      await expect(guardWith(scoped).canActivate(context)).resolves.toBe(true);
+      expect(merchants.findById).not.toHaveBeenCalled();
+    });
+
+    it('reads the merchant row on a mutating method', async () => {
+      const { context } = guardContext({ method: 'POST', principal: makeSessionPrincipal() });
+
+      await expect(guardWith(scoped).canActivate(context)).resolves.toBe(true);
+      expect(merchants.findById).toHaveBeenCalledWith(TEST_MERCHANT_ID);
+    });
+
+    it.each(['suspended', 'rejected', 'closed'])('refuses a write for a %s merchant', async (status) => {
+      merchants.findById.mockResolvedValue({ id: TEST_MERCHANT_ID, status });
+
+      const { context } = guardContext({ method: 'POST', principal: makeSessionPrincipal() });
+
+      await rejectsWith(guardWith(scoped).canActivate(context), MerchantRestrictedException);
     });
 
     it('allows a write for a restricted merchant — restricted blocks payouts, not charging', async () => {

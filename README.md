@@ -170,3 +170,27 @@ event is emitted you have changed the ledger's capture behaviour, whether you me
 not. This has already cost us one incident.
 
 **`EventsModule` never imports a feature module.** Consumers resolve their handler through
+`ModuleRef.get(..., { strict: false })` in `onModuleInit`. It looks wrong. It is the only
+thing preventing a module cycle between events and every feature that emits. The reasoning
+is `docs/adr/0009-event-consumer-wiring.md` and it gets linked in review roughly monthly.
+
+**`WebhookFanoutConsumer` is the only writer of `webhook_event`.** If you need a webhook
+delivered, emit the event. Do not insert the row.
+
+**Never log a PAN.** `redact_pan_in_logs` is on, non-removable, and
+`RedactionInterceptor` scrubs request bodies, response bodies, log context *and*
+`ValidationError.field_errors[].path` — that last one was a real leak. The service is
+SAQ-A-EP because card data goes browser → vault and never touches us; the argument is in
+`docs/compliance/pci-scope.md`. `VaultClient.tokenise()` is the one server-side path that
+still exists, it is `@StaffOnly('support')`, it logs at WARN, and it is on the list to die.
+
+**Migrations are append-only and never renumbered.** `synchronize` is off and will stay
+off. Additive-then-backfill, always: the deploy pipeline runs migrations *before* the new
+image rolls, so every migration must be safe against the currently-running code.
+
+---
+
+## The billing situation
+
+`src/billing/` is a strangler in progress and it is visibly unfinished. `InvoiceSourceResolver`
+branches on the `ledger_owns_invoices` flag: `false` today, which means invoices come from

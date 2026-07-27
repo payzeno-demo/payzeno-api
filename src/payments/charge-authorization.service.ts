@@ -57,6 +57,7 @@ export class ChargeAuthorizationService {
     private readonly charges: ChargeRepository,
     private readonly router: ProcessorRouter,
     private readonly vault: VaultClient,
+    private readonly expiry: ChargeExpiryPolicy,
     private readonly transactions: TransactionManager,
     private readonly ids: IdFactory,
     @Inject(EVENT_PUBLISHER) private readonly events: EventPublisher,
@@ -152,5 +153,56 @@ export class ChargeAuthorizationService {
     result: AuthorizeResult,
   ): Promise<void> {
     const authorizedAt = this.clock.now();
+    const expiresAt = this.expiry.expiresAt(command.merchant.mcc, authorizedAt);
+
+    await this.transactions.runInTransaction(async (manager) => {
+      await this.charges.markAuthorized(manager, charge.id, {
+        networkTransactionId: result.networkTransactionId,
+        authorizationCode: result.authorizationCode,
+        processorReference: result.processorReference,
+        authorizedAt,
+        authorizationExpiresAt: expiresAt,
+        riskScore: result.riskScore,
+      });
+
+      // Consumed by payzeno-ledger's PaymentEventConsumer, which builds `settlement_charge`.
+      // reserve_bps and processor_reference are required there (events.ts §PaymentAuthorized) —
+      // without them the reserve leg of every settle posting is unreachable.
+      await this.events.publish(
+        'payment.authorized',
+        {
+          charge_id: charge.id,
+          payment_intent_id: command.paymentIntentId,
+          merchant_id: command.merchant.id,
+          amount_minor: command.amountMinor,
+          currency: command.currency,
+          capture_method: command.captureMethod,
+          capture_at_settlement: command.merchant.capture_at_settlement,
+          card_brand: result.card.brand,
+          card_last_four: result.card.last_four,
+          authorization_code: result.authorizationCode ?? '',
+          network_transaction_id: result.networkTransactionId ?? '',
+          reserve_bps: command.merchant.reserve_bps,
+          processor_reference: result.processorReference,
+          acquirer: charge.acquirer,
+          risk_score: result.riskScore,
+          authorized_at: authorizedAt.toISOString(),
+        },
+        {
+          merchantId: command.merchant.id,
+          correlationId: command.correlationId,
+          causationId: null,
+          livemode: command.livemode,
+          occurredAt: authorizedAt.toISOString(),
+        },
+      );
+    });
+  }
+
+  private async recordDecline(
+    charge: ChargeEntity,
+    command: AuthorizeChargeCommand,
+    exception: CardDeclinedException,
+  ): Promise<void> {
   }
 }

@@ -92,5 +92,8 @@ export class ApiKeyResolver {
    * is stable per key without resolving it.
    */
   bucketKeyFor(token: string): string | null {
+    const split = this.split(token);
+    if (!split) return null;
+    return this.hasher.lookupHash(split.secret).slice(0, 16);
   }
 }

@@ -86,6 +86,14 @@ describe('InternalServiceGuard', () => {
     expect(err.message).toContain('X-Payzeno-Service');
   });
 
+  it('rejects a request that names a service but carries no secret', async () => {
+    const { context } = guardContext({
+      headers: { [SERVICE_HEADER]: 'payzeno-ledger' },
+    });
+
+    await rejectsWith(guardWith().canActivate(context), AuthenticationRequiredException);
+  });
+
   it('rejects a wrong secret', async () => {
     const { context } = guardContext({
       headers: headers({ [INTERNAL_SECRET_HEADER]: 'internal-shared-secret-valuf' }),
@@ -95,4 +103,41 @@ describe('InternalServiceGuard', () => {
     expect(err.message).toContain('Invalid internal service credential');
   });
 
+  describe('@InternalOnly allowlist', () => {
+    it('lets the named caller through', async () => {
+      const { context } = guardContext({ method: 'POST', headers: headers() });
+
+      await expect(guardWith(['payzeno-ledger']).canActivate(context)).resolves.toBe(true);
+    });
+
+    it('403s a known service that is not on the route allowlist', async () => {
+      const { context } = guardContext({
+        method: 'POST',
+        headers: headers({ [SERVICE_HEADER]: 'payzeno-billing-legacy' }),
+      });
+
+      const err = await rejectsWith(
+        guardWith(['payzeno-ledger']).canActivate(context),
+        PermissionDeniedException,
+      );
+
+      expect(err.httpStatus).toBe(403);
+      expect(err.message).toContain('payzeno-billing-legacy');
+    });
+
+    it('treats an empty allowlist as "any known internal caller"', async () => {
+      const { context } = guardContext({ headers: headers() });
+
+      await expect(guardWith([]).canActivate(context)).resolves.toBe(true);
+    });
+  });
+
+  it('403s when an earlier guard attached a non-internal principal to an internal route', async () => {
+    const { context } = guardContext({
+      headers: headers(),
+      principal: { kind: 'api_key', merchant_id: 'mch_x', api_key_id: 'key_x', mode: 'live', scopes: [] },
+    });
+
+    await rejectsWith(guardWith().canActivate(context), PermissionDeniedException);
+  });
 });
