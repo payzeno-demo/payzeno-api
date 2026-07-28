@@ -26,6 +26,21 @@ describe('SnsEventPublisher', () => {
 
   let publisher: SnsEventPublisher;
 
+  function event(type: string, id: string): PayzenoEvent {
+    return {
+      id,
+      type,
+      version: 1,
+      occurred_at: '2026-04-02T08:00:00.000Z',
+      source: 'payzeno-api',
+      correlation_id: 'corr_1',
+      causation_id: null,
+      merchant_id: 'mer_1',
+      livemode: true,
+      payload: {},
+    } as PayzenoEvent;
+  }
+
   beforeEach(() => {
     send.mockClear();
     publisher = new SnsEventPublisher(
@@ -86,6 +101,14 @@ describe('SnsEventPublisher', () => {
     );
   });
 
+  it('refuses to publish on a topic payzeno-api does not own', async () => {
+    await expect(publisher.publishBatch([event('payout.paid', 'evt_x')])).rejects.toThrow(
+      'payzeno-api does not publish on topic "payzeno-ledger-events"',
+    );
+  });
+});
+
+describe('topicOf', () => {
   it('covers every event type in the contract', () => {
     expect(() => topicOf('invoice.issued')).not.toThrow();
     expect(topicOf('dispute.closed')).toBe('payzeno-payments-events');

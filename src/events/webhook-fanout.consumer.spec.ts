@@ -64,6 +64,20 @@ describe('WebhookFanoutConsumer', () => {
     expect(consumer.handledTypes.has('settlement.batch_closed')).toBe(false);
   });
 
+  it('inserts one webhook_event per enabled endpoint', async () => {
+    await consumer.handle(busEvent(), tx);
+
+    expect(endpoints.listEnabledFor).toHaveBeenCalledWith('mer_7', 'refund.succeeded', true);
+    expect(events.fanout).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({
+        sourceEventId: 'evt_f1',
+        type: 'refund.succeeded',
+        endpoints: [{ id: 'whe_1' }, { id: 'whe_2' }],
+      }),
+    );
+  });
+
   it('reports dedupe when the insert conflicts on uq_webhook_event_source', async () => {
     events.fanout.mockResolvedValueOnce(1);
 
@@ -83,4 +97,9 @@ describe('WebhookFanoutConsumer', () => {
     expect(events.fanout).not.toHaveBeenCalled();
   });
 
+  it('ignores a platform-wide event with no merchant', async () => {
+    await consumer.handle(busEvent({ merchant_id: null }), tx);
+
+    expect(endpoints.listEnabledFor).not.toHaveBeenCalled();
+  });
 });

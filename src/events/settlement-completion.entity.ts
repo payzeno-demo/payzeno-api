@@ -35,6 +35,12 @@ export class SettlementCompletion {
   @Column({ name: 'chunks_seen', type: 'smallint', array: true, default: () => "'{}'" })
   chunksSeen!: number[];
 
+  @Column({ name: 'charges_marked', type: 'integer', default: 0 })
+  chargesMarked!: number;
+
+  @Column({ name: 'completed_at', type: 'timestamptz', nullable: true })
+  completedAt!: Date | null;
+
   @Column({ name: 'created_at', type: 'timestamptz', default: () => 'now()' })
   createdAt!: Date;
 
