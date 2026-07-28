@@ -54,6 +54,12 @@ describe('cursor.codec', () => {
       expect(decodeCursor(encodeCursor(cursor))).toEqual(cursor);
     });
 
+    it('round-trips a cursor whose id is a merchant id', () => {
+      const merchantCursor = { createdAt: '2025-11-01T09:00:00.000Z', id: TEST_MERCHANT_ID };
+
+      expect(decodeCursor(encodeCursor(merchantCursor))).toEqual(merchantCursor);
+    });
+
     it('rejects a cursor that is not base64-decodable JSON', () => {
       expect(() => decodeCursor('not-a-cursor-at-all')).toThrow(ValidationException);
     });
@@ -70,6 +76,25 @@ describe('cursor.codec', () => {
         'utf8',
       ).toString('base64url');
 
+      expect(() => decodeCursor(encoded)).toThrow(ValidationException);
+    });
+
+    it('rejects a cursor whose id is not a Payzeno id', () => {
+      const encoded = Buffer.from(
+        JSON.stringify({ c: '2026-01-15T12:00:00.000Z', i: "1' OR 1=1--" }),
+        'utf8',
+      ).toString('base64url');
+
+      expect(() => decodeCursor(encoded)).toThrow(ValidationException);
+    });
+
+    it('rejects an id with a valid prefix but a malformed body', () => {
+      const encoded = Buffer.from(
+        JSON.stringify({ c: '2026-01-15T12:00:00.000Z', i: 'ch_000000000000000000000001' }),
+        'utf8',
+      ).toString('base64url');
+
+      // Crockford base32 excludes I, L, O and U; a plain decimal body is not a ULID.
       expect(() => decodeCursor(encoded)).toThrow(ValidationException);
     });
 
