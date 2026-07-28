@@ -51,7 +51,10 @@ describe('BankAccountsService', () => {
     findOne: jest.Mock;
     paginateCursor: jest.Mock;
   };
+  let events: { publish: jest.Mock };
   let transactions: TransactionManager;
+  let service: BankAccountsService;
+
   function storedAccount(overrides: Record<string, unknown> = {}) {
     const account = {
       id: BANK_ACCOUNT_ID,
@@ -211,6 +214,40 @@ describe('BankAccountsService', () => {
         account_number_token: 'bat_9f2c1a7e',
       });
       expect(context).toMatchObject({ livemode: true });
+    });
+  });
+
+  describe('makeDefault', () => {
+    it('clears then sets, in that order, inside one transaction', async () => {
+      await service.makeDefault(scope, BANK_ACCOUNT_ID);
+
+      expect(transactions.runInTransaction).toHaveBeenCalledTimes(1);
+      expect(accounts.clearDefault.mock.invocationCallOrder[0]).toBeLessThan(
+        accounts.markDefault.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('refuses an account that has not validated — a payout would bounce', async () => {
+      accounts.findScoped.mockResolvedValue(storedAccount({ status: 'verification_failed' }));
+
+      await expect(service.makeDefault(scope, BANK_ACCOUNT_ID)).rejects.toBeInstanceOf(
+        ValidationException,
+      );
+      expect(accounts.markDefault).not.toHaveBeenCalled();
+    });
+
+    it('404s an account from another tenant', async () => {
+      accounts.findScoped.mockResolvedValue(null);
+
+      await expect(service.makeDefault(scope, BANK_ACCOUNT_ID)).rejects.toBeInstanceOf(
+        ResourceNotFoundException,
+      );
+    });
+
+    it('returns the account marked default', async () => {
+      const result = await service.makeDefault(scope, BANK_ACCOUNT_ID);
+
+      expect(result.is_default).toBe(true);
     });
   });
 

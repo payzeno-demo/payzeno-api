@@ -60,6 +60,11 @@ export function makeDeferredCaptureMerchant(overrides: Partial<Merchant> = {}): 
   });
 }
 
+/** A merchant `MerchantScopeGuard` and `PayoutsService.create` must refuse. */
+export function makeRestrictedMerchant(overrides: Partial<Merchant> = {}): Merchant {
+  return makeMerchant({ status: 'restricted', risk_tier: 'high', ...overrides });
+}
+
 export function makeCreateMerchantRequest(
   overrides: Partial<CreateMerchantRequest> = {},
 ): CreateMerchantRequest {

@@ -67,3 +67,10 @@ export const ALL_JOB_NAMES: readonly string[] = [
     ProcessedEventRetentionJob,
     DisputeDeadlineReminderJob,
     RiskEvaluationJob,
+    UnsettledChargeSweepJob,
+    ChargeExpiryJob,
+  ],
+  exports: [
+    OutboxDrainJob,
+    WebhookDeliveryJob,
+    IdempotencyRetentionJob,
