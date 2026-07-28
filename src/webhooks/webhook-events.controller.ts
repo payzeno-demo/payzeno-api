@@ -35,7 +35,33 @@ export class WebhookEventsController extends BaseController {
   }
 
   @Get()
+  @RequiredScopes('webhooks:read')
+  async list(
+    @CurrentPrincipal() principal: AuthPrincipal,
+    @Query() query: ListQueryDto,
+    @Query('status') status?: WebhookEventStatus,
+    @Query('type') type?: PublicEventType,
+  ): Promise<Paginated<WebhookEventDto>> {
+    return this.events.list(this.merchantIdOf(principal), {
+      ...(query as ListQuery),
+      status,
+      type,
+    });
+  }
+
   @Get(':eventId')
+  @RequiredScopes('webhooks:read')
+  async get(
+    @CurrentPrincipal() principal: AuthPrincipal,
+    @Param('eventId') eventId: string,
+  ): Promise<WebhookEventDto> {
+    return this.events.get(this.merchantIdOf(principal), eventId);
+  }
+
+  /**
+   * Merchant admins and Payzeno support can both force a redelivery. Support uses it most
+   * — it is step 3 of docs/runbooks/webhook-delivery.md.
+   */
   @Post(':eventId/redeliver')
   @StaffOnly('support')
   @RequiredScopes('webhooks:write')
