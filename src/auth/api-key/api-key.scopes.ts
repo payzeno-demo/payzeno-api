@@ -17,6 +17,12 @@ export const ALL_SCOPES: readonly ApiKeyScope[] = API_KEY_SCOPES;
 
 export const READ_SCOPES: readonly ApiKeyScope[] = API_KEY_SCOPES.filter((s) => s.endsWith(':read'));
 
+export const WRITE_SCOPES: readonly ApiKeyScope[] = API_KEY_SCOPES.filter((s) => s.endsWith(':write'));
+
+/**
+ * What a key gets when `CreateApiKeyRequest.scopes` is omitted: every read scope, no writes.
+ * A merchant who wants to move money has to say so.
+ */
 export const IMPLIED_SCOPES: Readonly<Partial<Record<ApiKeyScope, readonly ApiKeyScope[]>>> = {
   'payment_intents:write': ['payment_intents:read', 'charges:read'],
   'refunds:write': ['refunds:read'],
@@ -36,11 +42,25 @@ export function expandScopes(granted: readonly ApiKeyScope[]): ApiKeyScope[] {
   return [...out];
 }
 
+export function isApiKeyScope(value: string): value is ApiKeyScope {
+  return (API_KEY_SCOPES as readonly string[]).includes(value);
+}
+
 export class UnknownScopeError extends Error {
   constructor(readonly unknownScopes: readonly string[]) {
     super(`Unknown API key scope(s): ${unknownScopes.join(', ')}`);
     this.name = 'UnknownScopeError';
   }
+}
+
+/** Does the expanded grant cover everything `@RequiredScopes(...)` asked for? */
+export function coversRequired(
+  granted: readonly ApiKeyScope[],
+  required: readonly ApiKeyScope[],
+): boolean {
+  if (required.length === 0) return true;
+  const expanded = new Set(expandScopes(granted));
+  return required.every((scope) => expanded.has(scope));
 }
 
 export function firstMissingScope(

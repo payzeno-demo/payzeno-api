@@ -32,3 +32,11 @@
 /src/ledger/                        @payzeno/platform @payzeno/core
 /src/billing/                       @payzeno/core @nmigration
 /src/events/                        @payzeno/platform @payzeno/core
+/src/migrations/                    @payzeno/platform @dhotfix
+
+# --- PCI scope: named reviewers, not a team -----------------------------------
+# docs/compliance/pci-scope.md is the SAQ-A-EP argument. If a diff here widens scope,
+# the argument changes, and that is a conversation before it is a PR.
+/src/common/redaction/              @dhotfix @osquash
+/src/payments/vault/                @dhotfix @osquash
+/docs/compliance/                   @dhotfix
