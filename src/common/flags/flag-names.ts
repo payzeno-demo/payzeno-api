@@ -30,3 +30,6 @@ export type FlagName = (typeof FLAG_NAMES)[keyof typeof FLAG_NAMES];
 
 export const ALL_FLAG_NAMES: readonly FlagName[] = Object.values(FLAG_NAMES);
 
+export function isFlagName(value: string): value is FlagName {
+  return (ALL_FLAG_NAMES as readonly string[]).includes(value);
+}

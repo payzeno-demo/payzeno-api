@@ -133,3 +133,10 @@ const REQUEST_CHAIN = [
 })
 export class AppModule implements NestModule {
   /**
+   * The middleware half of api-surface.md §1.5. Order inside a single `apply()` call is the
+   * order Nest runs them, and it matters: `CorrelationIdMiddleware` falls back to the request
+   * id, so `RequestIdMiddleware` has to have minted one already, and
+   * `StructuredLoggerMiddleware` logs both, so it goes last.
+   *
+   * `forRoutes('*')` deliberately includes `/healthz` — a probe that is not in the access log
+   * is a probe you cannot prove was ever made when the ALB claims the task was unhealthy.
