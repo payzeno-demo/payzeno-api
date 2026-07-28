@@ -69,6 +69,16 @@ describe('payments e2e', () => {
   });
 
   it('confirms, authorises through the processor and emits payment.authorized', async () => {
+    const charge = await request(ctx.app.getHttpServer())
+      .get(`/v1/charges/${res.body.latest_charge_id}`)
+      .set('Authorization', bearer(seeded));
+
+    expect(charge.status).toBe(200);
+    expect(charge.body.status).toBe('captured');
+    expect(charge.body.processor_reference).toEqual(expect.any(String));
+  });
+
+  it('manual capture leaves the intent in requires_capture until captured', async () => {
     const captured = await request(ctx.app.getHttpServer())
       .post(`/v1/payment_intents/${created.body.id}/capture`)
       .set('Authorization', bearer(seeded))
@@ -91,6 +101,33 @@ describe('payments e2e', () => {
       .set('Idempotency-Key', idempotencyKey('confirm-over', seeded.merchant.id))
       .send({});
 
+    const created = await createIntent();
+    const confirmed = await request(ctx.app.getHttpServer())
+      .post(`/v1/payment_intents/${created.body.id}/confirm`)
+      .set('Authorization', bearer(seeded))
+      .set('Idempotency-Key', idempotencyKey('confirm-refund', seeded.merchant.id))
+      .send({});
+
+    const res = await request(ctx.app.getHttpServer())
+      .post('/v1/refunds')
+      .set('Authorization', bearer(seeded))
+      .set('Idempotency-Key', idempotencyKey('refund', seeded.merchant.id))
+      .send({
+        charge_id: confirmed.body.latest_charge_id,
+        amount_minor: 1_500,
+        reason: 'requested_by_customer',
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({
+      object: 'refund',
+      charge_id: confirmed.body.latest_charge_id,
+      amount_minor: 1_500,
+      currency: 'GBP',
+    });
+  });
+
+  it('refuses a refund against an uncaptured authorisation', async () => {
     const res = await request(ctx.app.getHttpServer())
       .post('/v1/refunds')
       .set('Authorization', bearer(seeded))
