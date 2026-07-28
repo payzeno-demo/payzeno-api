@@ -51,6 +51,9 @@ export class SupportTaskEntity extends MerchantScopedEntity {
   @Column({ name: 'kind', type: 'text' })
   kind!: SupportTaskKind;
 
+  @Column({ name: 'severity', type: 'text', default: 'normal' })
+  severity!: SupportTaskSeverity;
+
   @Column({ name: 'status', type: 'text', default: 'open' })
   status!: SupportTaskStatus;
 
@@ -63,6 +66,10 @@ export class SupportTaskEntity extends MerchantScopedEntity {
   /** Free text, and it is what the support agent actually reads. Keep the facts in it. */
   @Column({ name: 'body', type: 'text' })
   body!: string;
+
+  /** `evt_` id of the bus event that opened this. Null for manually-filed tasks. */
+  @Column({ name: 'source_event_id', type: 'text', nullable: true })
+  sourceEventId!: string | null;
 
   @Column({ name: 'assigned_to', type: 'text', nullable: true })
   assignedTo!: string | null;

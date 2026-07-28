@@ -136,6 +136,7 @@ export class SupportTasksService {
   }
 
   private build(input: OpenSupportTaskInput): SupportTaskEntity {
+    const task = new SupportTaskEntity();
     const now = this.clock.now();
 
     task.id = this.ids.opaque('sup_');

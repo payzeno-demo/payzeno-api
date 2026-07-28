@@ -16,6 +16,22 @@ one idempotency backend, job locks) and SQS/SNS.
 It is **not** the ledger. Money movement is posted by payzeno-ledger from events we emit. If a
 balance looks wrong, the answer is almost never in this service.
 
+### Probes
+
+| Probe | Means | Checks |
+|---|---|---|
+| `GET /healthz` | liveness — "this process is running" | nothing. Failing it restarts the task. |
+| `GET /readyz` | readiness — "this task can serve traffic" | db, bus, ledger, vault |
+
+Every readiness check is bounded at 2s. That bound exists because in month 3 a hanging vault
+check produced a task the ALB neither drained nor killed, and we spent an afternoon on it.
+
+The ledger check calls the ledger's `/healthz`, its **liveness**, not its readiness —
+deliberately. Chaining readiness across services means one slow dependency takes the whole
+fleet out of rotation.
+
+---
+
 ## 2. Scheduled jobs
 
 All nine extend `ScheduledJob`, all nine hold a Redis lease through `@JobLock(name, ttlSeconds)`,
@@ -129,6 +145,26 @@ Symptom: the ledger is behind, or a merchant update has not propagated.
    first.
 4. **Never publish directly to SNS to "catch up".** ADR 0011. A direct publish bypasses the
    outbox's ordering and its dedupe, and you will not know which of your manual publishes landed.
+
+---
+
+## 6. Circuit breakers
+
+One opossum circuit per upstream, held in `CircuitBreakerRegistry`. Thresholds are 50% error
+rate over a 20-request rolling window with a 30s reset. Two production users:
+`BillingLegacyClient` (`billing-legacy`) and `AcquirerHttpClient` (one per acquirer).
+
+An open circuit returns a specific exception, not a generic 502: `LegacyBillingUnavailableException`
+for the biller, `ProcessorUnavailableException` for an acquirer. That distinction is what the
+console renders, so do not "simplify" it.
+
+**Closing a stuck circuit.** `CircuitBreakerRegistry.reset(name)` exists for this. It is exposed
+through the internal admin surface, not through a public route. Before you use it, confirm the
+upstream is actually healthy — a breaker closed onto a dead upstream re-opens in 20 requests and
+you have achieved nothing except a spike of timeouts.
+
+The breaker's own per-call timeout sits on top of the transport's. If calls are failing at 15s
+when the client is configured for 10s, you are looking at the breaker timeout, not the transport.
 
 ---
 

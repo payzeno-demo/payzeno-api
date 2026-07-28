@@ -50,6 +50,8 @@ export class UnsettledChargeSweepJob extends ScheduledJob {
 
   constructor(
     private readonly charges: ChargeRepository,
+    private readonly ledger: LedgerHttpClient,
+    private readonly transactions: TransactionManager,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(DISTRIBUTED_LOCK) lock: DistributedLock,
     @Inject(PAYZENO_LOGGER) logger: PayzenoLogger,
@@ -64,6 +66,8 @@ export class UnsettledChargeSweepJob extends ScheduledJob {
 
   @JobLock('unsettled-charge-sweep', 1800)
   async runOnce(): Promise<JobResult> {
+    const startedMs = Date.now();
+
     const result = await this.withLock(async () => {
       const cutoff = new Date(this.clock.nowMs() - SETTLEMENT_SLA_HOURS * 3_600_000);
       const stranded = await this.charges.findStrandedCaptures(
@@ -125,6 +129,30 @@ export class UnsettledChargeSweepJob extends ScheduledJob {
       reference_id: charge.id,
       limit: 20,
     });
+
+    const settlement = page.data.find(isSettlementTransaction);
+    if (!settlement) {
+      this.logger.warn('sweep.no_ledger_settlement', {
+        charge_id: charge.id,
+        merchant_id: charge.merchantId,
+        captured_at: charge.captured_at?.toISOString() ?? null,
+        ledger_transactions: page.data.length,
+      });
+      return false;
+    }
+
+    const batchId = settlementBatchIdOf(settlement);
+    if (!batchId) {
+      // The ledger settled it but the transaction carries no batch reference. Rare, and it
+      // means the item was posted by a manual adjustment rather than a batch pass.
+      this.logger.warn('sweep.settlement_without_batch', {
+        charge_id: charge.id,
+        transaction_id: settlement.id,
+      });
+      return false;
+    }
+
+    const settledAt = new Date(settlement.posted_at);
 
     const affected = await this.transactions.runInTransaction(async (tx) =>
       this.charges.markSettled(tx, [charge.id], batchId, settledAt),
