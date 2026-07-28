@@ -140,3 +140,10 @@ export class AppModule implements NestModule {
    *
    * `forRoutes('*')` deliberately includes `/healthz` — a probe that is not in the access log
    * is a probe you cannot prove was ever made when the ALB claims the task was unhealthy.
+   */
+  configure(consumer: MiddlewareConsumer): void {
+    consumer
+      .apply(RequestIdMiddleware, CorrelationIdMiddleware, StructuredLoggerMiddleware)
+      .forRoutes('*');
+  }
+}
