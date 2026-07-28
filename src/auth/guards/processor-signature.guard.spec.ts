@@ -18,6 +18,8 @@ import { guardContext } from 'test/support/guard-context';
  */
 describe('ProcessorSignatureGuard', () => {
   let verifier: { assertValid: jest.Mock };
+  let guard: ProcessorSignatureGuard;
+
   const rawBody = Buffer.from('{"event":"authorization.approved"}');
 
   beforeEach(() => {
@@ -26,6 +28,22 @@ describe('ProcessorSignatureGuard', () => {
       get: () => verifier as unknown as ProcessorSignatureVerifier,
     } as unknown as ModuleRef);
     guard.onModuleInit();
+  });
+
+  it('hands the acquirer, the raw bytes and the signature to the verifier', () => {
+    const { context } = guardContext({
+      method: 'POST',
+      params: { acquirer: 'worldflow' },
+      headers: { [SIGNATURE_HEADER]: 't=1767225600,v1=deadbeef' },
+      rawBody,
+    });
+
+    expect(guard.canActivate(context)).toBe(true);
+    expect(verifier.assertValid).toHaveBeenCalledWith(
+      'worldflow',
+      rawBody,
+      't=1767225600,v1=deadbeef',
+    );
   });
 
   it('accepts the second acquirer too', () => {

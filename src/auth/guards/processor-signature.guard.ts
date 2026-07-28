@@ -41,6 +41,28 @@ export class ProcessorSignatureGuard implements CanActivate, OnModuleInit {
     this.verifier = this.moduleRef.get(ProcessorSignatureVerifier, { strict: false });
   }
 
+  canActivate(context: ExecutionContext): boolean {
+    const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
+
+    const acquirer = this.acquirerOf(request);
+    const signature = headerValue(request.headers[SIGNATURE_HEADER]);
+
+    if (!signature) {
+      throw new AuthenticationRequiredException('Missing acquirer signature header', {
+        acquirer,
+      });
+    }
+
+    if (!request.rawBody) {
+      // A route reaching here without rawBody is a body-parser wiring bug, and verifying the
+      // re-serialised object instead would be a silent downgrade to no verification at all.
+      throw new AuthenticationRequiredException('Raw body unavailable for signature verification');
+    }
+
+    this.verifier.assertValid(acquirer, request.rawBody, signature);
+    return true;
+  }
+
   private acquirerOf(request: AuthenticatedRequest): Acquirer {
     const raw = request.params.acquirer;
 
