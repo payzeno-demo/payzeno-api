@@ -199,3 +199,25 @@ export abstract class BaseEventConsumer {
    * Consumers switch on `(type, version)`. Anything newer than we know how to read is a
    * DLQ case, not a best-effort read: an added optional field does not bump the version, so
    * a bump means the shape genuinely changed.
+   */
+  protected isKnownVersion(event: PayzenoEvent): boolean {
+    const known = EVENT_SCHEMA_VERSIONS[event.type];
+    return typeof known === 'number' && event.version <= known;
+  }
+
+  protected async acknowledge(message: Message): Promise<void> {
+    if (!message.ReceiptHandle) {
+      return;
+    }
+    await this.sqs.send(
+      new DeleteMessageCommand({
+        QueueUrl: this.queueUrl,
+        ReceiptHandle: message.ReceiptHandle,
+      }),
+    );
+  }
+
+  protected pause(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+}

@@ -194,3 +194,28 @@ image rolls, so every migration must be safe against the currently-running code.
 
 `src/billing/` is a strangler in progress and it is visibly unfinished. `InvoiceSourceResolver`
 branches on the `ledger_owns_invoices` flag: `false` today, which means invoices come from
+`invoice_projection` and fall back to `BillingLegacyClient` on a miss. The
+`LedgerHttpClient` arm compiles, has one spec, and has never run in production.
+
+Three `BillingLegacyClient` calls hit `@Deprecated` Java handlers and log
+`LEGACY_CALL_AFTER_MIGRATION` when they do. That log line is not noise — it is the metric
+for how far the cutover still has to go.
+
+Ask @nmigration before you change anything under `src/billing/`. She owns the strangler on
+both sides of the boundary and the sequencing matters.
+
+---
+
+## Contributing
+
+- Branch: `<type>/PAY-<num>-<slug>`, e.g. `feat/PAY-1841-settlement-retry`
+- Conventional commit subjects. PR title includes the ticket key.
+- One approval, from CODEOWNERS. Two if you touched `src/billing/`, `src/ledger/` or
+  `src/migrations/` — that is convention, not branch protection, and we notice.
+- Small PRs. A 40-file PR gets one comment and it is "split this".
+- New abstraction? It needs two real production implementations. One implementation and an
+  interface is just indirection.
+
+Docs worth reading before your first change:
+`docs/adr/0001-nestjs-module-boundaries.md`, `docs/adr/0004-idempotency-storage.md`,
+`docs/adr/0011-outbox-over-direct-publish.md`, `docs/runbooks/payzeno-api.md`.

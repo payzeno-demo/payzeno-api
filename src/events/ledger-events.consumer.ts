@@ -266,3 +266,22 @@ export class LedgerEventsConsumer extends BaseEventConsumer implements OnModuleI
         tolerance_minor: payload.tolerance_minor,
         line_type: payload.line_type,
       },
+      livemode: true,
+    });
+
+    if (Math.abs(payload.variance_minor) > payload.tolerance_minor && payload.merchant_id) {
+      await this.supportTasks.open(tx, {
+        kind: 'settlement_variance',
+        merchantId: payload.merchant_id,
+        chargeId: payload.charge_id,
+        severity: 'medium',
+        title: `Settlement variance on batch ${payload.batch_id}`,
+        body:
+          `expected=${payload.expected_gross_minor} actual=${payload.actual_gross_minor} ` +
+          `variance=${payload.variance_minor} tolerance=${payload.tolerance_minor} ` +
+          `${payload.currency}. Item ${payload.item_id} is parked at variance_exceeded.`,
+        sourceEventId,
+      });
+    }
+  }
+

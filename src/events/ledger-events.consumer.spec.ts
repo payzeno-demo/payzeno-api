@@ -172,6 +172,18 @@ describe('LedgerEventsConsumer', () => {
     );
   });
 
+  it('completes the batch once every chunk index has arrived', async () => {
+    tx.findOneBy.mockResolvedValueOnce(completion([0, 1], 2));
+
+    await consumer.handle(completedEvent({ chunk_index: 1 }), tx as unknown as EntityManager);
+
+    expect(tx.update).toHaveBeenCalledWith(
+      SettlementCompletion,
+      { batchId: 'sbt_1', runId: 'rec_1' },
+      expect.objectContaining({ completedAt: new Date('2026-03-01T02:00:00.000Z') }),
+    );
+  });
+
   it('audits every duplicate and opens a task for capture-at-settlement merchants', async () => {
     await consumer.handle(duplicateEvent(), tx as unknown as EntityManager);
 
@@ -185,4 +197,26 @@ describe('LedgerEventsConsumer', () => {
     );
   });
 
+  it('audits but does not open a task when the merchant captures at authorisation', async () => {
+    merchants.findInternal.mockResolvedValueOnce({ capture_at_settlement: false });
+
+    await consumer.handle(duplicateEvent(), tx as unknown as EntityManager);
+
+    expect(audit.record).toHaveBeenCalled();
+    expect(supportTasks.open).not.toHaveBeenCalled();
+  });
+
+  it('survives an unattributed duplicate (orphaned item, null charge and merchant)', async () => {
+    await consumer.handle(
+      duplicateEvent({ charge_id: null, merchant_id: null }),
+      tx as unknown as EntityManager,
+    );
+
+    expect(audit.record).toHaveBeenCalled();
+    expect(supportTasks.open).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      'settlement.duplicate_unattributed',
+      expect.objectContaining({ item_id: 'rci_9' }),
+    );
+  });
 });
