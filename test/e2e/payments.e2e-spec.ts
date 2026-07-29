@@ -69,6 +69,8 @@ describe('payments e2e', () => {
   });
 
   it('confirms, authorises through the processor and emits payment.authorized', async () => {
+    const created = await createIntent();
+
     const charge = await request(ctx.app.getHttpServer())
       .get(`/v1/charges/${res.body.latest_charge_id}`)
       .set('Authorization', bearer(seeded));
@@ -79,6 +81,14 @@ describe('payments e2e', () => {
   });
 
   it('manual capture leaves the intent in requires_capture until captured', async () => {
+    const confirmed = await request(ctx.app.getHttpServer())
+      .post(`/v1/payment_intents/${created.body.id}/confirm`)
+      .set('Authorization', bearer(seeded))
+      .set('Idempotency-Key', idempotencyKey('confirm-manual', seeded.merchant.id))
+      .send({});
+
+    expect(confirmed.body.status).toBe('requires_capture');
+
     const captured = await request(ctx.app.getHttpServer())
       .post(`/v1/payment_intents/${created.body.id}/capture`)
       .set('Authorization', bearer(seeded))
@@ -101,6 +111,17 @@ describe('payments e2e', () => {
       .set('Idempotency-Key', idempotencyKey('confirm-over', seeded.merchant.id))
       .send({});
 
+    const res = await request(ctx.app.getHttpServer())
+      .post(`/v1/payment_intents/${created.body.id}/capture`)
+      .set('Authorization', bearer(seeded))
+      .set('Idempotency-Key', idempotencyKey('capture-over', seeded.merchant.id))
+      .send({ amount_minor: 9_000 });
+
+    expect(res.status).toBe(422);
+    expect(res.body).toBeApiError();
+  });
+
+  it('refunds a captured charge and emits refund.created', async () => {
     const created = await createIntent();
     const confirmed = await request(ctx.app.getHttpServer())
       .post(`/v1/payment_intents/${created.body.id}/confirm`)
@@ -128,6 +149,12 @@ describe('payments e2e', () => {
   });
 
   it('refuses a refund against an uncaptured authorisation', async () => {
+    const confirmed = await request(ctx.app.getHttpServer())
+      .post(`/v1/payment_intents/${created.body.id}/confirm`)
+      .set('Authorization', bearer(seeded))
+      .set('Idempotency-Key', idempotencyKey('confirm-void', seeded.merchant.id))
+      .send({});
+
     const res = await request(ctx.app.getHttpServer())
       .post('/v1/refunds')
       .set('Authorization', bearer(seeded))
