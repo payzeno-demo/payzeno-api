@@ -13,3 +13,8 @@
 import { IsOptional, IsUrl, MaxLength } from 'class-validator';
 
 import type { ConfirmPaymentIntentRequest, PaymentMethodToken } from '@payzeno/contracts';
+
+import { Redact } from '../../common/decorators/redact.decorator';
+import { IsVaultToken } from '../../common/validators/payzeno-id.validator';
+
+@Redact('payment_method_token')
