@@ -161,3 +161,16 @@ export class ChargeCaptureService {
   }
 
   private assertCapturable(charge: ChargeEntity, amountMinor: number): void {
+    if (charge.status !== 'authorized') {
+      throw new ChargeNotCapturableException(charge.id, charge.status);
+    }
+    if (amountMinor <= 0 || amountMinor > Number(charge.amount_minor)) {
+      throw new ChargeNotCapturableException(charge.id, charge.status);
+    }
+    if (charge.authorization_expires_at && charge.authorization_expires_at.getTime() <= this.clock.now().getTime()) {
+      // The hold aged out. ChargeExpiryJob will move it to `expired` on its next pass; we do
+      // not do it here, because the acquirer must be told and that is the job's business.
+      throw new ChargeNotCapturableException(charge.id, charge.status);
+    }
+  }
+}

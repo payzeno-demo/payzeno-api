@@ -162,6 +162,16 @@ export class PaymentIntentsService extends BaseService<PaymentIntentEntity> {
     id: PaymentIntentId,
     request: CancelPaymentIntentRequest,
   ): Promise<PaymentIntent> {
+    const intent = await this.findOneOrThrow(id, scopeFrom(principal));
+    return toPaymentIntent(await this.cancelFlow.execute(intent, request));
+  }
+
+  /**
+   * `ClientSecretGuard`'s lookup. The secret is the credential and carries its own scope, so
+   * there is no merchant id to check against here — the guard builds the principal from the
+   * row this returns.
+   */
+  async getByClientSecret(clientSecret: string): Promise<PaymentIntentEntity> {
     const row = await this.intents.findByClientSecret(clientSecret);
     if (!row) {
       throw new PaymentIntentNotFoundException(null);

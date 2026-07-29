@@ -209,3 +209,21 @@ export function toCharge(row: ChargeEntity): Charge {
     processor_reference: row.processor_reference,
     authorization_code: row.authorization_code,
     capture_method: row.capture_method,
+    three_d_secure: row.three_d_secure,
+    sca_exemption: row.sca_exemption,
+    risk_score: row.risk_score,
+    failure_code: row.failure_code,
+    failure_message: row.failure_message,
+    settlement_batch_id: row.settlement_batch_id,
+    livemode: row.livemode,
+    metadata: row.metadata,
+    authorized_at: row.authorized_at ? row.authorized_at.toISOString() : null,
+    captured_at: row.captured_at ? row.captured_at.toISOString() : null,
+    settled_at: row.settled_at ? row.settled_at.toISOString() : null,
+    authorization_expires_at: row.authorization_expires_at
+      ? row.authorization_expires_at.toISOString()
+      : null,
+    created_at: row.createdAt.toISOString(),
+    updated_at: row.updatedAt.toISOString(),
+  };
+}

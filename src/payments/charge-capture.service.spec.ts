@@ -27,6 +27,42 @@ describe('ChargeCaptureService', () => {
   let txm: jest.Mocked<TransactionManager>;
   let adapter: { acquirer: 'worldflow'; capture: jest.Mock };
 
+  beforeEach(async () => {
+    adapter = {
+      acquirer: 'worldflow',
+      capture: jest.fn().mockResolvedValue({
+        captured: true,
+        processorReference: 'wf_cap_1',
+        capturedAmountMinor: 4_500,
+        capturedAt: '2026-01-15T12:00:00.000Z',
+      }),
+    };
+
+    repo = {
+      lockForUpdate: jest.fn(),
+      markCaptured: jest.fn().mockImplementation(async (id: string) => makeCapturedCharge({ id })),
+    } as unknown as jest.Mocked<ChargeRepository>;
+
+    router = { select: jest.fn().mockReturnValue(adapter) } as unknown as jest.Mocked<ProcessorRouter>;
+    publisher = { publish: jest.fn().mockResolvedValue('evt_1') } as unknown as jest.Mocked<OutboxEventPublisher>;
+    txm = {
+      runInTransaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => unknown) => cb({})),
+    } as unknown as jest.Mocked<TransactionManager>;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        ChargeCaptureService,
+        { provide: ChargeRepository, useValue: repo },
+        { provide: ProcessorRouter, useValue: router },
+        { provide: OutboxEventPublisher, useValue: publisher },
+        { provide: TransactionManager, useValue: txm },
+        { provide: PayzenoLogger, useValue: new NoopLogger() },
+      ],
+    }).compile();
+
+    service = moduleRef.get(ChargeCaptureService);
+  });
+
   const merchant = makeMerchant();
 
   it('captures an authorised charge through the acquirer', async () => {
@@ -44,12 +80,41 @@ describe('ChargeCaptureService', () => {
     expect(result.status).toBe('captured');
   });
 
+  it('locks the row FOR UPDATE before deciding anything', async () => {
+    const charge = makeCharge({ status: 'authorized' });
+    repo.lockForUpdate.mockResolvedValue(charge as never);
+
+    await service.captureCharge(merchant, charge.id, 4_500);
+
+    expect(repo.lockForUpdate).toHaveBeenCalledWith(charge.id, expect.anything());
+    expect(repo.lockForUpdate.mock.invocationCallOrder[0]).toBeLessThan(
+      adapter.capture.mock.invocationCallOrder[0],
+    );
+  });
+
   it('runs the capture inside a transaction', async () => {
     repo.lockForUpdate.mockResolvedValue(makeCharge({ status: 'authorized' }) as never);
 
     await service.captureCharge(merchant, 'ch_1', 4_500);
 
     expect(txm.runInTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('emits payment.captured through the outbox, inside the same transaction', async () => {
+    const charge = makeCharge({ status: 'authorized' });
+    repo.lockForUpdate.mockResolvedValue(charge as never);
+
+    await service.captureCharge(merchant, charge.id, 4_500);
+
+    expect(publisher.publish).toHaveBeenCalledWith(
+      'payment.captured',
+      expect.objectContaining({
+        charge_id: charge.id,
+        captured_amount_minor: 4_500,
+        authorized_amount_minor: charge.amount_minor,
+      }),
+      expect.anything(),
+    );
   });
 
   it('throws ChargeNotCapturableException for a charge that is not authorized', async () => {

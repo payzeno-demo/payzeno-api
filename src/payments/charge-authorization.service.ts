@@ -204,5 +204,40 @@ export class ChargeAuthorizationService {
     command: AuthorizeChargeCommand,
     exception: CardDeclinedException,
   ): Promise<void> {
+    const failedAt = this.clock.now();
+    await this.transactions.runInTransaction(async (manager) => {
+      await this.charges.markDeclined(manager, charge.id, exception.declineCode, exception.message);
+      await this.events.publish(
+        'payment.failed',
+        {
+          charge_id: charge.id,
+          payment_intent_id: command.paymentIntentId,
+          merchant_id: command.merchant.id,
+          amount_minor: command.amountMinor,
+          currency: command.currency,
+          failure_code: exception.declineCode,
+          failure_message: exception.message,
+          retryable: isRetryableDecline(exception.declineCode),
+          failed_at: failedAt.toISOString(),
+        },
+        {
+          merchantId: command.merchant.id,
+          correlationId: command.correlationId,
+          causationId: null,
+          livemode: command.livemode,
+          occurredAt: failedAt.toISOString(),
+        },
+      );
+    });
+  }
+
+  private declineException(code: string, message: string): CardDeclinedException {
+    if (code === 'insufficient_funds') {
+      return new InsufficientFundsException(message, code);
+    }
+    if (code === 'expired_card') {
+      return new ExpiredCardException(message, code);
+    }
+    return new CardDeclinedException(message, code);
   }
 }
