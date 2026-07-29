@@ -108,6 +108,7 @@ export class BankAccountsService extends BaseService<BankAccountEntity> {
     private readonly accounts: BankAccountRepository,
     private readonly transactions: TransactionManager,
     private readonly ids: IdFactory,
+    @Inject(EVENT_PUBLISHER) private readonly events: EventPublisher,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(PAYZENO_LOGGER) logger: PayzenoLogger,
   ) {
@@ -141,6 +142,8 @@ export class BankAccountsService extends BaseService<BankAccountEntity> {
 
   async create(scope: MerchantScope, request: CreateBankAccountRequest): Promise<BankAccount> {
     this.assertSchemeMatchesCurrency(request.scheme, request.currency);
+
+    const account = this.build(scope, request);
 
     const saved = await this.transactions.runInTransaction(async (manager) => {
       if (account.isDefault) {
@@ -241,5 +244,16 @@ export class BankAccountsService extends BaseService<BankAccountEntity> {
   }
 
   private assertSchemeMatchesCurrency(scheme: BankAccountScheme, currency: CurrencyCode): void {
+    const allowed = CURRENCY_BY_SCHEME[scheme];
+
+    if (!allowed.includes(currency)) {
+      throw new ValidationException(`A ${scheme} account cannot settle ${currency}`, [
+        {
+          path: 'scheme',
+          code: 'scheme_currency_mismatch',
+          message: `${scheme} settles ${allowed.join(', ')}`,
+        },
+      ]);
+    }
   }
 }

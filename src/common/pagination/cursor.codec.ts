@@ -65,3 +65,11 @@ export function decodeCursor(raw: string): Cursor {
 
 /** Null-tolerant: an absent cursor means "first page", which is not an error. */
 export function decodeOptionalCursor(raw: string | undefined | null): Cursor | null {
+  return raw ? decodeCursor(raw) : null;
+}
+
+function invalidCursor(reason: string): ValidationException {
+  return new ValidationException('Invalid cursor', [
+    { path: 'cursor', code: 'invalid_cursor', message: reason },
+  ]);
+}

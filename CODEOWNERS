@@ -40,3 +40,12 @@
 /src/common/redaction/              @dhotfix @osquash
 /src/payments/vault/                @dhotfix @osquash
 /docs/compliance/                   @dhotfix
+
+# --- websocket relay: Web depends on the payload shape ------------------------
+/src/notifications/                 @payzeno/platform @payzeno/web
+
+# --- docs ---------------------------------------------------------------------
+/docs/adr/                          @dhotfix @osquash
+/docs/runbooks/                     @payzeno/infrastructure
+/README.md                          @payzeno/platform
+/CODEOWNERS                         @osquash
