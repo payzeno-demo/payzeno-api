@@ -61,6 +61,18 @@ export function makeSessionPrincipalWithRole(role: UserRole): AuthPrincipal {
   return makeSessionPrincipal({ role });
 }
 
+export function makeStaffPrincipal(
+  overrides: Partial<Extract<AuthPrincipal, { kind: 'staff_session' }>> = {},
+): AuthPrincipal {
+  return {
+    kind: 'staff_session',
+    staff_id: fixedId('stf_', 'payzeno-operator'),
+    role: 'support',
+    acting_merchant_id: null,
+    ...overrides,
+  };
+}
+
 /** `POST /v1/settlements/:b/items/:i/retry` is `@StaffOnly('finance')` and livemode-only. */
 export function makeFinanceStaffPrincipal(actingMerchantId: MerchantId | null = null): AuthPrincipal {
   return makeStaffPrincipal({ role: 'finance', acting_merchant_id: actingMerchantId });
@@ -80,6 +92,17 @@ export function makeInternalPrincipal(
     kind: 'internal_service',
     service: 'payzeno-ledger',
     scopes: ['internal:read', 'internal:write'],
+    ...overrides,
+  };
+}
+
+export function makeClientSecretPrincipal(
+  overrides: Partial<Extract<AuthPrincipal, { kind: 'client_secret' }>> = {},
+): AuthPrincipal {
+  return {
+    kind: 'client_secret',
+    merchant_id: TEST_MERCHANT_ID,
+    payment_intent_id: TEST_PAYMENT_INTENT_ID,
     ...overrides,
   };
 }

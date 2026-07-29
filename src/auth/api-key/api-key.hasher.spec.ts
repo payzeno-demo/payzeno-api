@@ -51,6 +51,12 @@ describe('ApiKeyHasher', () => {
       expect(rotated.lookupHash('s3cr3t')).not.toBe(hasher.lookupHash('s3cr3t'));
     });
 
+    it('separates two secrets that differ by one character', () => {
+      expect(hasher.lookupHash('s3cr3t')).not.toBe(hasher.lookupHash('s3cr3T'));
+    });
+  });
+
+  describe('hashSecret / verifySecret', () => {
     it('hashes with argon2id at the OWASP baseline', async () => {
       await hasher.hashSecret('s3cr3t');
 
@@ -125,5 +131,14 @@ describe('ApiKeyHasher', () => {
       expect(ApiKeyHasher.constantTimeEquals('abc123', 'abc124')).toBe(false);
     });
 
+    it('is false — not a throw — for different lengths', () => {
+      // timingSafeEqual throws on a length mismatch; the guard callers must get a boolean.
+      expect(ApiKeyHasher.constantTimeEquals('abc', 'abcdef')).toBe(false);
+    });
+
+    it('handles the empty string', () => {
+      expect(ApiKeyHasher.constantTimeEquals('', '')).toBe(true);
+      expect(ApiKeyHasher.constantTimeEquals('', 'x')).toBe(false);
+    });
   });
 });

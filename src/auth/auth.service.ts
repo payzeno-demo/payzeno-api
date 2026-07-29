@@ -86,6 +86,30 @@ export class AuthService {
 
     if (!merchant) throw new MerchantNotFoundException(user.merchantId);
 
+    const issued = await this.sessions.issue(user.id, user.merchantId, user.role, origin);
+    await this.users.touchLastLogin(user.id, this.clock.now());
+
+    return {
+      issued,
+      body: {
+        object: 'login',
+        user: user.toUser(),
+        merchant: toMerchantResponse(merchant),
+      },
+    };
+  }
+
+  /**
+   * The Payzeno-operator login. Same route, same cookies — the difference is which table the
+   * credential lives in and that the resulting session carries no merchant.
+   */
+  async loginStaff(email: string, password: string, origin: SessionOrigin): Promise<IssuedSession> {
+    /**
+     * The verify, the disabled-account check and the `last_login_at` touch all live inside
+     * `StaffUsersService.authenticate` — `staff_user.password_hash` never leaves that file,
+     * which is the whole reason this branch delegates instead of reading the table itself.
+     * A null answer covers "no such operator", "wrong password" and "disabled" alike.
+     */
     const operator = await this.staff.authenticate(email.trim().toLowerCase(), password);
 
     if (!operator) {
@@ -99,6 +123,12 @@ export class AuthService {
 
   /** `GET /v1/auth/me` — the console bootstrap call. Also refreshes `pz_csrf`. */
   async describeSession(sessionId: string): Promise<{ body: SessionResponse; csrfToken: string }> {
+    const record = await this.sessions.requireRecord(sessionId);
+
+    if (record.kind !== 'merchant_user' || !record.userId || !record.merchantId) {
+      throw new AuthenticationRequiredException('Not a merchant session');
+    }
+
     const user = await this.users.findByIdForMerchant(record.merchantId, record.userId);
     const merchant = await this.merchants.findById(record.merchantId);
 
