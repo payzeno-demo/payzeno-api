@@ -23,6 +23,13 @@ export const WRITE_SCOPES: readonly ApiKeyScope[] = API_KEY_SCOPES.filter((s) =>
  * What a key gets when `CreateApiKeyRequest.scopes` is omitted: every read scope, no writes.
  * A merchant who wants to move money has to say so.
  */
+export const DEFAULT_SCOPES: readonly ApiKeyScope[] = READ_SCOPES;
+
+/**
+ * Write implies read on the same resource. Held as a table rather than derived from the
+ * string, because `balance:read` has no write counterpart and `settlements:read` is granted
+ * by nothing — deriving it would quietly invent scopes that do not exist.
+ */
 export const IMPLIED_SCOPES: Readonly<Partial<Record<ApiKeyScope, readonly ApiKeyScope[]>>> = {
   'payment_intents:write': ['payment_intents:read', 'charges:read'],
   'refunds:write': ['refunds:read'],
@@ -44,6 +51,15 @@ export function expandScopes(granted: readonly ApiKeyScope[]): ApiKeyScope[] {
 
 export function isApiKeyScope(value: string): value is ApiKeyScope {
   return (API_KEY_SCOPES as readonly string[]).includes(value);
+}
+
+/** Rejects unknown strings at the DTO boundary so migration 19's column stays a vocabulary. */
+export function parseScopes(values: readonly string[]): ApiKeyScope[] {
+  const unknown = values.filter((v) => !isApiKeyScope(v));
+  if (unknown.length > 0) {
+    throw new UnknownScopeError(unknown);
+  }
+  return values as ApiKeyScope[];
 }
 
 export class UnknownScopeError extends Error {

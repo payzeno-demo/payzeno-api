@@ -61,6 +61,16 @@ export class ApiKeysController extends BaseController {
   /** 201, and the ONLY response that ever carries the plaintext `sk_…`. */
   @Post()
   @Roles('owner', 'admin')
+  @Idempotent()
+  @AuditLog('api_key.create', { resourceType: 'api_key' })
+  async create(
+    @CurrentPrincipal() principal: AuthPrincipal,
+    @Body() body: CreateApiKeyDto,
+  ): Promise<CreateApiKeyResponse> {
+    const scope = this.scopeOf(principal);
+    return this.keys.create(scope.merchantId, body, scope);
+  }
+
   @Delete(':apiKeyId')
   @HttpCode(204)
   @Roles('owner', 'admin')

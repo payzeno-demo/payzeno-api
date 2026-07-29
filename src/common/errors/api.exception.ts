@@ -56,6 +56,23 @@ export abstract class ApiException extends PayzenoError {
 function scalarDetails(
   details: Record<string, unknown>,
 ): Record<string, string | number | boolean | null> {
+  const out: Record<string, string | number | boolean | null> = {};
+
+  for (const [key, value] of Object.entries(details ?? {})) {
+    if (value === null || ['string', 'number', 'boolean'].includes(typeof value)) {
+      out[key] = value as string | number | boolean | null;
+    }
+  }
+
+  return out;
+}
+
+/**
+ * 422. Produced by `validationExceptionFactory` from class-validator output, and thrown
+ * directly by the handful of validators that need cross-field context (statement descriptor
+ * length against the merchant's, capture amount against the authorised amount).
+ */
+export class ValidationException extends ApiException {
   readonly code: ErrorCode = 'validation_failed';
   readonly httpStatus = 422;
 
