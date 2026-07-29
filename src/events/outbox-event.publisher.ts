@@ -33,6 +33,7 @@ import type { PublishContext } from './publisher.types';
 export class OutboxEventPublisher implements EventPublisher {
   constructor(
     private readonly outbox: EventOutboxRepository,
+    private readonly transactions: TransactionManager,
     private readonly ids: IdFactory,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
@@ -70,6 +71,39 @@ export class OutboxEventPublisher implements EventPublisher {
    */
   async publishBatch(events: ReadonlyArray<PayzenoEvent>): Promise<string[]> {
     const tx = this.transactions.currentManager();
+    const ids: string[] = [];
+
+    for (const event of events) {
+      if (!isApiOwnedEvent(event.type)) {
+        throw new Error(`payzeno-api does not own event type "${event.type}"`);
+      }
+      const row = new EventOutbox();
+      row.id = event.id || this.ids.generate(ApiIdPrefix.EVENT);
+      row.type = event.type;
+      row.version = event.version || EVENT_SCHEMA_VERSIONS[event.type];
+      row.payload = event.payload as unknown as Record<string, unknown>;
+      row.merchantId = event.merchant_id;
+      row.correlationId = event.correlation_id;
+      row.causationId = event.causation_id;
+      row.livemode = event.livemode;
+      row.occurredAt = new Date(event.occurred_at);
+      row.attemptCount = 0;
+      row.nextAttemptAt = this.clock.now();
+      row.createdAt = this.clock.now();
+
+      await this.outbox.enqueue(tx, row);
+      ids.push(row.id);
+    }
+
+    this.logger.info('outbox.enqueued_batch', { count: ids.length });
+    return ids;
+  }
+
+  private toRow<T extends EventType>(
+    type: T,
+    payload: PayloadOfType<T>,
+    ctx: PublishContext,
+  ): EventOutbox {
     const now = this.clock.now();
     const row = new EventOutbox();
     row.id = this.ids.generate(ApiIdPrefix.EVENT);

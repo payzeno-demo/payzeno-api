@@ -285,3 +285,22 @@ export class LedgerEventsConsumer extends BaseEventConsumer implements OnModuleI
     }
   }
 
+  /**
+   * Payouts are owned by the ledger; payzeno-api keeps the audit trail so the console's
+   * activity feed and a support agent's timeline agree with the ledger's.
+   */
+  private async onPayoutOutcome(event: PayzenoEvent, tx: EntityManager): Promise<void> {
+    const payload = event.payload as { payout_id: string; merchant_id: string };
+    await this.audit.record(tx, {
+      merchantId: payload.merchant_id,
+      actorType: 'system',
+      actorId: 'payzeno-ledger',
+      action: event.type,
+      resourceType: 'payout',
+      resourceId: payload.payout_id,
+      before: null,
+      after: event.payload as unknown as Record<string, unknown>,
+      livemode: event.livemode,
+    });
+  }
+}

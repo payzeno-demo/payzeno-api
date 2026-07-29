@@ -41,6 +41,7 @@ export class WebhookFanoutConsumer extends BaseEventConsumer implements OnModule
     'settlement.item_settled',
   ]);
 
+  private endpoints!: WebhookEndpointsService;
   private events!: WebhookEventsService;
 
   constructor(

@@ -97,6 +97,13 @@ export class EventOutboxRepository extends PayzenoRepository<EventOutbox> {
     return dead ? 'dead' : 'retrying';
   }
 
+  /** Ops surface: how far behind is the bus right now. Read by `HealthService.readyz`. */
+  async pendingCount(): Promise<number> {
+    return this.manager.count(EventOutbox, {
+      where: { publishedAt: null, deadAt: null },
+    });
+  }
+
   /** Rows the drain gave up on. Alarmed on by the infra `payzeno-api-outbox-dead` metric. */
   async deadCount(): Promise<number> {
     return this.manager

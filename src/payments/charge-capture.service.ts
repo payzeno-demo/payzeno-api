@@ -149,3 +149,15 @@ export class ChargeCaptureService {
       amountMinor,
       platformFeeBps: merchant.platform_fee_bps,
       platformFeeFixedMinor: merchant.platform_fee_fixed_minor,
+      reserveBps: merchant.reserve_bps,
+    });
+
+    return {
+      chargeId: charge.id,
+      capturedAmountMinor: amountMinor,
+      capturedAt,
+      processorCaptureIssued: !deferred,
+    };
+  }
+
+  private assertCapturable(charge: ChargeEntity, amountMinor: number): void {
