@@ -41,11 +41,24 @@ export class BankAccountEntity extends MerchantScopedEntity {
   @Column({ name: 'country', type: 'char', length: 2, transformer: trimmedCharTransformer })
   country!: string;
 
+  @Column({ name: 'currency', type: 'char', length: 3, transformer: currencyTransformer })
+  currency!: CurrencyCode;
+
   @Column({ name: 'bank_name', type: 'text' })
   bankName!: string;
 
   @Column({ name: 'scheme', type: 'text' })
   scheme!: BankAccountScheme;
+
+  /** Vault token, `bat_` prefixed. Never the number. */
+  @Column({ name: 'account_number_token', type: 'text', select: false })
+  accountNumberToken!: string;
+
+  @Column({ name: 'last_four', type: 'char', length: 4, nullable: true })
+  lastFour!: string | null;
+
+  @Column({ name: 'routing_last_four', type: 'char', length: 4, nullable: true })
+  routingLastFour!: string | null;
 
   @Column({ name: 'iban_last_four', type: 'char', length: 4, nullable: true })
   ibanLastFour!: string | null;
@@ -55,6 +68,9 @@ export class BankAccountEntity extends MerchantScopedEntity {
 
   @Column({ name: 'sort_code_last_four', type: 'char', length: 4, nullable: true })
   sortCodeLastFour!: string | null;
+
+  @Column({ name: 'status', type: 'text', default: 'new' })
+  status!: BankAccountStatus;
 
   @Column({ name: 'is_default', type: 'boolean', default: false })
   isDefault!: boolean;
@@ -80,4 +96,41 @@ export class BankAccountEntity extends MerchantScopedEntity {
     return this.status === 'validated';
   }
 
+  toBankAccount(): {
+    id: string;
+    object: 'bank_account';
+    merchant_id: MerchantId;
+    country: string;
+    currency: CurrencyCode;
+    bank_name: string;
+    scheme: BankAccountScheme;
+    last_four: string;
+    routing_last_four: string | null;
+    iban_last_four: string | null;
+    bic: string | null;
+    sort_code_last_four: string | null;
+    status: BankAccountStatus;
+    is_default: boolean;
+    livemode: boolean;
+    created_at: string;
+  } {
+    return {
+      id: this.id,
+      object: 'bank_account',
+      merchant_id: this.merchantId,
+      country: this.country,
+      currency: this.currency,
+      bank_name: this.bankName,
+      scheme: this.scheme,
+      last_four: this.lastFour ?? '0000',
+      routing_last_four: this.routingLastFour,
+      iban_last_four: this.ibanLastFour,
+      bic: this.bic,
+      sort_code_last_four: this.sortCodeLastFour,
+      status: this.status,
+      is_default: this.isDefault,
+      livemode: this.livemode,
+      created_at: this.toIsoCreatedAt(),
+    };
+  }
 }

@@ -75,6 +75,7 @@ export class ApiKeysService extends BaseService<ApiKeyEntity> {
     private readonly keys: ApiKeyRepository,
     private readonly hasher: ApiKeyHasher,
     private readonly ids: IdFactory,
+    @Inject(CLOCK) private readonly clock: Clock,
     @Inject(PAYZENO_LOGGER) logger: PayzenoLogger,
   ) {
     super(keys, logger);

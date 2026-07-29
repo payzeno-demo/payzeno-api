@@ -40,6 +40,16 @@ export class BankAccountsController extends BaseController {
     return this.accounts.list(this.scopeOf(principal), query as ListQuery);
   }
 
+  @Get(':bankAccountId')
+  async get(
+    @CurrentPrincipal() principal: AuthPrincipal,
+    @Param('bankAccountId') bankAccountId: string,
+  ): Promise<BankAccount> {
+    return this.accounts.get(this.scopeOf(principal), bankAccountId);
+  }
+
+  /** 201. Emits `merchant.bank_account_verified`, which is what feeds the ledger projection. */
+  @Post()
   @Roles('owner', 'admin')
   @Idempotent()
   @AuditLog('bank_account.create', { resourceType: 'bank_account' })
@@ -51,6 +61,7 @@ export class BankAccountsController extends BaseController {
   }
 
   @Post(':bankAccountId/default')
+  @Roles('owner', 'admin')
   @Idempotent()
   @AuditLog('bank_account.make_default', { resourceType: 'bank_account', idParam: 'bankAccountId' })
   async makeDefault(
