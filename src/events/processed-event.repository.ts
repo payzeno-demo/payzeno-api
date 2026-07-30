@@ -52,6 +52,19 @@ export class ProcessedEventRepository extends PayzenoRepository<ProcessedEvent> 
     return count > 0;
   }
 
+  /** `ProcessedEventRetentionJob`, daily at 03:00. Bounded so it cannot lock the table. */
+  async deleteOlderThan(cutoff: Date, batchSize: number): Promise<number> {
+    const stale = await this.manager.find(ProcessedEvent, {
+      where: { processedAt: LessThan(cutoff) },
+      take: batchSize,
+    });
+    if (stale.length === 0) {
+      return 0;
+    }
+    await this.manager.remove(stale);
+    return stale.length;
+  }
+
   retentionCutoff(now: Date): Date {
     return new Date(now.getTime() - PROCESSED_EVENT_RETENTION_DAYS * 24 * 60 * 60 * 1000);
   }

@@ -114,3 +114,14 @@ export class HttpExceptionFilter implements ExceptionFilter {
       this.logger.error('request failed with a fault', exception, { status, code });
       return;
     }
+    if (status === 429) {
+      this.logger.warn('request rate limited', { status, code });
+      return;
+    }
+    this.logger.debug('request refused', { status, code });
+  }
+}
+
+function envelope(code: ErrorCode, message: string, requestId: string): ApiError {
+  return { error: { code, message, request_id: requestId } };
+}

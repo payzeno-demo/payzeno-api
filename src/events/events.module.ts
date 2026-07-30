@@ -77,6 +77,7 @@ export class EventsModule implements OnApplicationBootstrap, OnApplicationShutdo
   constructor(
     @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
     private readonly ledgerEvents: LedgerEventsConsumer,
+    private readonly webhookFanout: WebhookFanoutConsumer,
     private readonly invoiceProjection: InvoiceProjectionConsumer,
     private readonly deadLetter: DeadLetterConsumer,
   ) {}

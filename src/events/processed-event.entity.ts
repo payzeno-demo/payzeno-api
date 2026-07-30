@@ -28,3 +28,5 @@ export class ProcessedEvent {
   processedAt!: Date;
 }
 
+/** Retention window enforced by `ProcessedEventRetentionJob` (daily, 03:00). */
+export const PROCESSED_EVENT_RETENTION_DAYS = 30;
