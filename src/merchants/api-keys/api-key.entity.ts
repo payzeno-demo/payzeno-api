@@ -33,6 +33,9 @@ export class ApiKeyEntity extends MerchantScopedEntity {
   @Column({ name: 'name', type: 'text' })
   name!: string;
 
+  @Column({ name: 'mode', type: 'text' })
+  mode!: ApiKeyMode;
+
   /** `sk_live_` / `sk_test_`. Stored so the console can render it without the secret. */
   @Column({ name: 'prefix', type: 'varchar', length: 12 })
   prefix!: string;
@@ -43,6 +46,14 @@ export class ApiKeyEntity extends MerchantScopedEntity {
   @Column({ name: 'secret_hash', type: 'text', select: false })
   secretHash!: string;
 
+  @Column({ name: 'last_four', type: 'char', length: 4 })
+  lastFour!: string;
+
+  /**
+   * Migration 19 (ystackoverflow, three review rounds). The vocabulary is `API_KEY_SCOPES`
+   * and `@RequiredScopes(...)` is its only reader — without a declared vocabulary this column
+   * has nothing checking it and every key is effectively unrestricted.
+   */
   @Column({ name: 'scopes', type: 'text', array: true, default: () => "'{}'" })
   scopes!: ApiKeyScope[];
 
@@ -53,6 +64,32 @@ export class ApiKeyEntity extends MerchantScopedEntity {
     return this.revokedAt !== null && this.revokedAt <= now;
   }
 
+  /** The wire shape. Neither hash is on it and neither ever will be. */
+  toApiKey(): {
+    id: string;
+    object: 'api_key';
+    merchant_id: MerchantId;
+    name: string;
+    mode: ApiKeyMode;
+    prefix: string;
+    last_four: string;
+    scopes: ApiKeyScope[];
+    created_at: string;
+    revoked_at: string | null;
+  } {
+    return {
+      id: this.id,
+      object: 'api_key',
+      merchant_id: this.merchantId,
+      name: this.name,
+      mode: this.mode,
+      prefix: this.prefix,
+      last_four: this.lastFour,
+      scopes: [...this.scopes],
+      created_at: this.toIsoCreatedAt(),
+      revoked_at: this.revokedAt ? this.revokedAt.toISOString() : null,
+    };
+  }
 }
 
 /**

@@ -181,6 +181,25 @@ describe('ApiKeysService', () => {
   });
 
   describe('list', () => {
+    it('maps the page to wire shapes', async () => {
+      const page = await service.list(scope, { limit: 20 });
+
+      expect(page.data[0].object).toBe('api_key');
+      expect(page.has_more).toBe(false);
+    });
+  });
+
+  describe('revoke', () => {
+    it('is a timestamp write, not a DELETE — audit_log points at these ids', async () => {
+      await service.revoke(TEST_MERCHANT_ID, TEST_API_KEY_ID);
+
+      expect(keys.revoke).toHaveBeenCalledWith(
+        TEST_MERCHANT_ID,
+        TEST_API_KEY_ID,
+        clock.now(),
+      );
+    });
+
     it('404s an unknown key and an already-revoked one alike', async () => {
       keys.revoke.mockResolvedValue(0);
 
