@@ -48,6 +48,7 @@ export class InternalServiceGuard extends BaseAuthGuard {
   constructor(
     @Inject(API_CONFIG) config: ApiConfig,
     private readonly principals: PrincipalFactory,
+    private readonly reflector: Reflector,
     @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
   ) {
     super();
@@ -55,6 +56,9 @@ export class InternalServiceGuard extends BaseAuthGuard {
   }
 
   override async canActivate(context: ExecutionContext): Promise<boolean> {
+    const activated = await super.canActivate(context);
+    if (!activated) return false;
+
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const principal = request.principal;
 

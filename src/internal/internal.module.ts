@@ -27,3 +27,10 @@ import { InternalService } from './internal.service';
     MerchantsModule,
     PaymentsModule,
     WebhooksModule,
+    SupportModule,
+  ],
+  controllers: [InternalController],
+  providers: [InternalService],
+  exports: [InternalService],
+})
+export class InternalModule {}

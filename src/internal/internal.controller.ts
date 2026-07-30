@@ -78,6 +78,7 @@ export class MarkChargeSettledDto implements MarkChargeSettledInput {
 }
 
 export class CreateSupportTaskDto implements CreateSupportTaskInput {
+  @IsString()
   @MaxLength(64)
   kind!: string;
 
@@ -143,6 +144,15 @@ export class InternalController {
    */
   @Post('charges/:chargeId/settled')
   @InternalOnly('payzeno-ledger')
+  @AuditLog('charge.settled.out_of_band', { resourceType: 'charge', idParam: 'chargeId' })
+  async markChargeSettled(
+    @Param('chargeId') chargeId: string,
+    @Body() body: MarkChargeSettledDto,
+    @CurrentPrincipal() principal: AuthPrincipal,
+  ): Promise<Charge> {
+    return this.internal.markChargeSettled(chargeId, body, callerOf(principal));
+  }
+
   /** The ledger's fanout-worthiness check. Never served from a projection. */
   @Get('webhook_endpoints')
   @InternalOnly('payzeno-ledger', 'payzeno-billing-legacy')
@@ -171,4 +181,19 @@ export class InternalController {
 
   /** Fallback for a stale `bank_account_projection`. Token only, never the number. */
   @Get('bank-accounts/:bankAccountId')
+  @InternalOnly('payzeno-ledger')
+  async getBankAccount(
+    @Param('bankAccountId') bankAccountId: string,
+    @CurrentPrincipal() principal: AuthPrincipal,
+  ): Promise<BankAccount> {
+    return this.internal.getBankAccount(bankAccountId, callerOf(principal));
+  }
+}
+
+/**
+ * The guard has already proved the principal is `internal_service`; this narrows it for the
+ * service layer so a caller name never has to be reconstructed from a header downstream.
+ */
+function callerOf(principal: AuthPrincipal): InternalCallerName {
+  return principal.kind === 'internal_service' ? principal.service : 'payzeno-ledger';
 }
