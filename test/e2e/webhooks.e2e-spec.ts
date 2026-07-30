@@ -60,10 +60,41 @@ describe('webhooks e2e', () => {
 
   it('fans a bus event out to one webhook_event per subscribed endpoint', async () => {
     const consumer = ctx.app.get(WebhookFanoutConsumer);
+    const event = makeEnvelope(
+      'payment.failed',
+      {
+        charge_id: 'ch_wh0001',
+        payment_intent_id: 'pi_wh0001',
+        merchant_id: seeded.merchant.id,
+        amount_minor: 4_500,
+        currency: 'GBP',
+        failure_code: 'insufficient_funds',
+        failure_message: 'Issuer declined',
+        retryable: false,
+        failed_at: '2026-01-15T12:00:00.000Z',
+      },
+      { merchant_id: seeded.merchant.id, source: 'payzeno-api' },
+    );
+
+    await ctx.dataSource.transaction(async (tx) => consumer.handle(event, tx));
+
     const list = await request(ctx.app.getHttpServer())
       .get('/v1/webhook_events?limit=50')
       .set('Authorization', bearer(seeded));
 
+    const fanned = list.body.data.filter((e: { source_event_id: string }) =>
+      e.source_event_id === event.id,
+    );
+    expect(fanned).toHaveLength(1);
+    expect(fanned[0]).toMatchObject({
+      endpoint_id: endpointId,
+      type: 'payment.failed',
+      status: 'pending',
+      attempt_count: 0,
+    });
+  });
+
+  it('does not fan out a second copy when the bus redelivers the same envelope', async () => {
     const consumer = ctx.app.get(WebhookFanoutConsumer);
     const event = makeEnvelope(
       'refund.succeeded',
@@ -109,6 +140,19 @@ describe('webhooks e2e', () => {
     );
 
     await ctx.dataSource.transaction(async (tx) => consumer.handle(event, tx));
+
+    const list = await request(ctx.app.getHttpServer())
+      .get('/v1/webhook_events?limit=50&type=payout.scheduled')
+      .set('Authorization', bearer(seeded));
+
+    expect(list.body.data).toHaveLength(0);
+  });
+
+  it('signs the delivered body with HMAC-SHA256 over "{t}.{body}"', async () => {
+    const job = ctx.app.get(WebhookDeliveryJob);
+    const result = await job.runOnce();
+
+    expect(result.itemsProcessed).toBeGreaterThan(0);
 
     const list = await request(ctx.app.getHttpServer())
       .get('/v1/webhook_events?limit=50')

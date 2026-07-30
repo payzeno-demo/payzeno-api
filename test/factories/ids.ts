@@ -9,10 +9,25 @@
  */
 const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 
+const counters = new Map<string, number>();
+
 export function nextId(prefix: string): string {
   const n = (counters.get(prefix) ?? 0) + 1;
   counters.set(prefix, n);
   return `${prefix}${body(prefix, n)}`;
+}
+
+/** Stable id for a given prefix + label — useful when two factories must agree. */
+export function fixedId(prefix: string, label: string): string {
+  let hash = 0;
+  for (let i = 0; i < label.length; i += 1) {
+    hash = (hash * 31 + label.charCodeAt(i)) >>> 0;
+  }
+  return `${prefix}${body(prefix, hash)}`;
+}
+
+export function resetIdCounters(): void {
+  counters.clear();
 }
 
 function body(prefix: string, seed: number): string {
@@ -40,4 +55,5 @@ export const TEST_MERCHANT_ID = fixedId('mch_', 'aurora');
 export const TEST_OTHER_MERCHANT_ID = fixedId('mch_', 'borealis');
 export const TEST_USER_ID = fixedId('usr_', 'aurora-owner');
 export const TEST_API_KEY_ID = fixedId('key_', 'aurora-live');
+export const TEST_PAYMENT_INTENT_ID = fixedId('pi_', 'aurora-order-4471');
 export const TEST_CHARGE_ID = fixedId('ch_', 'aurora-order-4471');

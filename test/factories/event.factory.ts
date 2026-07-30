@@ -107,3 +107,7 @@ export function makeEnvelopeBatch<T extends EventType>(
   return payloads.map((p) => makeEnvelope(type, p));
 }
 
+/** Same envelope, delivered twice — the at-least-once bus in one helper. */
+export function redeliver(event: PayzenoEvent): PayzenoEvent {
+  return { ...event };
+}

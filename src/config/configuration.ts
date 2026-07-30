@@ -78,6 +78,14 @@ function billingLegacy(env: ConfigSchema): BillingLegacyConfig {
   };
 }
 
+function vault(env: ConfigSchema): VaultConfig {
+  return {
+    baseUrl: env.VAULT_BASE_URL,
+    publicUrl: env.VAULT_PUBLIC_URL,
+    apiKey: env.VAULT_API_KEY,
+  };
+}
+
 function acquirers(env: ConfigSchema): AcquirerConfig {
   return {
     worldflowBaseUrl: env.WORLDFLOW_BASE_URL,
