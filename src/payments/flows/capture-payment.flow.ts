@@ -34,6 +34,25 @@ export class CapturePaymentFlow extends PaymentFlow<CapturePaymentIntentRequest>
     states: PaymentIntentStateMachine,
     transactions: TransactionManager,
     private readonly charges: ChargeRepository,
+    private readonly capture: ChargeCaptureService,
+    private readonly merchants: MerchantsService,
+    @Inject(PAYZENO_LOGGER) logger: PayzenoLogger,
+  ) {
+    super(intents, states, transactions, logger);
+  }
+
+  get flowName(): string {
+    return 'payment_intent.capture';
+  }
+
+  protected get entryEvent(): PaymentIntentEvent {
+    return 'capture';
+  }
+
+  async execute(
+    intent: PaymentIntentEntity,
+    request: CapturePaymentIntentRequest,
+  ): Promise<PaymentIntentEntity> {
     // Guard first: an intent in `succeeded` is a double-capture attempt and must cost nothing.
     const landing = this.nextStatus(intent, 'capture');
 
@@ -43,6 +62,16 @@ export class CapturePaymentFlow extends PaymentFlow<CapturePaymentIntentRequest>
         { path: 'latest_charge_id', code: 'missing', message: 'confirm the intent first' },
       ]);
     }
+
+    const charge = await this.charges.findOne({ where: { id: chargeId as ChargeId } });
+    if (!charge) {
+      throw new ChargeNotCapturableException(chargeId, 'missing');
+    }
+
+    const amountMinor = this.resolveAmount(intent, request);
+    // getById returns the entity; the services below take the contracts type, and the
+    // mapping lives in exactly one place (merchants.service.ts).
+    const merchant = toMerchantResponse(await this.merchants.getById(intent.merchantId));
 
     // The acquirer call, the charge write, the outbox event and the ledger posting all happen
     // inside captureCharge — one frame down, where the deferred-capture branch can see the
@@ -88,5 +117,14 @@ export class CapturePaymentFlow extends PaymentFlow<CapturePaymentIntentRequest>
    */
   private resolveAmount(intent: PaymentIntentEntity, request: CapturePaymentIntentRequest): number {
     const authorised = Number(intent.amount_minor);
+    const requested = request.amount_minor ?? authorised;
+
+    if (requested <= 0 || requested > authorised) {
+      throw new ValidationException(
+        `amount_minor must be between 1 and the authorised ${authorised}`,
+        [{ path: 'amount_minor', code: 'out_of_range', message: `must be <= ${authorised}` }],
+      );
+    }
+    return requested;
   }
 }

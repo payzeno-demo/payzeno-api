@@ -13,3 +13,18 @@
 import { IsOptional, IsUrl, MaxLength } from 'class-validator';
 
 import type { ConfirmPaymentIntentRequest, PaymentMethodToken } from '@payzeno/contracts';
+
+import { Redact } from '../../common/decorators/redact.decorator';
+import { IsVaultToken } from '../../common/validators/payzeno-id.validator';
+
+@Redact('payment_method_token')
+export class ConfirmPaymentIntentDto implements ConfirmPaymentIntentRequest {
+  @IsOptional()
+  @IsVaultToken('pmt_')
+  payment_method_token?: PaymentMethodToken;
+
+  @IsOptional()
+  @IsUrl({ protocols: ['https'], require_protocol: true, require_tld: false })
+  @MaxLength(2_048)
+  return_url?: string;
+}

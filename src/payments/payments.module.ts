@@ -147,3 +147,77 @@ const NORDPAY_HTTP = Symbol('NORDPAY_HTTP');
         logger: PayzenoLogger,
         breakers: CircuitBreakerRegistry,
       ): AcquirerHttpClient =>
+        new AcquirerHttpClient(
+          {
+            acquirer: 'nordpay',
+            baseUrl: config.acquirers.nordpayBaseUrl,
+            apiKey: config.acquirers.nordpayApiKey,
+            acquirerAccountId: 'payzeno-platform',
+          },
+          transport,
+          { ...DEFAULT_CLIENT_OPTIONS, readTimeoutMs: 20_000, userAgent: 'payzeno-api/nordpay' },
+          new IdempotentRetryPolicy(2),
+          logger,
+          breakers,
+        ),
+    },
+
+    {
+      provide: WorldflowAdapter,
+      inject: [WORLDFLOW_HTTP, ProcessorSignatureVerifier],
+      useFactory: (http: AcquirerHttpClient, verifier: ProcessorSignatureVerifier): WorldflowAdapter =>
+        new WorldflowAdapter(http, verifier),
+    },
+    {
+      provide: NordpayAdapter,
+      inject: [NORDPAY_HTTP, ProcessorSignatureVerifier],
+      useFactory: (http: AcquirerHttpClient, verifier: ProcessorSignatureVerifier): NordpayAdapter =>
+        new NordpayAdapter(http, verifier),
+    },
+    {
+      provide: PROCESSOR_ADAPTERS,
+      inject: [WorldflowAdapter, NordpayAdapter],
+      useFactory: (worldflow: WorldflowAdapter, nordpay: NordpayAdapter): ProcessorAdapter[] => [
+        worldflow,
+        nordpay,
+      ],
+    },
+    {
+      provide: ProcessorRouter,
+      inject: [PROCESSOR_ADAPTERS, SandboxProcessorAdapter, PAYZENO_LOGGER, ApiConfig],
+      useFactory: (
+        adapters: ProcessorAdapter[],
+        sandbox: SandboxProcessorAdapter,
+        logger: PayzenoLogger,
+        config: ApiConfig,
+      ): ProcessorRouter => new ProcessorRouter(adapters, sandbox, logger, config.acquirers.defaultAcquirer),
+    },
+
+    {
+      provide: VaultClient,
+      inject: [ApiConfig, HTTP_TRANSPORT, PAYZENO_LOGGER],
+      useFactory: (config: ApiConfig, transport: HttpTransport, logger: PayzenoLogger): VaultClient =>
+        new VaultClient(
+          { baseUrl: config.vault.baseUrl, apiKey: config.vault.apiKey },
+          transport,
+          { ...DEFAULT_CLIENT_OPTIONS, readTimeoutMs: 5_000, retries: 0, userAgent: 'payzeno-api/vault' },
+          // No retries into the vault. A token resolve is cheap to fail and expensive to
+          // duplicate — arc PCI wants exactly one resolution per authorisation in the audit.
+          new NoRetryPolicy(),
+          logger,
+        ),
+    },
+  ],
+  exports: [
+    PaymentIntentsService,
+    ChargesService,
+    ChargeRepository,
+    PaymentIntentRepository,
+    ChargeCaptureService,
+    ChargeExpiryPolicy,
+    ChargeStateMachine,
+    ProcessorRouter,
+    VaultClient,
+  ],
+})
+export class PaymentsModule {}

@@ -37,9 +37,36 @@ export class CancelPaymentFlow extends PaymentFlow<CancelPaymentIntentRequest> {
     states: PaymentIntentStateMachine,
     transactions: TransactionManager,
     private readonly charges: ChargeRepository,
+    private readonly chargeStates: ChargeStateMachine,
+    private readonly router: ProcessorRouter,
+    private readonly ledger: LedgerReadThroughService,
     @Inject(EVENT_PUBLISHER) private readonly events: EventPublisher,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(PAYZENO_LOGGER) logger: PayzenoLogger,
+  ) {
+    super(intents, states, transactions, logger);
+  }
+
+  get flowName(): string {
+    return 'payment_intent.cancel';
+  }
+
+  protected get entryEvent(): PaymentIntentEvent {
+    return 'cancel';
+  }
+
+  async execute(
+    intent: PaymentIntentEntity,
+    request: CancelPaymentIntentRequest,
+  ): Promise<PaymentIntentEntity> {
+    const canceled = this.nextStatus(intent, 'cancel');
     const reason: CancellationReason = request.cancellation_reason ?? 'requested_by_customer';
+    const canceledAt = this.clock.now();
+
+    const charge = intent.latest_charge_id
+      ? await this.charges.findOne({ where: { id: intent.latest_charge_id as ChargeId } })
+      : null;
+
     let releasedMinor = 0;
 
     if (charge && this.chargeStates.holdsAuthorization(charge.status)) {
