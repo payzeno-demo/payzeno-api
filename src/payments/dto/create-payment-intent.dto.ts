@@ -45,9 +45,17 @@ const MAX_AMOUNT_MINOR = 99_999_999;
 export class CreatePaymentIntentDto implements CreatePaymentIntentRequest {
   @Money()
   @IsInt()
+  @Max(MAX_AMOUNT_MINOR)
+  amount_minor: MinorUnits;
+
   @IsIn(CURRENCIES)
   currency: CurrencyCode;
 
+  @IsOptional()
+  @IsIn(CAPTURE_METHODS)
+  capture_method?: CaptureMethod;
+
+  /** `pmt_` vault token. The only representation of a card this repo ever sees. */
   @IsOptional()
   @IsVaultToken('pmt_')
   payment_method_token?: PaymentMethodToken;
@@ -70,4 +78,6 @@ export class CreatePaymentIntentDto implements CreatePaymentIntentRequest {
   /** Confirm in the same call. Ignored without a payment method, per the contract. */
   @IsOptional()
   @IsOptional()
+  @IsPayzenoMetadata()
+  metadata?: Metadata;
 }

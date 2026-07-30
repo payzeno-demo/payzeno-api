@@ -64,3 +64,19 @@ const TRANSITIONS: TransitionTable<PaymentIntentStatus, PaymentIntentEvent> = {
     cancel: 'canceled',
   },
   requires_capture: {
+    capture: 'succeeded',
+    cancel: 'canceled',
+    fail: 'failed',
+  },
+  succeeded: {},
+  failed: {},
+  canceled: {},
+};
+
+@Injectable()
+export class PaymentIntentStateMachine extends StateMachine<PaymentIntentStatus, PaymentIntentEvent> {
+  readonly entity = 'payment_intent';
+  protected readonly transitions = TRANSITIONS;
+  readonly terminalStates: ReadonlySet<PaymentIntentStatus> = new Set<PaymentIntentStatus>([
+    'succeeded',
+    'failed',

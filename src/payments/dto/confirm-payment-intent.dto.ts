@@ -18,3 +18,8 @@ import { Redact } from '../../common/decorators/redact.decorator';
 import { IsVaultToken } from '../../common/validators/payzeno-id.validator';
 
 @Redact('payment_method_token')
+export class ConfirmPaymentIntentDto implements ConfirmPaymentIntentRequest {
+  @IsOptional()
+  @IsVaultToken('pmt_')
+  payment_method_token?: PaymentMethodToken;
+

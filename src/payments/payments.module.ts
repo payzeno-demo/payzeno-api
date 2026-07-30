@@ -147,3 +147,40 @@ const NORDPAY_HTTP = Symbol('NORDPAY_HTTP');
         logger: PayzenoLogger,
         breakers: CircuitBreakerRegistry,
       ): AcquirerHttpClient =>
+        new AcquirerHttpClient(
+          {
+            acquirer: 'nordpay',
+            baseUrl: config.acquirers.nordpayBaseUrl,
+            apiKey: config.acquirers.nordpayApiKey,
+            acquirerAccountId: 'payzeno-platform',
+          },
+          transport,
+          { ...DEFAULT_CLIENT_OPTIONS, readTimeoutMs: 20_000, userAgent: 'payzeno-api/nordpay' },
+          new IdempotentRetryPolicy(2),
+          logger,
+          breakers,
+        ),
+    },
+
+    {
+      provide: WorldflowAdapter,
+      inject: [WORLDFLOW_HTTP, ProcessorSignatureVerifier],
+      useFactory: (http: AcquirerHttpClient, verifier: ProcessorSignatureVerifier): WorldflowAdapter =>
+        new WorldflowAdapter(http, verifier),
+    },
+    {
+      provide: NordpayAdapter,
+      inject: [NORDPAY_HTTP, ProcessorSignatureVerifier],
+      useFactory: (http: AcquirerHttpClient, verifier: ProcessorSignatureVerifier): NordpayAdapter =>
+        new NordpayAdapter(http, verifier),
+    },
+    {
+      provide: PROCESSOR_ADAPTERS,
+      inject: [WorldflowAdapter, NordpayAdapter],
+      useFactory: (worldflow: WorldflowAdapter, nordpay: NordpayAdapter): ProcessorAdapter[] => [
+        worldflow,
+        nordpay,
+      ],
+    },
+    {
+      provide: ProcessorRouter,
