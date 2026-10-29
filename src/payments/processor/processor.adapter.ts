@@ -23,6 +23,12 @@ import type {
 export interface ProcessorAdapter {
   readonly acquirer: Acquirer;
   authorize(req: AuthorizeRequest): Promise<AuthorizeResult>;
+  /**
+   * The authorisation as the acquirer sees it now, by `processorReference`. This is how a 3-D
+   * Secure challenge's outcome comes back: the cardholder finishes it on the acquirer's page and
+   * the authorisation either approves or declines there.
+   */
+  getAuthorization(processorReference: string): Promise<AuthorizeResult>;
   capture(req: CaptureRequest): Promise<CaptureResult>;
   void(req: VoidRequest): Promise<VoidResult>;
   refund(req: ProcessorRefundRequest): Promise<ProcessorRefundResult>;

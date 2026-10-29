@@ -2,6 +2,7 @@ import { SQSClient } from '@aws-sdk/client-sqs';
 import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import type { EntityManager } from 'typeorm';
+import { INVOICE_STATUSES, type InvoiceStatus } from '@payzeno/contracts';
 import { type EventType, isEventOfType, type PayzenoEvent } from '@payzeno/contracts/events';
 import { API_CONFIG } from '../config/config.module';
 import type { ApiConfig } from '../config/api-config.type';
@@ -53,28 +54,37 @@ export class InvoiceProjectionConsumer extends BaseEventConsumer implements OnMo
     }
     const payload = event.payload;
 
+    // The event types `status` as the legacy biller's string. A value outside the public
+    // vocabulary is not guessed at — it throws, and redelivery takes it to the DLQ.
+    if (!isInvoiceStatus(payload.status)) {
+      throw new Error(`invoice.issued ${event.id} carries unknown invoice status "${payload.status}"`);
+    }
+
     /**
      * Conditional upsert on `source_occurred_at`. Ordering is not guaranteed, so a
      * redelivered older `invoice.issued` must never overwrite a newer one — otherwise a
      * voided invoice quietly reverts to `open` in the console.
      */
-    const applied = await this.projection.upsertFromEvent(tx, {
-      invoicePublicId: payload.invoice_public_id,
-      merchantId: payload.merchant_id,
-      number: payload.number,
-      status: payload.status,
-      currency: payload.currency,
-      subtotalMinor: payload.subtotal_minor,
-      taxMinor: payload.tax_minor,
-      totalMinor: payload.total_minor,
-      periodStart: payload.period_start,
-      periodEnd: payload.period_end,
-      dueAt: payload.due_at,
-      migratedToLedger: payload.migrated_to_ledger,
-      livemode: event.livemode,
-      sourceEventId: event.id,
-      sourceOccurredAt: event.occurred_at,
-    });
+    const applied = await this.projection.refresh(
+      {
+        invoiceId: payload.invoice_public_id,
+        merchantId: payload.merchant_id,
+        subscriptionId: payload.subscription_public_id,
+        number: payload.number,
+        status: payload.status,
+        currency: payload.currency,
+        subtotalMinor: payload.subtotal_minor,
+        taxMinor: payload.tax_minor,
+        totalMinor: payload.total_minor,
+        periodStart: payload.period_start,
+        periodEnd: payload.period_end,
+        dueAt: payload.due_at,
+        migratedToLedger: payload.migrated_to_ledger,
+        sourceOccurredAt: event.occurred_at,
+        source: 'billing_legacy',
+      },
+      tx,
+    );
 
     this.logger.info(applied ? 'invoice_projection.updated' : 'invoice_projection.stale_skipped', {
       invoice_public_id: payload.invoice_public_id,
@@ -95,4 +105,8 @@ export class InvoiceProjectionConsumer extends BaseEventConsumer implements OnMo
   private static billingQueueUrl(config: ApiConfig): string {
     return config.aws.sqsDlqUrl.replace(/payzeno-dlq-monitor$/, 'payzeno-api-billing');
   }
+}
+
+function isInvoiceStatus(value: string): value is InvoiceStatus {
+  return (INVOICE_STATUSES as readonly string[]).includes(value);
 }

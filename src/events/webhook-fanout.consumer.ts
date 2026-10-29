@@ -32,7 +32,13 @@ export class WebhookFanoutConsumer extends BaseEventConsumer implements OnModule
   readonly queueUrl: string;
   readonly consumerName = 'webhook-fanout';
 
+  // The same set the `payzeno-api-webhooks` subscriptions filter for (messaging.tf and the
+  // localstack bootstrap). A type missing here is acknowledged and dropped: the payment.*
+  // lifecycle was, so a shop fulfilling on `payment.captured` never heard about a payment.
   readonly handledTypes = new Set<EventType>([
+    'payment.authorized',
+    'payment.captured',
+    'payment.canceled',
     'payment.failed',
     'refund.succeeded',
     'refund.failed',

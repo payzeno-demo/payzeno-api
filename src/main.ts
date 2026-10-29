@@ -9,6 +9,7 @@ import cookieParser from 'cookie-parser';
 
 import { AppModule } from './app.module';
 import { validationExceptionFactory } from './common/filters/validation-exception.factory';
+import { keepsRawBody } from './common/middleware/raw-body';
 import { PAYZENO_LOGGER, describeError, type PayzenoLogger } from './common/logging/logger';
 import { API_CONFIG, type ApiConfig } from './config/api-config.type';
 import { stopInstrumentation } from './instrumentation';
@@ -26,11 +27,14 @@ import { stopInstrumentation } from './instrumentation';
  */
 
 /**
- * 256KB. Nothing in api-surface.md is bigger — the largest legitimate body is a dispute
- * evidence submission, which carries file *ids*, not files. The default 100KB truncated one of
- * those once and produced a validation error that named the wrong field.
+ * 1MB, the same as nginx's `client_max_body_size`. Everything in api-surface.md fits in 256KB
+ * except one route: `POST /v1/onboarding/documents` (RFC platform-v2 §3) carries a KYC document
+ * as base64, up to 600KB decoded — about 820KB on the wire. The DTO caps that field, and every
+ * other route's validation rejects oversized fields long before the body gets near this. The
+ * default 100KB once truncated a dispute evidence submission and produced a validation error
+ * that named the wrong field.
  */
-const BODY_LIMIT = '256kb';
+const BODY_LIMIT = '1mb';
 
 /** What the body parser's `verify` hook writes onto, and what `ProcessorSignatureGuard` reads. */
 interface RawBodyRequest {
@@ -62,7 +66,7 @@ async function bootstrap(): Promise<void> {
   app.useBodyParser('json', {
     limit: BODY_LIMIT,
     verify: (req: RawBodyRequest, _res: unknown, buf: Buffer) => {
-      if (req.url?.startsWith('/v1/webhooks/')) {
+      if (keepsRawBody(req.url)) {
         req.rawBody = Buffer.from(buf);
       }
     },

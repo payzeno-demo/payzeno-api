@@ -1,7 +1,7 @@
 import type { StaffRole } from '@payzeno/contracts';
 
 import { StaffGuard } from 'src/auth/guards/staff.guard';
-import { SESSION_COOKIE, SessionService } from 'src/auth/session/session.service';
+import { SESSION_COOKIE, SessionService, STAFF_SESSION_COOKIE } from 'src/auth/session/session.service';
 import { STAFF_ONLY_KEY } from 'src/common/decorators/staff-only.decorator';
 import {
   AuthenticationRequiredException,
@@ -38,7 +38,7 @@ describe('StaffGuard', () => {
     );
   }
 
-  const cookies = { [SESSION_COOKIE]: 'sess_staff' };
+  const cookies = { [STAFF_SESSION_COOKIE]: 'sess_staff' };
 
   beforeEach(() => {
     sessions = {
@@ -92,6 +92,22 @@ describe('StaffGuard', () => {
     await rejectsWith(guardWith(['risk']).canActivate(context), PermissionDeniedException);
   });
 
+  it('admits any operator on @StaffOnly() with no roles — the staff session routes', async () => {
+    sessions.resolveStaff.mockResolvedValue(makeFinanceStaffPrincipal(null));
+    const { context, request } = guardContext({ cookies });
+
+    await expect(guardWith([]).canActivate(context)).resolves.toBe(true);
+
+    expect(request.principal).toMatchObject({ kind: 'staff_session', role: 'finance' });
+  });
+
+  it('reads pz_staff_session and ignores the console\'s pz_session (RFC platform-v2 §1)', async () => {
+    const { context } = guardContext({ cookies: { [SESSION_COOKIE]: 'sess_merchant' } });
+
+    await rejectsWith(guardWith(['support']).canActivate(context), AuthenticationRequiredException);
+    expect(sessions.resolveStaff).not.toHaveBeenCalled();
+  });
+
   it('401s when no session cookie is presented', async () => {
     const { context } = guardContext();
 
@@ -113,7 +129,7 @@ describe('StaffGuard', () => {
     it('prefers ?merchant_id= — the required parameter on staff-marked scoped reads', async () => {
       const { context } = guardContext({ cookies, query: { merchant_id: TEST_MERCHANT_ID } });
 
-      await guardWith(['support']).canActivate(context);
+      await guardWith(['risk']).canActivate(context);
 
       expect(sessions.resolveStaff).toHaveBeenCalledWith(
         'sess_staff',
@@ -147,7 +163,7 @@ describe('StaffGuard', () => {
     it('ignores an empty ?merchant_id= rather than scoping to the empty string', async () => {
       const { context } = guardContext({ cookies, query: { merchant_id: '' } });
 
-      await guardWith(['support']).canActivate(context);
+      await guardWith(['risk']).canActivate(context);
 
       expect(sessions.resolveStaff).toHaveBeenCalledWith('sess_staff', 'GET', undefined, null);
     });

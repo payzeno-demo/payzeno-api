@@ -13,7 +13,7 @@
  */
 
 import { Inject, Injectable } from '@nestjs/common';
-import type { AuthPrincipal, Invoice, MerchantId, Paginated } from '@payzeno/contracts';
+import type { AuthPrincipal, Invoice, InvoiceStatus, MerchantId, Paginated } from '@payzeno/contracts';
 
 import { livemodeOf, merchantIdOf } from '../auth/principal/principal.factory';
 import { ResourceNotFoundException } from '../common/errors/not-found.exceptions';
@@ -24,7 +24,7 @@ import { InvoiceSourceResolver } from './invoice-source.resolver';
 import { InvoiceProjectionService } from './projection/invoice-projection.service';
 
 export interface InvoiceListFilters {
-  status?: string;
+  status?: InvoiceStatus;
   cursor?: string;
   limit?: number;
 }
@@ -109,7 +109,7 @@ export class InvoicesService {
   }
 
   /** Page-size clamp lives with the DTO; this is the adapter from the query object. */
-  filtersFrom(query: ListQueryDto, status?: string): InvoiceListFilters {
+  filtersFrom(query: ListQueryDto, status?: InvoiceStatus): InvoiceListFilters {
     return { status, cursor: query.cursor, limit: query.effectiveLimit() };
   }
 }

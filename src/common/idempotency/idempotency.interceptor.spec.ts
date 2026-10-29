@@ -9,11 +9,7 @@ import {
   IdempotencyInProgressException,
   IdempotencyKeyReuseException,
 } from 'src/common/errors/idempotency.exceptions';
-import {
-  IdempotencyInterceptor,
-  POSTGRES_IDEMPOTENCY_STORE,
-  REDIS_IDEMPOTENCY_STORE,
-} from 'src/common/idempotency/idempotency.interceptor';
+import { IdempotencyInterceptor } from 'src/common/idempotency/idempotency.interceptor';
 import type { IdempotencyStore } from 'src/common/idempotency/idempotency.store';
 import { NoopLogger } from 'src/common/logging/logger';
 

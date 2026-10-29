@@ -22,6 +22,7 @@ import { Idempotent } from '../common/decorators/idempotent.decorator';
 import { MerchantScoped } from '../common/decorators/merchant-scoped.decorator';
 import { RequiredScopes } from '../common/decorators/required-scopes.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
+import { ReturnsSecretFields } from '../common/decorators/secret-fields.decorator';
 import { MerchantScopeGuard } from '../auth/guards/merchant-scope.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { SessionGuard } from '../auth/guards/session.guard';
@@ -44,7 +45,7 @@ export class WebhookEndpointsController extends BaseController {
     @CurrentPrincipal() principal: AuthPrincipal,
     @Query() query: ListQueryDto,
   ): Promise<Paginated<WebhookEndpointDto>> {
-    return this.endpoints.list(this.merchantIdOf(principal), query as ListQuery);
+    return this.endpoints.list(this.scopeOf(principal), query as ListQuery);
   }
 
   @Get(':endpointId')
@@ -53,7 +54,7 @@ export class WebhookEndpointsController extends BaseController {
     @CurrentPrincipal() principal: AuthPrincipal,
     @Param('endpointId') endpointId: string,
   ): Promise<WebhookEndpointDto> {
-    return this.endpoints.get(this.merchantIdOf(principal), endpointId);
+    return this.endpoints.get(this.scopeOf(principal), endpointId);
   }
 
   /** The signing secret is in this response and in no other. */
@@ -64,15 +65,13 @@ export class WebhookEndpointsController extends BaseController {
   @Idempotent()
   @AuditLog('webhook_endpoint.create')
   @RequiredScopes('webhooks:write')
+  @ReturnsSecretFields('signing_secret')
   async create(
     @CurrentPrincipal() principal: AuthPrincipal,
     @Body() dto: CreateWebhookEndpointDto,
   ): Promise<WebhookEndpointDto> {
-    return this.endpoints.create(
-      this.merchantIdOf(principal),
-      this.livemodeOf(principal),
-      dto,
-    );
+    const scope = this.scopeOf(principal);
+    return this.endpoints.create(scope.merchantId, scope.livemode, dto);
   }
 
   @Post(':endpointId/rotate_secret')
@@ -81,11 +80,12 @@ export class WebhookEndpointsController extends BaseController {
   @Idempotent()
   @AuditLog('webhook_endpoint.rotate_secret')
   @RequiredScopes('webhooks:write')
+  @ReturnsSecretFields('signing_secret')
   async rotateSecret(
     @CurrentPrincipal() principal: AuthPrincipal,
     @Param('endpointId') endpointId: string,
   ): Promise<WebhookEndpointDto> {
-    return this.endpoints.rotateSecret(this.merchantIdOf(principal), endpointId);
+    return this.endpoints.rotateSecret(this.scopeOf(principal), endpointId);
   }
 
   @Delete(':endpointId')
@@ -99,6 +99,6 @@ export class WebhookEndpointsController extends BaseController {
     @CurrentPrincipal() principal: AuthPrincipal,
     @Param('endpointId') endpointId: string,
   ): Promise<void> {
-    await this.endpoints.delete(this.merchantIdOf(principal), endpointId);
+    await this.endpoints.delete(this.scopeOf(principal), endpointId);
   }
 }

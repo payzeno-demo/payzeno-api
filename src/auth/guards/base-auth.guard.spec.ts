@@ -1,3 +1,5 @@
+import { UseGuards, type ExecutionContext } from '@nestjs/common';
+
 import type { AuthPrincipal } from '@payzeno/contracts';
 
 import {
@@ -76,6 +78,80 @@ describe('BaseAuthGuard', () => {
     expect(err.httpStatus).toBe(401);
     expect(err.code).toBe('authentication_required');
     expect(err.message).toContain('stub');
+  });
+
+  /**
+   * Regression: on `@UseGuards(ApiKeyGuard, SessionGuard, …)` the api-key guard used to 401
+   * every request without an `sk_` bearer, so a console session never reached SessionGuard and
+   * a client secret never reached ClientSecretGuard. A missing credential is now fatal only for
+   * the LAST credential guard in the handler's chain (controller guards, then method guards).
+   */
+  describe('composite chains', () => {
+    class FirstScheme extends StubGuard {}
+    class SecondScheme extends StubGuard {}
+    class MethodScheme extends StubGuard {}
+
+    @UseGuards(FirstScheme, SecondScheme)
+    class CompositeController {
+      list(): void {}
+
+      @UseGuards(MethodScheme)
+      confirm(): void {}
+    }
+
+    function contextFor(
+      handler: () => void,
+      request: AuthenticatedRequest = makeRequest(),
+    ): ExecutionContext {
+      const { context } = guardContext();
+      return {
+        ...context,
+        switchToHttp: () => ({
+          getRequest: <T>() => request as unknown as T,
+          getResponse: <T>() => ({}) as T,
+          getNext: <T>() => undefined as T,
+        }),
+        getHandler: () => handler,
+        getClass: () => CompositeController,
+      } as ExecutionContext;
+    }
+
+    it('passes through on a missing credential while a later scheme can still answer', async () => {
+      const first = new FirstScheme(null);
+      const request = makeRequest();
+
+      await expect(first.canActivate(contextFor(CompositeController.prototype.list, request))).resolves.toBe(true);
+      expect(request.principal).toBeUndefined();
+    });
+
+    it('lets the second scheme authenticate after the first found nothing', async () => {
+      const request = makeRequest();
+      const handler = CompositeController.prototype.list;
+
+      await new FirstScheme(null).canActivate(contextFor(handler, request));
+      await new SecondScheme(principal).canActivate(contextFor(handler, request));
+
+      expect(request.principal).toEqual(principal);
+    });
+
+    it('rejects only when the last scheme in the chain found nothing either', async () => {
+      const err = await rejectsWith(
+        new SecondScheme(null).canActivate(contextFor(CompositeController.prototype.list)),
+        AuthenticationRequiredException,
+      );
+      expect(err.httpStatus).toBe(401);
+    });
+
+    it('counts method-level guards, which run after the controller\'s', async () => {
+      // On `confirm`, MethodScheme comes after SecondScheme, so SecondScheme is not last.
+      await expect(
+        new SecondScheme(null).canActivate(contextFor(CompositeController.prototype.confirm)),
+      ).resolves.toBe(true);
+      await rejectsWith(
+        new MethodScheme(null).canActivate(contextFor(CompositeController.prototype.confirm)),
+        AuthenticationRequiredException,
+      );
+    });
   });
 
   describe('bearerToken', () => {

@@ -46,6 +46,7 @@ import { LedgerRejectedException, LedgerUnavailableException } from '../common/e
 import type { PayzenoLogger } from '../common/logging/logger';
 import type {
   BalanceHistoryQuery,
+  BalanceList,
   BalanceQuery,
   CreatePayoutBody,
   PayoutListQuery,
@@ -103,8 +104,16 @@ export class LedgerHttpClient extends BaseHttpClient {
     });
   }
 
-  getBalance(merchantId: MerchantId, query: BalanceQuery = {}): Promise<Balance> {
-    return this.get<Balance>(`/internal/v1/balances/${encodeURIComponent(merchantId)}`, { ...query });
+  /**
+   * With `currency`: that one balance. Without: every currency the merchant has posted in, as
+   * `{ data: Balance[] }` (RFC platform-v2 §7) — or, from a ledger that predates per-currency
+   * listing, a single default-currency `Balance`. `LedgerReadThroughService.listBalances` takes
+   * either. One method on purpose: it is one ledger route.
+   */
+  getBalance(merchantId: MerchantId, query: BalanceQuery & { currency: CurrencyCode }): Promise<Balance>;
+  getBalance(merchantId: MerchantId, query: Omit<BalanceQuery, 'currency'>): Promise<BalanceList | Balance>;
+  getBalance(merchantId: MerchantId, query: BalanceQuery): Promise<Balance | BalanceList> {
+    return this.get<Balance | BalanceList>(`/internal/v1/balances/${encodeURIComponent(merchantId)}`, { ...query });
   }
 
   getBalanceHistory(merchantId: MerchantId, query: BalanceHistoryQuery): Promise<BalanceHistoryResponse> {
@@ -241,15 +250,12 @@ export class LedgerHttpClient extends BaseHttpClient {
     // No parseable envelope. Either the ledger is behind a proxy that answered for it, or it
     // died mid-response. Both are transport failures as far as the caller is concerned.
     throw new LedgerUnavailableException(
-      `payzeno-ledger responded ${failure.status} with an unparseable body for ${failure.spec.method} ${failure.spec.path}`,
-      { status: failure.status },
+      `${failure.spec.method} ${failure.spec.path}`,
+      `responded ${failure.status} with an unparseable body`,
     );
   }
 
   protected mapTransportFailure(err: TransportError, spec: RequestSpec<unknown>): never {
-    throw new LedgerUnavailableException(
-      `payzeno-ledger ${err.kind} on ${spec.method} ${spec.path}`,
-      { failure: err.kind },
-    );
+    throw new LedgerUnavailableException(`${spec.method} ${spec.path}`, err.kind);
   }
 }

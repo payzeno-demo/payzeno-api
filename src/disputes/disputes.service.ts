@@ -22,6 +22,7 @@ import type {
   DisputeStatus,
   IsoTimestamp,
   ListQuery,
+  MerchantId,
   Paginated,
 } from '@payzeno/contracts';
 
@@ -33,10 +34,13 @@ import { DuplicateDisputeException } from '../common/errors/business.exceptions'
 import { ChargeNotFoundException, DisputeNotFoundException } from '../common/errors/not-found.exceptions';
 import { IdFactory } from '../common/ids/id.factory';
 import { PAYZENO_LOGGER, type PayzenoLogger } from '../common/logging/logger';
+import { currentCorrelationId } from '../common/logging/request-context';
+import { formatMoney } from '../common/money/money.util';
 import { TransactionManager } from '../common/persistence/transaction.manager';
 import { CLOCK, type Clock } from '../common/time/clock';
 import { EVENT_PUBLISHER, type EventPublisher } from '../events/publisher';
 import { LedgerReadThroughService } from '../ledger/ledger-read-through.service';
+import { MerchantMailerService } from '../merchants/merchant-mailer.service';
 import { ChargeRepository } from '../payments/charge.repository';
 import { DisputeEntity } from './dispute.entity';
 import { DisputeEvidenceService } from './dispute-evidence.service';
@@ -73,6 +77,7 @@ export class DisputesService extends BaseService<DisputeEntity> {
     @Inject(EVENT_PUBLISHER) private readonly events: EventPublisher,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(PAYZENO_LOGGER) logger: PayzenoLogger,
+    private readonly mailer: MerchantMailerService,
   ) {
     super(disputes, logger);
   }
@@ -149,6 +154,20 @@ export class DisputesService extends BaseService<DisputeEntity> {
             livemode: charge.livemode,
             occurredAt: openedAt.toISOString(),
           },
+        );
+
+        // RFC platform-v2 §2: the merchant's owners and admins hear about it in the same commit
+        // as the row — a redelivered webhook that loses the unique-index race emails nobody.
+        await this.mailer.queueToAdmins(
+          charge.merchantId,
+          'dispute_opened',
+          {
+            amount: formatMoney({ amount_minor: command.amountMinor, currency: charge.currency }),
+            reason: command.reason.replace(/_/g, ' '),
+            respond_by: dueBy ? dueBy.toISOString().slice(0, 10) : null,
+            console_url: this.mailer.consoleLink(`/disputes/${encodeURIComponent(row.id)}`),
+          },
+          { manager, livemode: charge.livemode },
         );
 
         return row;
@@ -358,6 +377,48 @@ export class DisputesService extends BaseService<DisputeEntity> {
   findPastDeadline(limit: number): Promise<DisputeEntity[]> {
     return this.disputes.findPastEvidenceDeadline(this.clock.now(), limit);
   }
+
+  /**
+   * `DisputeDeadlineReminderJob`'s two passes over `pix_dispute_evidence_due`: `dueBefore` is
+   * `now` for the expiry pass and `now + 72h` for the reminder pass, both off the job's clock.
+   * Returns the projection the job reads rather than the row (see the TODO above).
+   */
+  async listPendingEvidence(dueBefore: Date, limit: number): Promise<PendingEvidenceDispute[]> {
+    const rows = await this.disputes.findPastEvidenceDeadline(dueBefore, limit);
+    return rows.map((row) => ({
+      id: row.id,
+      merchantId: row.merchantId,
+      chargeId: row.charge_id,
+      amountMinor: Number(row.amount_minor),
+      evidenceDueBy: row.evidence_due_by,
+    }));
+  }
+
+  /**
+   * The deadline job's close: `needs_response → lost` by the FSM's `expire` event, then the
+   * shared close path, so `dispute.closed` still has exactly one emitter. Throws
+   * InvalidStateTransitionException when evidence landed between the job's read and here.
+   */
+  async closeAsLost(disputeId: DisputeId, reason: string): Promise<Dispute> {
+    const dispute = await this.disputes.findOneBy({ id: disputeId });
+    if (!dispute) {
+      throw new DisputeNotFoundException(disputeId);
+    }
+
+    this.states.apply(dispute.status, 'expire');
+    this.logger.info('dispute_expiring', { dispute_id: disputeId, from: dispute.status, reason });
+
+    return this.close(dispute, 'lost', currentCorrelationId(), null);
+  }
+}
+
+/** What `DisputeDeadlineReminderJob` needs from a dispute awaiting evidence. */
+export interface PendingEvidenceDispute {
+  id: DisputeId;
+  merchantId: MerchantId;
+  chargeId: ChargeId;
+  amountMinor: number;
+  evidenceDueBy: Date | null;
 }
 
 function scopeFrom(principal: AuthPrincipal): MerchantScope {

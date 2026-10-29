@@ -59,6 +59,10 @@ export class IdFactory {
     return this.mint(API_ID_PREFIXES.webhookEvent, at);
   }
 
+  checkoutSessionId(at?: number): string {
+    return this.mint(API_ID_PREFIXES.checkoutSession, at);
+  }
+
   /** Escape hatch for the two tables whose ids are not in the public prefix table. */
   opaque(prefix: string, at?: number): string {
     return `${prefix}${this.generate(at)}`;

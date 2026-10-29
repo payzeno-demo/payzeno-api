@@ -8,9 +8,17 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource, EntityManager, In, type FindOptionsWhere } from 'typeorm';
 
-import type { MerchantId, MerchantStatus, Paginated, RiskTier } from '@payzeno/contracts';
+import type {
+  MerchantId,
+  MerchantStatus,
+  OnboardingState,
+  Paginated,
+  PayoutSchedule,
+  RiskTier,
+} from '@payzeno/contracts';
 
 import { resolveListQuery, type ResolvedListQuery } from '../common/pagination/list-query.dto';
+import { applyCursor, toPage } from '../common/persistence/cursor';
 import { PayzenoRepository } from '../common/persistence/payzeno.repository';
 
 import { MerchantEntity } from './merchant.entity';
@@ -18,7 +26,7 @@ import { MerchantEntity } from './merchant.entity';
 /** The mutable field set of `PATCH /v1/merchants/:merchantId`. Staff-only fields included. */
 export interface MerchantPatch {
   displayName?: string;
-  payoutSchedule?: string;
+  payoutSchedule?: PayoutSchedule;
   statementDescriptor?: string | null;
   riskTier?: RiskTier;
   reserveBps?: number;
@@ -29,6 +37,14 @@ export interface MerchantPatch {
   settlementToleranceMinor?: number;
   captureAtSettlement?: boolean;
   metadata?: Record<string, string>;
+}
+
+/** `GET /v1/admin/merchants` filters. */
+export interface StaffMerchantSearch {
+  status?: MerchantStatus;
+  onboardingState?: OnboardingState;
+  /** Merchant id (exact), legal/display name or a user's email (substring, case-insensitive). */
+  q?: string;
 }
 
 @Injectable()
@@ -90,6 +106,42 @@ export class MerchantRepository extends PayzenoRepository<MerchantEntity> {
     const data = hasMore ? rows.slice(0, resolved.limit) : rows;
 
     return { data, has_more: hasMore, next_cursor: null };
+  }
+
+  /**
+   * The admin back office's merchant list: cursor-paginated, newest first, platform-wide.
+   *
+   * `merchant_onboarding` and `merchant_user` are read through correlated subqueries rather
+   * than joins so a merchant with three users is still one row and the keyset cursor stays a
+   * cursor over `merchant`. A merchant created before onboarding existed has no row and counts
+   * as `collecting`, which is what `OnboardingService` lazily creates for it.
+   */
+  async searchForStaff(filter: StaffMerchantSearch, query: ResolvedListQuery): Promise<Paginated<MerchantEntity>> {
+    const qb = this.createQueryBuilder('merchant');
+
+    if (filter.status) {
+      qb.andWhere('merchant.status = :status', { status: filter.status });
+    }
+    if (filter.onboardingState) {
+      qb.andWhere(
+        `coalesce((select o.state from merchant_onboarding o where o.merchant_id = merchant.id), 'collecting') = :onboardingState`,
+        { onboardingState: filter.onboardingState },
+      );
+    }
+    const q = filter.q?.trim();
+    if (q) {
+      const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+      qb.andWhere(
+        `(merchant.id = :qExact
+          OR merchant.legal_name ilike :qLike
+          OR merchant.display_name ilike :qLike
+          OR exists (select 1 from merchant_user u where u.merchant_id = merchant.id and u.email ilike :qLike))`,
+        { qExact: q, qLike: like },
+      );
+    }
+
+    const rows = await applyCursor(qb, { limit: query.limit, cursor: query.cursor, alias: 'merchant' }).getMany();
+    return toPage(rows, query.limit);
   }
 
   async applyPatch(

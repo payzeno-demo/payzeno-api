@@ -16,6 +16,7 @@
  * not assume anything about scope.
  */
 import type { CanActivate, ExecutionContext } from '@nestjs/common';
+import { GUARDS_METADATA } from '@nestjs/common/constants';
 
 import type { AuthPrincipal } from '@payzeno/contracts';
 
@@ -41,8 +42,9 @@ export abstract class BaseAuthGuard implements CanActivate {
   protected abstract readonly scheme: string;
 
   /**
-   * Resolve or throw. Returning null means "no credential of my kind was presented", which
-   * the base turns into a 401 — subclasses that want a different message throw instead.
+   * Resolve or throw. Returning null means "no credential of my kind was presented": the base
+   * hands the request to the next credential guard in the chain, or answers 401 when there is
+   * none left. Subclasses that want a different message throw instead.
    */
   protected abstract authenticate(request: AuthenticatedRequest): Promise<AuthPrincipal | null>;
 
@@ -53,15 +55,30 @@ export abstract class BaseAuthGuard implements CanActivate {
     // The composite `apikey | session` routes rely on this: whichever guard matches, wins.
     if (request.principal) return true;
 
-    const principal = await this.authenticate(request);
+    const principal = this.appliesTo(context) ? await this.authenticate(request) : null;
 
     if (!principal) {
+      // Composite routes list one guard per accepted scheme (`apikey | session`, plus
+      // `client-secret` on confirm). A credential of THIS kind being absent is only fatal when
+      // no later guard in the chain is left to try — otherwise ApiKeyGuard would 401 every
+      // console request before SessionGuard ever saw its cookie.
+      if (hasLaterCredentialGuard(context, this)) return true;
+
       throw new AuthenticationRequiredException(`No ${this.scheme} credential presented`, {
         scheme: this.scheme,
       });
     }
 
     this.attach(request, principal);
+    return true;
+  }
+
+  /**
+   * Whether this scheme is accepted on the handler at all. Only ClientSecretGuard narrows it
+   * (`@AcceptsClientSecret()`); a scheme that does not apply behaves exactly as if its
+   * credential were absent.
+   */
+  protected appliesTo(_context: ExecutionContext): boolean {
     return true;
   }
 
@@ -94,4 +111,25 @@ export abstract class BaseAuthGuard implements CanActivate {
 export function headerValue(raw: string | string[] | undefined): string | undefined {
   if (Array.isArray(raw)) return raw[0];
   return raw;
+}
+
+/**
+ * True when a credential guard listed after `guard` in this handler's chain can still
+ * authenticate the request. Nest runs controller-level `@UseGuards` before method-level ones,
+ * each in list order, so that is the order reconstructed here.
+ */
+export function hasLaterCredentialGuard(context: ExecutionContext, guard: BaseAuthGuard): boolean {
+  const classGuards: unknown[] = Reflect.getMetadata(GUARDS_METADATA, context.getClass()) ?? [];
+  const handlerGuards: unknown[] = Reflect.getMetadata(GUARDS_METADATA, context.getHandler()) ?? [];
+  const chain = [...classGuards, ...handlerGuards];
+
+  const position = chain.findIndex((entry) => entry === guard || entry === guard.constructor);
+  if (position === -1) return false;
+
+  return chain.slice(position + 1).some(isCredentialGuard);
+}
+
+function isCredentialGuard(entry: unknown): boolean {
+  if (entry instanceof BaseAuthGuard) return true;
+  return typeof entry === 'function' && entry.prototype instanceof BaseAuthGuard;
 }

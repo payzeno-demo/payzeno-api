@@ -7,7 +7,6 @@ import {
 } from '@payzeno/contracts/events';
 import { CLOCK, type Clock } from '../common/time/clock';
 import { IdFactory } from '../common/ids/id.factory';
-import { ApiIdPrefix } from '../common/ids/id.prefix';
 import { PAYZENO_LOGGER, type PayzenoLogger } from '../common/logging/logger';
 import { TransactionManager } from '../common/persistence/transaction.manager';
 import { EventOutbox } from './event-outbox.entity';
@@ -78,7 +77,7 @@ export class OutboxEventPublisher implements EventPublisher {
         throw new Error(`payzeno-api does not own event type "${event.type}"`);
       }
       const row = new EventOutbox();
-      row.id = event.id || this.ids.generate(ApiIdPrefix.EVENT);
+      row.id = event.id || this.ids.webhookEventId();
       row.type = event.type;
       row.version = event.version || EVENT_SCHEMA_VERSIONS[event.type];
       row.payload = event.payload as unknown as Record<string, unknown>;
@@ -106,7 +105,7 @@ export class OutboxEventPublisher implements EventPublisher {
   ): EventOutbox {
     const now = this.clock.now();
     const row = new EventOutbox();
-    row.id = this.ids.generate(ApiIdPrefix.EVENT);
+    row.id = this.ids.webhookEventId();
     row.type = type;
     row.version = EVENT_SCHEMA_VERSIONS[type];
     row.payload = payload as unknown as Record<string, unknown>;

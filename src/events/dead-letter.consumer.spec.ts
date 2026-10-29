@@ -11,7 +11,7 @@ describe('DeadLetterConsumer', () => {
     child: jest.fn(),
   };
 
-  const config = { SQS_DLQ_URL: 'http://localstack:4566/000000000000/payzeno-dlq-monitor' };
+  const config = { aws: { sqsDlqUrl: 'http://localstack:4566/000000000000/payzeno-dlq-monitor' } };
 
   function parked(id: string) {
     const body = JSON.stringify({

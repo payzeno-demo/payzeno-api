@@ -15,7 +15,7 @@
  * a container and against `src/` under ts-node, and the two disagreed exactly once: a stale
  * `.js` left behind by an old build re-ran migration 16 against staging. The explicit list is
  * also what `test/e2e/migrations.e2e-spec.ts` counts — the contracted chain (data-model.md §2)
- * is 32 long and the test says so out loud.
+ * is 36 long and the test says so out loud.
  *
  * The bookkeeping table is `payzeno_migrations` here and in `src/config/database.config.ts`.
  * Those two names have to agree: if the CLI writes one table and the app reads another, the
@@ -23,7 +23,8 @@
  */
 import 'reflect-metadata';
 
-import { DataSource, type DataSourceOptions } from 'typeorm';
+import { DataSource } from 'typeorm';
+import type { PostgresConnectionOptions } from 'typeorm/driver/postgres/PostgresConnectionOptions';
 
 import { loadConfiguration } from '../config/configuration';
 import { InitMerchants1716000000000 } from './1716000000000-InitMerchants';
@@ -58,6 +59,22 @@ import { AddBankAccountSchemes1727700000000 } from './1727700000000-AddBankAccou
 import { AddMerchantPricingAndDelays1728300000000 } from './1728300000000-AddMerchantPricingAndDelays';
 import { AddLivemodeToMerchantScoped1728900000000 } from './1728900000000-AddLivemodeToMerchantScoped';
 import { AddChargeAuthorizationExpiry1729500000000 } from './1729500000000-AddChargeAuthorizationExpiry';
+import { AddCheckoutSessions1730100000000 } from './1730100000000-AddCheckoutSessions';
+import { AddMissingEntityColumns1730400000000 } from './1730400000000-AddMissingEntityColumns';
+import { AddSupportTask1730700000000 } from './1730700000000-AddSupportTask';
+import { ScopeBankAccountSchemeCheck1730800000000 } from './1730800000000-ScopeBankAccountSchemeCheck';
+// --- platform-v2 identity migrations (1731000000000–1731499999999): imports ---
+import { AddEmailOutbox1731000000000 } from './1731000000000-AddEmailOutbox';
+import { AddMerchantUserTokens1731100000000 } from './1731100000000-AddMerchantUserTokens';
+import { AddMerchantOnboarding1731200000000 } from './1731200000000-AddMerchantOnboarding';
+// --- end identity imports ---
+// --- platform-v2 money migrations (1731500000000–1731999999999): imports ---
+import { AddCustomersAndPaymentMethods1731500000000 } from './1731500000000-AddCustomersAndPaymentMethods';
+import { AddPricesAndSubscriptions1731500100000 } from './1731500100000-AddPricesAndSubscriptions';
+import { AddFxQuotesAndReviews1731500200000 } from './1731500200000-AddFxQuotesAndReviews';
+import { AddPlatformV2PaymentColumns1731500300000 } from './1731500300000-AddPlatformV2PaymentColumns';
+import { GrantPlatformV2ScopesToFullAccessKeys1731500400000 } from './1731500400000-GrantPlatformV2ScopesToFullAccessKeys';
+// --- end money imports ---
 
 /** The name every DataSource in this repo uses for TypeORM's bookkeeping table. */
 export const MIGRATIONS_TABLE = 'payzeno_migrations';
@@ -100,6 +117,22 @@ export const migrations: Function[] = [
   AddMerchantPricingAndDelays1728300000000,
   AddLivemodeToMerchantScoped1728900000000,
   AddChargeAuthorizationExpiry1729500000000,
+  AddCheckoutSessions1730100000000,
+  AddMissingEntityColumns1730400000000,
+  AddSupportTask1730700000000,
+  ScopeBankAccountSchemeCheck1730800000000,
+  // --- platform-v2 identity migrations ---
+  AddEmailOutbox1731000000000,
+  AddMerchantUserTokens1731100000000,
+  AddMerchantOnboarding1731200000000,
+  // --- end identity migrations ---
+  // --- platform-v2 money migrations ---
+  AddCustomersAndPaymentMethods1731500000000,
+  AddPricesAndSubscriptions1731500100000,
+  AddFxQuotesAndReviews1731500200000,
+  AddPlatformV2PaymentColumns1731500300000,
+  GrantPlatformV2ScopesToFullAccessKeys1731500400000,
+  // --- end money migrations ---
 ];
 
 const config = loadConfiguration();
@@ -109,7 +142,7 @@ const config = loadConfiguration();
  * `url`/`logging` without re-reading the environment — `test/support/db.ts`,
  * `test/support/e2e.global-setup.ts`, `test/e2e/migrations.e2e-spec.ts`.
  */
-export const dataSourceOptions: DataSourceOptions = {
+export const dataSourceOptions: PostgresConnectionOptions = {
   type: 'postgres',
   url: config.database.url,
   entities: [`${__dirname}/../**/*.entity.{ts,js}`],
@@ -124,7 +157,10 @@ export const dataSourceOptions: DataSourceOptions = {
   },
 };
 
-export const AppDataSource = new DataSource(dataSourceOptions);
+// Not exported by name: the TypeORM CLI counts every DataSource-valued export and refuses
+// the file when it finds the default and a named alias of the same instance ("must contain
+// only one export of DataSource instance").
+const AppDataSource = new DataSource(dataSourceOptions);
 
 /**
  * `test/e2e/migrations.e2e-spec.ts` runs the whole chain up and back down against a scratch

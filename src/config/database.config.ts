@@ -21,7 +21,10 @@ export function buildDataSourceOptions(config: ApiConfig): DataSourceOptions {
     migrationsRun: false,
     logging: runtime.logLevel === 'debug' ? ['error', 'warn', 'migration'] : ['error'],
     entities: [`${__dirname}/../**/*.entity{.ts,.js}`],
-    migrations: [`${__dirname}/../migrations/*{.ts,.js}`],
+    // Numbered files only. A bare `*` also matches `data-source.js`, whose default export is a
+    // DataSource; TypeORM walks every export of every matched file looking for classes, and
+    // recursing into a live DataSource overflows the stack before the app connects.
+    migrations: [`${__dirname}/../migrations/[0-9]*-*{.ts,.js}`],
     migrationsTableName: 'payzeno_migrations',
     extra: {
       max: database.poolSize,

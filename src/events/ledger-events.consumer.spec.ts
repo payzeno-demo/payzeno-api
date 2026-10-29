@@ -14,7 +14,7 @@ import { SettlementCompletion } from './settlement-completion.entity';
  */
 describe('LedgerEventsConsumer', () => {
   const config = {
-    SQS_LEDGER_QUEUE_URL: 'http://localstack:4566/000000000000/payzeno-api-ledger',
+    aws: { sqsLedgerQueueUrl: 'http://localstack:4566/000000000000/payzeno-api-ledger' },
   };
 
   const logger = {
@@ -29,6 +29,8 @@ describe('LedgerEventsConsumer', () => {
   let merchants: { findInternal: jest.Mock };
   let audit: { record: jest.Mock };
   let supportTasks: { open: jest.Mock };
+  let mailer: { queueToAdmins: jest.Mock };
+  let bankAccounts: { findOne: jest.Mock; findDefault: jest.Mock };
   let tx: { query: jest.Mock; findOneBy: jest.Mock; update: jest.Mock };
   let consumer: LedgerEventsConsumer;
 
@@ -109,9 +111,14 @@ describe('LedgerEventsConsumer', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     charges = { markSettledFromBatch: jest.fn(async () => 2) };
-    merchants = { findInternal: jest.fn(async () => ({ capture_at_settlement: true })) };
+    merchants = { findInternal: jest.fn(async () => ({ captureAtSettlement: true })) };
     audit = { record: jest.fn(async () => undefined) };
     supportTasks = { open: jest.fn(async () => 'stk_1') };
+    mailer = { queueToAdmins: jest.fn(async () => 1) };
+    bankAccounts = {
+      findOne: jest.fn(async () => ({ lastFour: '6789' })),
+      findDefault: jest.fn(async () => ({ lastFour: '4321' })),
+    };
     tx = {
       query: jest.fn(async () => []),
       findOneBy: jest.fn(async () => completion([0], 2)),
@@ -130,6 +137,8 @@ describe('LedgerEventsConsumer', () => {
           if (name === 'ChargesService') return charges;
           if (name === 'MerchantsService') return merchants;
           if (name === 'AuditService') return audit;
+          if (name === 'MerchantMailerService') return mailer;
+          if (name === 'BankAccountRepository') return bankAccounts;
           return supportTasks;
         },
       } as never,
@@ -198,7 +207,7 @@ describe('LedgerEventsConsumer', () => {
   });
 
   it('audits but does not open a task when the merchant captures at authorisation', async () => {
-    merchants.findInternal.mockResolvedValueOnce({ capture_at_settlement: false });
+    merchants.findInternal.mockResolvedValueOnce({ captureAtSettlement: false });
 
     await consumer.handle(duplicateEvent(), tx as unknown as EntityManager);
 
@@ -218,5 +227,79 @@ describe('LedgerEventsConsumer', () => {
       'settlement.duplicate_unattributed',
       expect.objectContaining({ item_id: 'rci_9' }),
     );
+  });
+
+  describe('payout emails (RFC platform-v2 §2)', () => {
+    function payoutEvent(type: 'payout.paid' | 'payout.failed' | 'payout.returned', payload: object): PayzenoEvent {
+      return {
+        id: `evt_${type}`,
+        type,
+        version: 1,
+        occurred_at: '2026-03-02T09:00:00.000Z',
+        source: 'payzeno-ledger',
+        correlation_id: 'po_1',
+        causation_id: null,
+        merchant_id: 'mch_1',
+        livemode: true,
+        payload: { payout_id: 'po_1', merchant_id: 'mch_1', amount_minor: 125_000, currency: 'EUR', ...payload },
+      } as PayzenoEvent;
+    }
+
+    it('tells the owners and admins a payout was paid, in the handler transaction', async () => {
+      await consumer.handle(
+        payoutEvent('payout.paid', { ledger_transaction_id: 'txn_1', paid_at: '2026-03-02T09:00:00.000Z' }),
+        tx as unknown as EntityManager,
+      );
+
+      expect(audit.record).toHaveBeenCalled();
+      expect(bankAccounts.findDefault).toHaveBeenCalledWith('mch_1', 'EUR', true);
+      expect(mailer.queueToAdmins).toHaveBeenCalledWith(
+        'mch_1',
+        'payout_paid',
+        { amount: '€1,250.00', bank_last4: '4321' },
+        { manager: tx, livemode: true },
+      );
+    });
+
+    it('names the failed account and the bank’s reason on payout.failed', async () => {
+      await consumer.handle(
+        payoutEvent('payout.failed', {
+          bank_account_id: 'ba_1',
+          failure_code: 'account_closed',
+          failure_message: 'Account closed',
+          reversal_transaction_id: 'txn_r',
+          requires_merchant_action: true,
+          retry_scheduled_for: null,
+          failed_at: '2026-03-02T09:00:00.000Z',
+        }),
+        tx as unknown as EntityManager,
+      );
+
+      expect(bankAccounts.findOne).toHaveBeenCalledWith({ where: { id: 'ba_1' } });
+      expect(mailer.queueToAdmins).toHaveBeenCalledWith(
+        'mch_1',
+        'payout_failed',
+        { amount: '€1,250.00', bank_last4: '6789', failure_reason: 'Account closed' },
+        expect.objectContaining({ manager: tx }),
+      );
+    });
+
+    it('treats a bank return as a failed payout for the merchant', async () => {
+      await consumer.handle(
+        payoutEvent('payout.returned', {
+          return_code: 'R01',
+          reversal_transaction_id: 'txn_r',
+          returned_at: '2026-03-04T09:00:00.000Z',
+        }),
+        tx as unknown as EntityManager,
+      );
+
+      expect(mailer.queueToAdmins).toHaveBeenCalledWith(
+        'mch_1',
+        'payout_failed',
+        expect.objectContaining({ failure_reason: 'returned by the bank (R01)' }),
+        expect.anything(),
+      );
+    });
   });
 });

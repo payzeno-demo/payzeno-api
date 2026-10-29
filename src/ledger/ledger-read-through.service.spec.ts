@@ -270,7 +270,7 @@ describe('LedgerReadThroughService', () => {
       // "already settling" and refetches; turning it into a 502 would page someone.
       await expect(
         service.retrySettlementItem('ri_000042', { reason: 'operator' } as never),
-      ).rejects.toMatchObject({ code: 'settlement_locked', status: 409 });
+      ).rejects.toMatchObject({ code: 'settlement_locked', httpStatus: 409 });
     });
   });
 });

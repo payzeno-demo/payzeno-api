@@ -47,7 +47,11 @@ interface WorldflowAuthorizationResponse {
     outcome: 'authenticated' | 'attempted' | 'failed' | 'unavailable';
     eci: string;
     liability_shift: boolean;
+    /** Present while `status` is `pending_authentication`. */
+    challenge_url?: string;
   };
+  /** Same page as `three_ds.challenge_url`; older sandbox builds only send this one. */
+  redirect_url?: string;
 }
 
 interface WorldflowCaptureResponse {
@@ -109,32 +113,14 @@ export class WorldflowAdapter implements ProcessorAdapter {
       req.idempotencyKey,
     );
 
-    return {
-      approved: res.status === 'approved',
-      networkTransactionId: res.network_transaction_id,
-      authorizationCode: res.authorization_code,
-      processorReference: res.reference,
-      declineCode: res.status === 'declined' ? mapDeclineCode(res.decline_reason) : null,
-      riskScore: res.risk?.score ?? 0,
-      card: {
-        brand: normaliseBrand(res.instrument.brand),
-        last_four: res.instrument.last4,
-        exp_month: res.instrument.exp_month,
-        exp_year: res.instrument.exp_year,
-        country: res.instrument.issuer_country,
-        funding: normaliseFunding(res.instrument.funding),
-      },
-      threeDSecure: res.three_ds
-        ? {
-            version: res.three_ds.version,
-            authenticationFlow: res.three_ds.flow,
-            result: res.three_ds.outcome,
-            eci: res.three_ds.eci,
-            liabilityShifted: res.three_ds.liability_shift,
-          }
-        : null,
-      raw: res as unknown as Record<string, unknown>,
-    };
+    return toAuthorizeResult(res);
+  }
+
+  async getAuthorization(processorReference: string): Promise<AuthorizeResult> {
+    const res = await this.http.getJson<WorldflowAuthorizationResponse>(
+      `/v2/authorizations/${encodeURIComponent(processorReference)}`,
+    );
+    return toAuthorizeResult(res);
   }
 
   async capture(req: CaptureRequest): Promise<CaptureResult> {
@@ -206,6 +192,39 @@ export class WorldflowAdapter implements ProcessorAdapter {
       return false;
     }
   }
+}
+
+/** One mapping for both reads — the authorize response and `GET /v2/authorizations/{id}`. */
+function toAuthorizeResult(res: WorldflowAuthorizationResponse): AuthorizeResult {
+  const pending = res.status === 'pending_authentication';
+  return {
+    approved: res.status === 'approved',
+    pendingAuthentication: pending,
+    challengeUrl: pending ? (res.three_ds?.challenge_url ?? res.redirect_url ?? null) : null,
+    networkTransactionId: res.network_transaction_id,
+    authorizationCode: res.authorization_code,
+    processorReference: res.reference,
+    declineCode: res.status === 'declined' ? mapDeclineCode(res.decline_reason) : null,
+    riskScore: res.risk?.score ?? 0,
+    card: {
+      brand: normaliseBrand(res.instrument.brand),
+      last_four: res.instrument.last4,
+      exp_month: res.instrument.exp_month,
+      exp_year: res.instrument.exp_year,
+      country: res.instrument.issuer_country,
+      funding: normaliseFunding(res.instrument.funding),
+    },
+    threeDSecure: res.three_ds
+      ? {
+          version: res.three_ds.version,
+          authenticationFlow: res.three_ds.flow,
+          result: res.three_ds.outcome,
+          eci: res.three_ds.eci,
+          liabilityShifted: res.three_ds.liability_shift,
+        }
+      : null,
+    raw: res as unknown as Record<string, unknown>,
+  };
 }
 
 function normaliseBrand(raw: string): CardBrand {

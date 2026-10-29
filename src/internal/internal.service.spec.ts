@@ -8,8 +8,8 @@ describe('InternalService', () => {
   const now = new Date('2026-06-11T02:40:00.000Z');
 
   let merchants: { findInternal: jest.Mock };
-  let charges: { findInternal: jest.Mock; markSettledFromBatch: jest.Mock };
-  let bankAccounts: { findInternal: jest.Mock };
+  let charges: { getInternal: jest.Mock; markSettledFromBatch: jest.Mock };
+  let bankAccounts: { getForInternal: jest.Mock };
   let webhookEndpoints: { listForInternalCaller: jest.Mock };
   let supportTasks: { open: jest.Mock };
   let audit: { record: jest.Mock };
@@ -20,12 +20,14 @@ describe('InternalService', () => {
   beforeEach(() => {
     merchants = { findInternal: jest.fn(async () => ({ id: 'mch_1', capture_at_settlement: true })) };
     charges = {
-      findInternal: jest.fn(async () => ({ id: 'ch_1', status: 'settled' })),
+      getInternal: jest.fn(async () => ({ id: 'ch_1', status: 'settled' })),
       markSettledFromBatch: jest.fn(async () => 1),
     };
-    bankAccounts = { findInternal: jest.fn(async () => ({ id: 'ba_1', scheme: 'aba' })) };
+    bankAccounts = {
+      getForInternal: jest.fn(async () => ({ toBankAccount: () => ({ id: 'ba_1', scheme: 'aba' }) })),
+    };
     webhookEndpoints = { listForInternalCaller: jest.fn(async () => [{ id: 'we_1' }]) };
-    supportTasks = { open: jest.fn(async () => ({ id: 'sup_1' })) };
+    supportTasks = { open: jest.fn(async () => 'sup_1') };
     audit = { record: jest.fn(async () => undefined) };
     logger = { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn(), child: jest.fn() };
 
@@ -51,7 +53,7 @@ describe('InternalService', () => {
   });
 
   it('getCharge raises ChargeNotFoundException for an orphan the ledger cannot resolve', async () => {
-    charges.findInternal.mockResolvedValueOnce(null);
+    charges.getInternal.mockRejectedValueOnce(new ChargeNotFoundException('ch_missing'));
 
     await expect(service.getCharge('ch_missing', 'payzeno-ledger')).rejects.toBeInstanceOf(
       ChargeNotFoundException,

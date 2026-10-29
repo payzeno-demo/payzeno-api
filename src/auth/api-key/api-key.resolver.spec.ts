@@ -19,7 +19,9 @@ import type { ApiKeyEntity } from 'src/merchants/api-keys/api-key.entity';
 describe('ApiKeyResolver', () => {
   const NOW = new Date('2026-01-15T12:00:00.000Z');
 
-  let keys: jest.Mocked<Pick<Repository<ApiKeyEntity>, 'findOne'>>;
+  /** The lookup's query builder: `createQueryBuilder().addSelect().where().getOne()`. */
+  let lookup: { addSelect: jest.Mock; where: jest.Mock; getOne: jest.Mock };
+  let keys: { createQueryBuilder: jest.Mock };
   let hasher: jest.Mocked<Pick<ApiKeyHasher, 'lookupHash' | 'verifySecret'>>;
   let principals: PrincipalFactory;
   let clock: Clock;
@@ -39,10 +41,13 @@ describe('ApiKeyResolver', () => {
   }
 
   beforeEach(() => {
-    keys = { findOne: jest.fn() };
+    lookup = { addSelect: jest.fn(), where: jest.fn(), getOne: jest.fn() };
+    lookup.addSelect.mockReturnValue(lookup);
+    lookup.where.mockReturnValue(lookup);
+    keys = { createQueryBuilder: jest.fn(() => lookup) };
     hasher = {
       lookupHash: jest.fn((secret: string) => `hmac(${secret})`),
-      verifySecret: jest.fn(async () => true),
+      verifySecret: jest.fn(async (_storedHash: string, _presentedSecret: string) => true),
     };
     principals = new PrincipalFactory();
     clock = { nowMs: () => NOW.getTime(), now: () => NOW } as Clock;
@@ -88,18 +93,28 @@ describe('ApiKeyResolver', () => {
     const TOKEN = 'sk_live_AB12CD34_abcdefghijklmnop';
 
     it('looks the key up by the HMAC of the secret, not by the id suffix', async () => {
-      keys.findOne.mockResolvedValue(row());
+      lookup.getOne.mockResolvedValue(row());
 
       await resolver.resolveEntity(TOKEN);
 
       expect(hasher.lookupHash).toHaveBeenCalledWith('abcdefghijklmnop');
-      expect(keys.findOne).toHaveBeenCalledWith({
-        where: { lookupHash: 'hmac(abcdefghijklmnop)' },
+      expect(lookup.where).toHaveBeenCalledWith('api_key.lookupHash = :lookupHash', {
+        lookupHash: 'hmac(abcdefghijklmnop)',
       });
     });
 
+    // Regression: `secret_hash` is `select: false`, and a plain findOne left it undefined, so
+    // argon2 verified every presented secret against nothing and no api key ever worked.
+    it('explicitly selects the select:false secret hash it verifies against', async () => {
+      lookup.getOne.mockResolvedValue(row());
+
+      await resolver.resolveEntity(TOKEN);
+
+      expect(lookup.addSelect).toHaveBeenCalledWith('api_key.secretHash');
+    });
+
     it('verifies the secret against the stored argon2 hash', async () => {
-      keys.findOne.mockResolvedValue(row());
+      lookup.getOne.mockResolvedValue(row());
 
       await resolver.resolveEntity(TOKEN);
 
@@ -108,7 +123,7 @@ describe('ApiKeyResolver', () => {
 
     it('returns the row on success', async () => {
       const entity = row();
-      keys.findOne.mockResolvedValue(entity);
+      lookup.getOne.mockResolvedValue(entity);
 
       await expect(resolver.resolveEntity(TOKEN)).resolves.toBe(entity);
     });
@@ -116,37 +131,37 @@ describe('ApiKeyResolver', () => {
     it('rejects a malformed token without touching the database', async () => {
       await expect(resolver.resolveEntity('garbage')).rejects.toBeInstanceOf(InvalidApiKeyException);
 
-      expect(keys.findOne).not.toHaveBeenCalled();
+      expect(keys.createQueryBuilder).not.toHaveBeenCalled();
     });
 
     it('rejects an unknown key', async () => {
-      keys.findOne.mockResolvedValue(null);
+      lookup.getOne.mockResolvedValue(null);
 
       await expect(resolver.resolveEntity(TOKEN)).rejects.toBeInstanceOf(InvalidApiKeyException);
     });
 
     it('rejects a wrong secret', async () => {
-      keys.findOne.mockResolvedValue(row());
+      lookup.getOne.mockResolvedValue(row());
       hasher.verifySecret.mockResolvedValue(false);
 
       await expect(resolver.resolveEntity(TOKEN)).rejects.toBeInstanceOf(InvalidApiKeyException);
     });
 
     it('rejects a revoked key', async () => {
-      keys.findOne.mockResolvedValue(row({ revokedAt: new Date('2026-01-01T00:00:00.000Z') }));
+      lookup.getOne.mockResolvedValue(row({ revokedAt: new Date('2026-01-01T00:00:00.000Z') }));
 
       await expect(resolver.resolveEntity(TOKEN)).rejects.toBeInstanceOf(InvalidApiKeyException);
     });
 
     it('accepts a key whose revocation is scheduled in the future', async () => {
       // `revoked_at` is a timestamp, not a boolean. A key revoked at end of month still works.
-      keys.findOne.mockResolvedValue(row({ revokedAt: new Date('2026-02-01T00:00:00.000Z') }));
+      lookup.getOne.mockResolvedValue(row({ revokedAt: new Date('2026-02-01T00:00:00.000Z') }));
 
       await expect(resolver.resolveEntity(TOKEN)).resolves.toBeDefined();
     });
 
     it('rejects a sk_test_ token whose row is a live key', async () => {
-      keys.findOne.mockResolvedValue(row({ mode: 'live' }));
+      lookup.getOne.mockResolvedValue(row({ mode: 'live' }));
 
       await expect(
         resolver.resolveEntity('sk_test_AB12CD34_abcdefghijklmnop'),
@@ -156,15 +171,15 @@ describe('ApiKeyResolver', () => {
     it('gives every failure the same message — no enumeration oracle', async () => {
       const messages: string[] = [];
 
-      keys.findOne.mockResolvedValue(null);
+      lookup.getOne.mockResolvedValue(null);
       await resolver.resolveEntity(TOKEN).catch((e: Error) => messages.push(e.message));
 
-      keys.findOne.mockResolvedValue(row());
+      lookup.getOne.mockResolvedValue(row());
       hasher.verifySecret.mockResolvedValue(false);
       await resolver.resolveEntity(TOKEN).catch((e: Error) => messages.push(e.message));
 
       hasher.verifySecret.mockResolvedValue(true);
-      keys.findOne.mockResolvedValue(row({ revokedAt: new Date('2020-01-01T00:00:00.000Z') }));
+      lookup.getOne.mockResolvedValue(row({ revokedAt: new Date('2020-01-01T00:00:00.000Z') }));
       await resolver.resolveEntity(TOKEN).catch((e: Error) => messages.push(e.message));
 
       expect(messages).toHaveLength(3);
@@ -174,7 +189,7 @@ describe('ApiKeyResolver', () => {
 
   describe('resolve', () => {
     it('builds an api_key principal carrying the row scopes and mode', async () => {
-      keys.findOne.mockResolvedValue(row({ scopes: ['refunds:write'], mode: 'test' }));
+      lookup.getOne.mockResolvedValue(row({ scopes: ['refunds:write'], mode: 'test' }));
 
       const principal = await resolver.resolve('sk_test_AB12CD34_abcdefghijklmnop');
 

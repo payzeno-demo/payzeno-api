@@ -67,15 +67,18 @@ export class MerchantUsersController extends BaseController {
     return this.users.get(merchantId, userId);
   }
 
+  /** Sends `team_invite` (RFC platform-v2 §4). Re-inviting a still-`invited` address re-sends. */
   @Post()
   @Roles('owner', 'admin')
   @Idempotent()
   @AuditLog('merchant_user.invite', { resourceType: 'merchant_user' })
   async invite(
+    @CurrentPrincipal() principal: AuthPrincipal,
     @Param('merchantId') merchantId: MerchantId,
     @Body() body: InviteUserDto,
   ): Promise<User> {
-    return this.users.invite(merchantId, body);
+    const invitedBy = principal.kind === 'dashboard_session' ? principal.user_id : null;
+    return this.users.invite(merchantId, body, invitedBy);
   }
 
   @Post(':userId/role')

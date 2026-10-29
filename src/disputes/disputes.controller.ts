@@ -23,7 +23,7 @@ import { MerchantScoped } from '../common/decorators/merchant-scoped.decorator';
 import { RequiredScopes } from '../common/decorators/required-scopes.decorator';
 import { StaffOnly } from '../common/decorators/staff-only.decorator';
 import { currentCorrelationId } from '../common/logging/request-context';
-import { ListQueryDto } from '../common/pagination/list-query.dto';
+import { StatusListQueryDto } from '../common/pagination/filtered-list-query.dto';
 import { DisputesService } from './disputes.service';
 import { SubmitDisputeEvidenceDto } from './dto/submit-dispute-evidence.dto';
 
@@ -39,7 +39,7 @@ export class DisputesController extends BaseController {
   @RequiredScopes('disputes:read')
   list(
     @CurrentPrincipal() principal: AuthPrincipal,
-    @Query() query: ListQueryDto,
+    @Query() query: StatusListQueryDto,
     @Query('status') status?: DisputeStatus,
   ): Promise<Paginated<Dispute>> {
     return this.disputes.list(principal, { ...query, limit: query.effectiveLimit(), status });

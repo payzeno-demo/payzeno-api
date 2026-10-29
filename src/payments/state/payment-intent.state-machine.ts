@@ -3,15 +3,20 @@
  *
  * ```
  * requires_payment_method ──attach──▶ requires_confirmation ──confirm──▶ processing
- *         ▲                                                              │   ▲
- *         │ decline (retryable)                                          │   │ complete_action
- *         └──────────────────────────────────────────────────────────────┤   │
- *                                                     requires_action ◀───┴───┘
+ *     │          ▲                                                       ▲   │   ▲
+ *     │          │ decline                                               │   │   │ complete_action
+ *     │          └───────────────────────────────────────────────────────┼───┤   │
+ *     └──confirm (payment method on the request)─────────────────────────┘   │   │
+ *                                                     requires_action ◀───────┤───┘
  *                                                                            ├─▶ requires_capture
  *                                                                            ├─▶ succeeded
  *                                                                            └─▶ failed
  * any non-terminal ──cancel──▶ canceled
  * ```
+ *
+ * `confirm` straight out of `requires_payment_method` is the one-call path every client uses:
+ * the payment method rides on the confirm request rather than a separate attach, and it is also
+ * how a buyer tries another card after a decline put the intent back there.
  *
  * `requires_action` is not optional: under PSD2 a EUR or GBP e-commerce authorisation without
  * SCA or a documented exemption is declined by the issuer, and three of the five supported
@@ -40,6 +45,8 @@ export type PaymentIntentEvent =
 const TRANSITIONS: TransitionTable<PaymentIntentStatus, PaymentIntentEvent> = {
   requires_payment_method: {
     attach_payment_method: 'requires_confirmation',
+    // ConfirmPaymentFlow refuses it without a payment method on the request or the intent.
+    confirm: 'processing',
     cancel: 'canceled',
     fail: 'failed',
   },
@@ -52,8 +59,9 @@ const TRANSITIONS: TransitionTable<PaymentIntentStatus, PaymentIntentEvent> = {
     require_action: 'requires_action',
     authorize: 'requires_capture',
     capture: 'succeeded',
-    // A retryable decline sends the buyer back for another payment method rather than
-    // terminating the intent. A non-retryable one takes `fail`.
+    // A card decline sends the buyer back for another payment method rather than terminating
+    // the intent; ConfirmPaymentFlow takes this edge for every CardDeclinedException. `fail`
+    // is for an attempt that did not get an issuer answer at all.
     decline: 'requires_payment_method',
     fail: 'failed',
     cancel: 'canceled',

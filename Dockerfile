@@ -12,7 +12,7 @@
 # ---------- deps ----------
 FROM node:20.11-bookworm-slim AS deps
 ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH
-RUN corepack enable && corepack prepare pnpm@8.15.8 --activate
+RUN corepack enable && corepack prepare pnpm@9.1.1 --activate
 RUN apt-get update \
  && apt-get install -y --no-install-recommends python3 make g++ ca-certificates \
  && rm -rf /var/lib/apt/lists/*
@@ -30,8 +30,11 @@ COPY payzeno-contracts payzeno-contracts
 COPY payzeno-api       payzeno-api
 RUN pnpm --filter @payzeno/contracts build \
  && pnpm --filter @payzeno/api build
-# Drop dev deps in place so the runtime stage can copy node_modules verbatim.
-RUN pnpm install --frozen-lockfile --prod --filter @payzeno/api...
+# A self-contained copy of the api with production deps only, and the contracts package
+# materialised as real files rather than a workspace symlink. Copying the workspace's
+# node_modules into another layout does not work: pnpm's links are relative, and they
+# resolve to nothing once moved.
+RUN pnpm --filter @payzeno/api --prod deploy /deploy
 
 # ---------- runtime ----------
 FROM node:20.11-bookworm-slim AS runtime
@@ -43,13 +46,12 @@ ENV NODE_ENV=production \
     NODE_OPTIONS=--enable-source-maps
 WORKDIR /app
 
-COPY --from=build /repo/node_modules                      /app/node_modules
-COPY --from=build /repo/payzeno-contracts/dist            /app/payzeno-contracts/dist
-COPY --from=build /repo/payzeno-contracts/node_modules    /app/payzeno-contracts/node_modules
-COPY --from=build /repo/payzeno-api/node_modules          /app/node_modules_api
-COPY --from=build /repo/payzeno-api/dist                  /app/dist
-COPY --from=build /repo/payzeno-api/package.json          /app/package.json
-COPY --from=build /repo/payzeno-api/contracts             /app/contracts
+COPY --from=build /deploy/node_modules                     /app/node_modules
+# `deploy` packs the way a publish would, and dist/ is gitignored, so the build output comes
+# straight from the build stage.
+COPY --from=build /repo/payzeno-api/dist                   /app/dist
+COPY --from=build /deploy/package.json                     /app/package.json
+COPY --from=build /deploy/contracts                        /app/contracts
 
 RUN useradd --uid 10001 --create-home --shell /usr/sbin/nologin payzeno \
  && chown -R payzeno:payzeno /app

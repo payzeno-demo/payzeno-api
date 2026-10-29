@@ -1,7 +1,7 @@
 import { Test } from '@nestjs/testing';
 import type { TestingModule } from '@nestjs/testing';
 
-import { NoopLogger, PayzenoLogger } from 'src/common/logging/logger';
+import { NoopLogger, PAYZENO_LOGGER } from 'src/common/logging/logger';
 import { PaymentIntentNotFoundException } from 'src/common/errors/not-found.exceptions';
 import { CancelPaymentFlow } from 'src/payments/flows/cancel-payment.flow';
 import { CapturePaymentFlow } from 'src/payments/flows/capture-payment.flow';
@@ -51,7 +51,7 @@ describe('PaymentIntentsService', () => {
         { provide: ConfirmPaymentFlow, useValue: confirmFlow },
         { provide: CapturePaymentFlow, useValue: captureFlow },
         { provide: CancelPaymentFlow, useValue: cancelFlow },
-        { provide: PayzenoLogger, useValue: new NoopLogger() },
+        { provide: PAYZENO_LOGGER, useValue: new NoopLogger() },
       ],
     }).compile();
 

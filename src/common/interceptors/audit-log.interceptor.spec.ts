@@ -140,6 +140,22 @@ describe('AuditLogInterceptor', () => {
     );
   });
 
+  it('never persists a credential the response carries', async () => {
+    // Regression: `after` was the raw handler result, so api_key.create stored the plaintext
+    // `sk_live_…` and webhook_endpoint.create the signing secret.
+    await firstValueFrom(
+      interceptor.intercept(
+        context(makeSessionPrincipal(), { action: 'api_key.create' }),
+        handler({ id: 'key_1', secret: 'sk_live_abcd1234_s3cr3t', last_four: 'cr3t' }),
+      ),
+    );
+    await flush();
+
+    expect(sink.record).toHaveBeenCalledWith(
+      expect.objectContaining({ after: { id: 'key_1', secret: '[REDACTED]', last_four: 'cr3t' } }),
+    );
+  });
+
   it('derives the resource type from the action when none is declared', async () => {
     await firstValueFrom(
       interceptor.intercept(context(makeSessionPrincipal(), { action: 'settlement.item.retry' }), handler()),

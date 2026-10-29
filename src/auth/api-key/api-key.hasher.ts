@@ -61,10 +61,14 @@ export class ApiKeyHasher {
    * Constant-time by construction — argon2's own verify is. The try/catch swallows a malformed
    * stored hash into `false` rather than a 500: a corrupt row must fail authentication, not
    * take the endpoint down.
+   *
+   * No options: the digest carries its own type, memory, time and parallelism. argon2 0.40's
+   * verify accepts only `{ secret }` and rejects the hashing options with "Invalid argument" —
+   * which the catch below turned into `false`, so every API key failed to authenticate.
    */
   async verifySecret(storedHash: string, presentedSecret: string): Promise<boolean> {
     try {
-      return await argon2.verify(storedHash, presentedSecret, ARGON2_OPTIONS);
+      return await argon2.verify(storedHash, presentedSecret);
     } catch {
       return false;
     }

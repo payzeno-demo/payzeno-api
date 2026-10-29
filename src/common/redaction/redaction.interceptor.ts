@@ -12,13 +12,19 @@
  * leaves three readers looking at the original.
  */
 import { Inject, Injectable, type CallHandler, type ExecutionContext, type NestInterceptor } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { map, type Observable } from 'rxjs';
 
 import { API_CONFIG, type ApiConfig } from '../../config/api-config.type';
+import {
+  ACCEPTS_SECRET_FIELDS_KEY,
+  RETURNS_SECRET_FIELDS_KEY,
+  type ExemptableSecretField,
+} from '../decorators/secret-fields.decorator';
 import { FLAG_NAMES } from '../flags/flag-names';
 
-import { maskPans } from './pan.matcher';
-import { redactDeep } from './redaction.denylist';
+import { NO_EXEMPTIONS } from './redaction.denylist';
+import { scrubDeep } from './scrub';
 
 interface RequestLike {
   body?: unknown;
@@ -28,7 +34,10 @@ interface RequestLike {
 
 @Injectable()
 export class RedactionInterceptor implements NestInterceptor {
-  constructor(@Inject(API_CONFIG) private readonly config: ApiConfig) {}
+  constructor(
+    @Inject(API_CONFIG) private readonly config: ApiConfig,
+    private readonly reflector: Reflector,
+  ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     // `redact_pan_in_logs` is on and non-removable — the flag exists so the runbook can
@@ -40,34 +49,29 @@ export class RedactionInterceptor implements NestInterceptor {
     if (context.getType() === 'http') {
       const req = context.switchToHttp().getRequest<RequestLike>();
       if (req.body && typeof req.body === 'object') {
-        req.body = this.scrub(req.body);
+        req.body = this.scrub(req.body, this.exemptions(context, ACCEPTS_SECRET_FIELDS_KEY));
       }
     }
 
-    return next.handle().pipe(map((body) => this.scrub(body)));
+    const returned = this.exemptions(context, RETURNS_SECRET_FIELDS_KEY);
+    return next.handle().pipe(map((body) => this.scrub(body, returned)));
   }
 
-  /** Field denylist first (cheap, exact), then the Luhn scan over remaining strings. */
-  scrub(value: unknown): unknown {
-    return this.maskStrings(redactDeep(value));
+  /**
+   * Field denylist first (cheap, exact), then the Luhn scan over remaining strings. `exempt`
+   * spares a route's own credentials from the first pass only — never from the PAN scan.
+   */
+  scrub(value: unknown, exempt: ReadonlySet<string> = NO_EXEMPTIONS): unknown {
+    return scrubDeep(value, exempt);
   }
 
-  private maskStrings(value: unknown, depth = 0): unknown {
-    if (depth > 12 || value === null || value === undefined) return value;
-
-    if (typeof value === 'string') return maskPans(value);
-
-    if (Array.isArray(value)) return value.map((item) => this.maskStrings(item, depth + 1));
-
-    if (typeof value === 'object') {
-      const out: Record<string, unknown> = {};
-      for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-        out[key] = this.maskStrings(child, depth + 1);
-      }
-      return out;
-    }
-
-    return value;
+  /** The handler's and the controller's `@AcceptsSecretFields` / `@ReturnsSecretFields`, merged. */
+  private exemptions(context: ExecutionContext, key: string): ReadonlySet<string> {
+    const fields = this.reflector.getAllAndMerge<ExemptableSecretField[]>(key, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    return fields.length === 0 ? NO_EXEMPTIONS : new Set(fields);
   }
 }
 

@@ -16,7 +16,7 @@ import { RequiredScopes } from '../common/decorators/required-scopes.decorator';
 import { StaffOnly } from '../common/decorators/staff-only.decorator';
 import { MerchantScopeGuard } from '../auth/guards/merchant-scope.guard';
 import { SessionGuard } from '../auth/guards/session.guard';
-import { ListQueryDto } from '../common/pagination/list-query.dto';
+import { WebhookEventListQueryDto } from '../common/pagination/filtered-list-query.dto';
 import { WebhookEventsService } from './webhook-events.service';
 
 /**
@@ -38,7 +38,7 @@ export class WebhookEventsController extends BaseController {
   @RequiredScopes('webhooks:read')
   async list(
     @CurrentPrincipal() principal: AuthPrincipal,
-    @Query() query: ListQueryDto,
+    @Query() query: WebhookEventListQueryDto,
     @Query('status') status?: WebhookEventStatus,
     @Query('type') type?: PublicEventType,
   ): Promise<Paginated<WebhookEventDto>> {

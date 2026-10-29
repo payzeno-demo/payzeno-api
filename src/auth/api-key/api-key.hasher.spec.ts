@@ -78,6 +78,27 @@ describe('ApiKeyHasher', () => {
       await expect(hasher.verifySecret(stored, 'not-it')).resolves.toBe(false);
     });
 
+    it('verifies with the digest alone — the parameters live in the stored hash', async () => {
+      const stored = await hasher.hashSecret('s3cr3t');
+      await hasher.verifySecret(stored, 's3cr3t');
+
+      // Regression: argon2 0.40's verify rejects the hashing options ("Invalid argument"), and
+      // verifySecret's catch turned that into `false` for every key ever minted.
+      expect(argon2.verify).toHaveBeenCalledWith(stored, 's3cr3t');
+    });
+
+    it('round-trips through the real argon2 package', async () => {
+      // One real hash + verify (~0.2s) so the mock above cannot hide a call the package rejects.
+      const real = jest.requireActual<typeof import('argon2')>('argon2');
+      (argon2.hash as jest.Mock).mockImplementationOnce(real.hash);
+      (argon2.verify as jest.Mock).mockImplementationOnce(real.verify).mockImplementationOnce(real.verify);
+
+      const stored = await hasher.hashSecret('s3cr3t');
+
+      await expect(hasher.verifySecret(stored, 's3cr3t')).resolves.toBe(true);
+      await expect(hasher.verifySecret(stored, 's3cr3T')).resolves.toBe(false);
+    });
+
     it('returns false rather than throwing on a corrupt stored hash', async () => {
       (argon2.verify as jest.Mock).mockRejectedValueOnce(new Error('pchstr'));
 

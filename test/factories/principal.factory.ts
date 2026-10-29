@@ -103,6 +103,7 @@ export function makeClientSecretPrincipal(
     kind: 'client_secret',
     merchant_id: TEST_MERCHANT_ID,
     payment_intent_id: TEST_PAYMENT_INTENT_ID,
+    livemode: true,
     ...overrides,
   };
 }

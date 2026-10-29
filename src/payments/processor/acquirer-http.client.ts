@@ -72,11 +72,7 @@ export class AcquirerHttpClient extends BaseHttpClient {
     return this.breakers.run(
       `acquirer:${this.credentials.acquirer}`,
       () => this.request<TResponse, TBody>(spec),
-      () =>
-        new ProcessorUnavailableException(
-          `${this.credentials.acquirer} circuit is open`,
-          this.credentials.acquirer,
-        ),
+      () => new ProcessorUnavailableException(this.credentials.acquirer, 'circuit is open'),
     );
   }
 
@@ -100,27 +96,22 @@ export class AcquirerHttpClient extends BaseHttpClient {
       const code = mapDeclineCode(body.decline_code ?? body.error_code);
       const message = body.message ?? 'The card was declined';
       if (code === 'insufficient_funds') {
-        throw new InsufficientFundsException(message, code);
+        throw new InsufficientFundsException();
       }
       if (code === 'expired_card') {
-        throw new ExpiredCardException(message, code);
+        throw new ExpiredCardException();
       }
-      throw new CardDeclinedException(message, code);
+      throw new CardDeclinedException(code, message);
     }
 
     throw new ProcessorUnavailableException(
-      `${this.credentials.acquirer} responded ${failure.status} for ${failure.spec.method} ${failure.spec.path}`,
       this.credentials.acquirer,
-      { status: failure.status, error_code: body.error_code ?? null },
+      `responded ${failure.status}${body.error_code ? ` (${body.error_code})` : ''}`,
     );
   }
 
-  protected mapTransportFailure(err: TransportError, spec: RequestSpec<unknown>): never {
-    throw new ProcessorUnavailableException(
-      `${this.credentials.acquirer} ${err.kind} on ${spec.method} ${spec.path}`,
-      this.credentials.acquirer,
-      { failure: err.kind },
-    );
+  protected mapTransportFailure(err: TransportError, _spec: RequestSpec<unknown>): never {
+    throw new ProcessorUnavailableException(this.credentials.acquirer, err.kind);
   }
 }
 

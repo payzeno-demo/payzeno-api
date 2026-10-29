@@ -21,6 +21,7 @@ const TEST_ENV: Record<string, string> = {
   BILLING_LEGACY_BASE_URL: 'http://billing.test.internal',
   VAULT_BASE_URL: 'http://vault.test.internal',
   VAULT_API_KEY: 'vault_test_key',
+  CHECKOUT_PUBLIC_URL: 'http://pay.test.internal',
   WORLDFLOW_BASE_URL: 'http://worldflow.test.internal:9100',
   NORDPAY_BASE_URL: 'http://nordpay.test.internal:9101',
   WORLDFLOW_API_KEY: 'wf_test_key',

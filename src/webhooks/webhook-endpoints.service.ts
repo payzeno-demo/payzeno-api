@@ -8,12 +8,15 @@ import type {
 } from '@payzeno/contracts';
 import { PUBLIC_EVENT_TYPES } from '@payzeno/contracts';
 import { BaseService } from '../common/base/base.service';
+import type { MerchantScope } from '../common/base/merchant-scoped.entity';
 import { ValidationException } from '../common/errors/api.exception';
 import { ResourceNotFoundException } from '../common/errors/not-found.exceptions';
 import { IdFactory } from '../common/ids/id.factory';
-import { ApiIdPrefix } from '../common/ids/id.prefix';
 import { PAYZENO_LOGGER, type PayzenoLogger } from '../common/logging/logger';
+import { toInsertRow } from '../common/persistence/payzeno.repository';
 import { CLOCK, type Clock } from '../common/time/clock';
+import { assertCallbackUrl } from '../common/validators/callback-url';
+import { API_CONFIG, type ApiConfig } from '../config/api-config.type';
 import type { CreateWebhookEndpointDto } from './dto/create-webhook-endpoint.dto';
 import { WebhookSecretService } from './secret/webhook-secret.service';
 import { WebhookEndpointEntity } from './webhook-endpoint.entity';
@@ -29,6 +32,7 @@ export class WebhookEndpointsService extends BaseService<WebhookEndpointEntity> 
     private readonly secrets: WebhookSecretService,
     private readonly ids: IdFactory,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(API_CONFIG) private readonly config: ApiConfig,
     @Inject(PAYZENO_LOGGER) logger: PayzenoLogger,
   ) {
     super(endpoints, logger);
@@ -38,8 +42,8 @@ export class WebhookEndpointsService extends BaseService<WebhookEndpointEntity> 
     return 'webhook_endpoint';
   }
 
-  async list(merchantId: MerchantId, query: ListQuery): Promise<Paginated<WebhookEndpointDto>> {
-    const page = await this.paginate(query, { merchantId } as never);
+  async list(scope: MerchantScope, query: ListQuery): Promise<Paginated<WebhookEndpointDto>> {
+    const page = await this.paginate(query, scope);
     return {
       data: page.data.map((row) => this.toDto(row)),
       next_cursor: page.next_cursor,
@@ -47,8 +51,8 @@ export class WebhookEndpointsService extends BaseService<WebhookEndpointEntity> 
     };
   }
 
-  async get(merchantId: MerchantId, id: string): Promise<WebhookEndpointDto> {
-    const row = await this.findOneOrThrow(id, merchantId);
+  async get(scope: MerchantScope, id: string): Promise<WebhookEndpointDto> {
+    const row = await this.findOneOrThrow(id, scope);
     return this.toDto(row);
   }
 
@@ -62,7 +66,8 @@ export class WebhookEndpointsService extends BaseService<WebhookEndpointEntity> 
     livemode: boolean,
     dto: CreateWebhookEndpointDto,
   ): Promise<WebhookEndpointDto> {
-    this.assertHttps(dto.url);
+    // https in production; http too elsewhere, for the local demo shops' webhook receivers.
+    assertCallbackUrl(dto.url, 'url', this.config.runtime.nodeEnv);
     this.assertKnownEvents(dto.enabled_events);
 
     const existing = await this.endpoints.count({ where: { merchantId } } as never);
@@ -76,7 +81,8 @@ export class WebhookEndpointsService extends BaseService<WebhookEndpointEntity> 
     const encrypted = await this.secrets.encrypt(secret);
 
     const row = new WebhookEndpointEntity();
-    row.id = this.ids.generate(ApiIdPrefix.WEBHOOK_ENDPOINT);
+    // `whe_` is not in the public prefix table, hence `opaque` — the console's fixtures agree.
+    row.id = this.ids.opaque('whe_');
     row.merchantId = merchantId;
     row.livemode = livemode;
     row.url = dto.url;
@@ -91,7 +97,7 @@ export class WebhookEndpointsService extends BaseService<WebhookEndpointEntity> 
     row.createdAt = this.clock.now();
     row.updatedAt = this.clock.now();
 
-    await this.endpoints.insert(row);
+    await this.endpoints.insert(toInsertRow(row));
 
     this.logger.info('webhook.endpoint_created', {
       endpoint_id: row.id,
@@ -103,15 +109,15 @@ export class WebhookEndpointsService extends BaseService<WebhookEndpointEntity> 
     return { ...this.toDto(row), signing_secret: secret };
   }
 
-  async delete(merchantId: MerchantId, id: string): Promise<void> {
-    const row = await this.findOneOrThrow(id, merchantId);
+  async delete(scope: MerchantScope, id: string): Promise<void> {
+    const row = await this.findOneOrThrow(id, scope);
     await this.endpoints.delete({ id: row.id } as never);
-    this.logger.info('webhook.endpoint_deleted', { endpoint_id: id, merchant_id: merchantId });
+    this.logger.info('webhook.endpoint_deleted', { endpoint_id: id, merchant_id: scope.merchantId });
   }
 
   /** Rotation: old secret stays valid for the 24h overlap, then stops being sent. */
-  async rotateSecret(merchantId: MerchantId, id: string): Promise<WebhookEndpointDto> {
-    const row = await this.findOneOrThrow(id, merchantId);
+  async rotateSecret(scope: MerchantScope, id: string): Promise<WebhookEndpointDto> {
+    const row = await this.findOneOrThrow(id, scope);
     const rotated = await this.secrets.rotate(row);
 
     row.signingSecretEncrypted = rotated.encrypted;
@@ -175,22 +181,6 @@ export class WebhookEndpointsService extends BaseService<WebhookEndpointEntity> 
     }
   }
 
-  private assertHttps(url: string): void {
-    let parsed: URL;
-    try {
-      parsed = new URL(url);
-    } catch {
-      throw new ValidationException('url is not a valid absolute URL', [
-        { path: 'url', code: 'invalid_format', message: 'must be an absolute https URL' },
-      ]);
-    }
-    if (parsed.protocol !== 'https:') {
-      throw new ValidationException('webhook endpoints must be https', [
-        { path: 'url', code: 'invalid_scheme', message: 'https is required' },
-      ]);
-    }
-  }
-
   private assertKnownEvents(events: readonly string[]): void {
     const unknown = events.filter(
       (event) => !(PUBLIC_EVENT_TYPES as readonly string[]).includes(event),
@@ -227,7 +217,7 @@ export class WebhookEndpointsService extends BaseService<WebhookEndpointEntity> 
   }
 
   /** Used by the controller's 404 path so the message names the resource. */
-  protected notFound(id: string): ResourceNotFoundException {
+  protected override notFound(id: string): ResourceNotFoundException {
     return new ResourceNotFoundException('webhook_endpoint', id);
   }
 }

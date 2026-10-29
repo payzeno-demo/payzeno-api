@@ -16,6 +16,7 @@ import { IdFactory } from '../common/ids/id.factory';
 import type { StaffAuditEntry } from '../common/interceptors/audit-log.interceptor';
 import { PAYZENO_LOGGER, type PayzenoLogger } from '../common/logging/logger';
 import { getRequestContext } from '../common/logging/request-context';
+import { toInsertRow } from '../common/persistence/payzeno.repository';
 import { CLOCK, type Clock } from '../common/time/clock';
 
 import { StaffAuditLog } from './staff-user.entity';
@@ -43,7 +44,7 @@ export class StaffAuditService {
     const row = this.toRow(entry);
     const repo = manager ? manager.getRepository(StaffAuditLog) : this.rows;
 
-    await repo.insert(row);
+    await repo.insert(toInsertRow(row));
 
     if (REVIEWED_STAFF_ACTIONS.includes(row.action)) {
       // These are the ones risk reads every month; surfacing them in the access log too

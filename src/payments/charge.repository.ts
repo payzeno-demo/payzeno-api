@@ -11,7 +11,6 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import { DataSource, EntityManager, In, type FindOptionsWhere } from 'typeorm';
 import type {
   Acquirer,
   ChargeId,
@@ -19,10 +18,15 @@ import type {
   ChargeStatus,
   MerchantId,
   Paginated,
+  RiskOutcome,
   SettlementBatchId,
 } from '@payzeno/contracts';
+import { DataSource, EntityManager, In, type FindOptionsWhere } from 'typeorm';
 
+import type { MerchantScope } from '../common/base/merchant-scoped.entity';
+import { resolveListQuery } from '../common/pagination/list-query.dto';
 import { PayzenoRepository } from '../common/persistence/payzeno.repository';
+
 import { ChargeEntity } from './charge.entity';
 
 export interface CaptureWrite {
@@ -38,6 +42,8 @@ export interface AuthorizationWrite {
   authorizedAt: Date;
   authorizationExpiresAt: Date;
   riskScore: number;
+  /** RFC platform-v2 §8. Null when the rules were skipped (off-session renewals). */
+  riskOutcome: RiskOutcome | null;
 }
 
 @Injectable()
@@ -61,36 +67,42 @@ export class ChargeRepository extends PayzenoRepository<ChargeEntity> {
     });
   }
 
-  async findScopedById(merchantId: MerchantId, chargeId: ChargeId): Promise<ChargeEntity | null> {
-    return this.findOneScoped(merchantId, chargeId);
+  async findScopedById(scope: MerchantScope, chargeId: ChargeId): Promise<ChargeEntity | null> {
+    return this.findScoped(chargeId, scope);
   }
 
-  async list(merchantId: MerchantId, query: ChargeListQuery): Promise<Paginated<ChargeEntity>> {
-    const where: FindOptionsWhere<ChargeEntity> = { merchant_id: merchantId } as FindOptionsWhere<ChargeEntity>;
-    if (query.status) {
-      (where as Record<string, unknown>).status = query.status;
-    }
-    if (query.payment_intent_id) {
-      (where as Record<string, unknown>).payment_intent_id = query.payment_intent_id;
-    }
-    if (query.settlement_batch_id) {
-      (where as Record<string, unknown>).settlement_batch_id = query.settlement_batch_id;
-    }
+  async list(scope: MerchantScope, query: ChargeListQuery): Promise<Paginated<ChargeEntity>> {
     // Rides `ix_charge_merchant_created`; migration 14 exists because this was a seq scan.
-    return this.paginateCursor(query, where, { column: 'created_at', direction: 'DESC' });
+    return this.paginateCursor(scope, resolveListQuery(query), (qb) => {
+      let builder = qb;
+      if (query.status) {
+        builder = builder.andWhere('charge.status = :status', { status: query.status });
+      }
+      if (query.payment_intent_id) {
+        builder = builder.andWhere('charge.payment_intent_id = :intentId', {
+          intentId: query.payment_intent_id,
+        });
+      }
+      if (query.settlement_batch_id) {
+        builder = builder.andWhere('charge.settlement_batch_id = :batchId', {
+          batchId: query.settlement_batch_id,
+        });
+      }
+      return builder;
+    });
   }
 
   listForIntent(paymentIntentId: string, manager?: EntityManager): Promise<ChargeEntity[]> {
     const repo = manager ? manager.getRepository(ChargeEntity) : this;
     return repo.find({
       where: { payment_intent_id: paymentIntentId } as FindOptionsWhere<ChargeEntity>,
-      order: { created_at: 'DESC' },
+      order: { createdAt: 'DESC' },
     });
   }
 
   /** `SELECT … FOR UPDATE`. `RefundPolicyService` holds this while it sums the refunds. */
   lockCharge(manager: EntityManager, chargeId: ChargeId): Promise<ChargeEntity | null> {
-    return this.lockForUpdate(manager, chargeId);
+    return this.lockForUpdate(chargeId, manager);
   }
 
   async markAuthorized(manager: EntityManager, chargeId: ChargeId, write: AuthorizationWrite): Promise<void> {
@@ -105,7 +117,25 @@ export class ChargeRepository extends PayzenoRepository<ChargeEntity> {
         authorized_at: write.authorizedAt,
         authorization_expires_at: write.authorizationExpiresAt,
         risk_score: write.riskScore,
+        risk_outcome: write.riskOutcome,
       })
+      .where('id = :id AND status = :expected', { id: chargeId, expected: 'pending' })
+      .execute();
+  }
+
+  /**
+   * A 3-D Secure challenge is out: the charge stays `pending`, but it now has the acquirer's
+   * reference, which is the only handle the resumed confirm has to read the outcome back.
+   */
+  async markAwaitingAuthentication(
+    manager: EntityManager,
+    chargeId: ChargeId,
+    processorReference: string,
+  ): Promise<void> {
+    await manager
+      .createQueryBuilder()
+      .update(ChargeEntity)
+      .set({ processor_reference: processorReference })
       .where('id = :id AND status = :expected', { id: chargeId, expected: 'pending' })
       .execute();
   }
@@ -139,6 +169,27 @@ export class ChargeRepository extends PayzenoRepository<ChargeEntity> {
         captured_amount_minor: write.capturedAmountMinor,
         processor_reference: write.processorReference,
         captured_at: write.capturedAt,
+      })
+      .where('id = :id AND status = :expected', { id: chargeId, expected: 'authorized' })
+      .execute();
+    return result.affected ?? 0;
+  }
+
+  /**
+   * RFC platform-v2 §8 `block`: the rules refused an authorisation the issuer approved. The hold
+   * is voided at the acquirer first; this records why, as a `fraud_suspected` failure the
+   * checkout page shows like any decline. `voided` says whether the acquirer confirmed the void —
+   * when it did not, the charge stays `authorized` and ChargeExpiryJob releases it later.
+   */
+  async markBlocked(manager: EntityManager, chargeId: ChargeId, voided: boolean, failureMessage: string): Promise<number> {
+    const result = await manager
+      .createQueryBuilder()
+      .update(ChargeEntity)
+      .set({
+        ...(voided ? { status: 'voided' as const } : {}),
+        failure_code: 'fraud_suspected',
+        failure_message: failureMessage,
+        risk_outcome: 'block',
       })
       .where('id = :id AND status = :expected', { id: chargeId, expected: 'authorized' })
       .execute();
@@ -225,6 +276,19 @@ export class ChargeRepository extends PayzenoRepository<ChargeEntity> {
     return this.createQueryBuilder('charge')
       .where('charge.merchant_id = :merchantId', { merchantId })
       .andWhere('charge.status IN (:...statuses)', { statuses })
+      .getCount();
+  }
+
+  /**
+   * `RiskEvaluationService`'s denominator: charges captured inside the trailing window.
+   * Counted by `captured_at`, so a charge that has since settled or been refunded still counts
+   * — it was captured, and it can still be disputed. Pairs with
+   * `DisputeRepository.countOpenedSince`.
+   */
+  countCapturedSince(merchantId: MerchantId, since: Date): Promise<number> {
+    return this.createQueryBuilder('charge')
+      .where('charge.merchant_id = :merchantId', { merchantId })
+      .andWhere('charge.captured_at >= :since', { since })
       .getCount();
   }
 }

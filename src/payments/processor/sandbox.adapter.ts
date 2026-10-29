@@ -63,6 +63,10 @@ export class SandboxProcessorAdapter implements ProcessorAdapter {
 
     return {
       approved: declineCode === null && !challenge,
+      pendingAuthentication: challenge,
+      // There is no sandbox challenge page: the cardholder goes straight back to the return URL,
+      // and the resumed confirm reads the challenge as passed (`getAuthorization`).
+      challengeUrl: challenge ? (req.threeDSecure?.returnUrl ?? null) : null,
       networkTransactionId: declineCode ? null : `sbxntid_${req.chargeId.slice(-16)}`,
       authorizationCode: declineCode ? null : sixDigitCode(req.chargeId),
       processorReference: reference,
@@ -92,6 +96,40 @@ export class SandboxProcessorAdapter implements ProcessorAdapter {
             liabilityShifted: true,
           },
       raw: { sandbox: true, trigger },
+    };
+  }
+
+  /**
+   * The sandbox keeps no state, so the only authorisation it is ever asked to read back is a
+   * challenge it issued — and a test-mode challenge always passes.
+   */
+  async getAuthorization(processorReference: string): Promise<AuthorizeResult> {
+    const seed = processorReference.replace(/^SBX-/, '');
+    return {
+      approved: true,
+      pendingAuthentication: false,
+      challengeUrl: null,
+      networkTransactionId: `sbxntid_${seed}`,
+      authorizationCode: sixDigitCode(seed),
+      processorReference,
+      declineCode: null,
+      riskScore: 3,
+      card: {
+        brand: 'visa',
+        last_four: '4242',
+        exp_month: 12,
+        exp_year: this.clock.now().getUTCFullYear() + 2,
+        country: 'US',
+        funding: 'credit',
+      },
+      threeDSecure: {
+        version: '2.2.0',
+        authenticationFlow: 'challenge',
+        result: 'authenticated',
+        eci: '05',
+        liabilityShifted: true,
+      },
+      raw: { sandbox: true, resumed: true },
     };
   }
 

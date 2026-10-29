@@ -1,13 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource, EntityManager, In } from 'typeorm';
 import type { MerchantId, PublicEventType, WebhookEventStatus } from '@payzeno/contracts';
-import { PayzenoRepository } from '../common/persistence/payzeno.repository';
+import { PayzenoRepository, toInsertRows } from '../common/persistence/payzeno.repository';
 import { WebhookEventEntity } from './webhook-event.entity';
 
 @Injectable()
 export class WebhookEventRepository extends PayzenoRepository<WebhookEventEntity> {
   constructor(dataSource: DataSource) {
     super(WebhookEventEntity, dataSource.createEntityManager());
+  }
+
+  protected get alias(): string {
+    return 'webhook_event';
   }
 
   /**
@@ -31,7 +35,7 @@ export class WebhookEventRepository extends PayzenoRepository<WebhookEventEntity
       .createQueryBuilder()
       .insert()
       .into(WebhookEventEntity)
-      .values(rows as WebhookEventEntity[])
+      .values(toInsertRows(rows))
       .orIgnore('ON CONSTRAINT uq_webhook_event_source')
       .returning('id')
       .execute();

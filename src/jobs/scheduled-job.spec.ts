@@ -1,5 +1,7 @@
 import 'reflect-metadata';
 
+import { SELF_DECLARED_DEPS_METADATA } from '@nestjs/common/constants';
+
 import { JobLock } from '../common/decorators/job-lock.decorator';
 import { InMemoryLock, type DistributedLock, type LockHandle } from '../common/lock/distributed-lock';
 
@@ -55,6 +57,13 @@ describe('ScheduledJob', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  it('declares no constructor @Inject of its own — subclasses would inherit it by index', () => {
+    // Regression: Nest reads `self:paramtypes` through the prototype chain, so the base class's
+    // @Inject on parameters 0 and 1 overrode every job's own first two dependencies. The outbox
+    // drain received the lock service as its outbox repository ("claimDue is not a function").
+    expect(Reflect.getOwnMetadata(SELF_DECLARED_DEPS_METADATA, ScheduledJob)).toBeUndefined();
   });
 
   it('runs the body when it wins the lease', async () => {

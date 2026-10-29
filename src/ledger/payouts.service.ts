@@ -2,6 +2,13 @@
  * L7. Payouts are OWNED by payzeno-ledger; payzeno-api holds no `payout` table. This service
  * is authorisation, scoping and business refusal — the money lives one repo over.
  *
+ * RFC platform-v2 §7: a payout may leave a balance in one currency for a bank account in
+ * another; the ledger converts and reports `source_amount_minor`, `source_currency` and
+ * `fx_rate`. Nothing here compares the payout currency with the account's — that is the
+ * ledger's to price, and it is not a refusal any more. Those three fields are passed through
+ * as the ledger sent them, null when it sent nothing (a same-currency payout, or a ledger that
+ * predates conversion).
+ *
  * Two refusals happen here rather than in the ledger, because they are merchant-status
  * decisions and the merchant row is ours:
  *  - a `restricted` merchant may charge but may NOT receive payouts (domain-model.md §1);
@@ -21,6 +28,7 @@ import type { CreatePayoutRequest, MerchantId, Paginated, Payout, PayoutId } fro
 
 import { MerchantRestrictedException } from '../common/errors/business.exceptions';
 import { MerchantsService } from '../merchants/merchants.service';
+
 import { BalanceService } from './balance.service';
 import { LedgerReadThroughService } from './ledger-read-through.service';
 import type { PayoutListQuery } from './ledger.types';
@@ -39,12 +47,13 @@ export class PayoutsService implements OnModuleInit {
     this.merchants = this.moduleRef.get(MerchantsService, { strict: false });
   }
 
-  list(merchantId: MerchantId, query: Omit<PayoutListQuery, 'merchant_id'>): Promise<Paginated<Payout>> {
-    return this.readThrough.listPayouts(merchantId, query);
+  async list(merchantId: MerchantId, query: Omit<PayoutListQuery, 'merchant_id'>): Promise<Paginated<Payout>> {
+    const page = await this.readThrough.listPayouts(merchantId, query);
+    return { ...page, data: page.data.map(withConversion) };
   }
 
-  get(merchantId: MerchantId, payoutId: PayoutId): Promise<Payout> {
-    return this.readThrough.getPayout(merchantId, payoutId);
+  async get(merchantId: MerchantId, payoutId: PayoutId): Promise<Payout> {
+    return withConversion(await this.readThrough.getPayout(merchantId, payoutId));
   }
 
   async create(
@@ -56,10 +65,7 @@ export class PayoutsService implements OnModuleInit {
     const merchant = await this.merchants.getById(merchantId);
 
     if (merchant.status !== 'active') {
-      throw new MerchantRestrictedException(
-        merchantId,
-        `merchant status ${merchant.status} may not receive payouts`,
-      );
+      throw new MerchantRestrictedException(merchantId, merchant.status, 'receive payouts');
     }
 
     if (request.amount_minor !== undefined) {
@@ -67,33 +73,50 @@ export class PayoutsService implements OnModuleInit {
       if (!check.ok) {
         throw new MerchantRestrictedException(
           merchantId,
+          merchant.status,
           check.negativeMinor > 0
-            ? 'merchant is carrying a negative balance'
-            : `available balance ${check.availableMinor} is below the requested amount`,
+            ? 'receive payouts while carrying a negative balance'
+            : `receive a payout above its available balance of ${check.availableMinor}`,
         );
       }
     }
 
-    return this.readThrough.createPayout(
-      {
-        merchant_id: merchantId,
-        amount_minor: request.amount_minor,
-        currency: request.currency,
-        bank_account_id: request.bank_account_id,
-        method: request.method,
-        statement_descriptor: request.statement_descriptor,
-      },
-      idempotencyKey,
+    return withConversion(
+      await this.readThrough.createPayout(
+        {
+          merchant_id: merchantId,
+          amount_minor: request.amount_minor,
+          currency: request.currency,
+          bank_account_id: request.bank_account_id,
+          method: request.method,
+          statement_descriptor: request.statement_descriptor,
+        },
+        idempotencyKey,
+      ),
     );
   }
 
-  cancel(merchantId: MerchantId, payoutId: PayoutId): Promise<Payout> {
-    return this.readThrough.cancelPayout(merchantId, payoutId);
+  async cancel(merchantId: MerchantId, payoutId: PayoutId): Promise<Payout> {
+    return withConversion(await this.readThrough.cancelPayout(merchantId, payoutId));
   }
 
   /** `GET /v1/reporting/summary` fills `next_payout` from this. */
   async nextScheduled(merchantId: MerchantId): Promise<Payout | null> {
     const page = await this.readThrough.listPayouts(merchantId, { status: 'scheduled', limit: 1 });
-    return page.data[0] ?? null;
+    return page.data[0] ? withConversion(page.data[0]) : null;
   }
+}
+
+/**
+ * The §7 conversion fields, present on every payout: as the ledger sent them, or null. The
+ * contract makes them non-optional; a ledger response without them would otherwise reach the
+ * console with the keys missing rather than null.
+ */
+export function withConversion(payout: Payout): Payout {
+  return {
+    ...payout,
+    source_amount_minor: payout.source_amount_minor ?? null,
+    source_currency: payout.source_currency ?? null,
+    fx_rate: payout.fx_rate ?? null,
+  };
 }

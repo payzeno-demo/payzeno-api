@@ -97,10 +97,11 @@ describe('PrincipalFactory', () => {
     });
 
     it('fromClientSecret pins the principal to exactly one intent', () => {
-      expect(factory.fromClientSecret(MERCHANT, 'pi_01HQ8ZZZ0000000000000002')).toEqual({
+      expect(factory.fromClientSecret(MERCHANT, 'pi_01HQ8ZZZ0000000000000002', true)).toEqual({
         kind: 'client_secret',
         merchant_id: MERCHANT,
         payment_intent_id: 'pi_01HQ8ZZZ0000000000000002',
+        livemode: true,
       });
     });
   });
@@ -109,7 +110,7 @@ describe('PrincipalFactory', () => {
     it.each([
       ['api_key', factory.fromApiKey(apiKeyRow)],
       ['dashboard_session', factory.fromSessionUser(userRow)],
-      ['client_secret', factory.fromClientSecret(MERCHANT, 'pi_01HQ8ZZZ0000000000000002')],
+      ['client_secret', factory.fromClientSecret(MERCHANT, 'pi_01HQ8ZZZ0000000000000002', true)],
     ])('reads merchant_id off a %s principal', (_kind, principal) => {
       expect(merchantIdOf(principal as AuthPrincipal)).toBe(MERCHANT);
     });
@@ -156,10 +157,16 @@ describe('PrincipalFactory', () => {
       expect(livemodeOf(factory.fromSessionUser(userRow))).toBe(true);
     });
 
-    it('is true for staff, client secret and internal principals', () => {
+    it('is true for staff and internal principals', () => {
       expect(livemodeOf(factory.fromStaff('stf_0001', 'risk', MERCHANT))).toBe(true);
-      expect(livemodeOf(factory.fromClientSecret(MERCHANT, 'pi_1'))).toBe(true);
       expect(livemodeOf(factory.fromInternalService('payzeno-ledger'))).toBe(true);
+    });
+
+    // Regression: a client secret used to read as live whatever its intent was, so a test-mode
+    // checkout could never find its own (test-mode) intent.
+    it('takes a client secret principal\'s mode from the intent it was minted for', () => {
+      expect(livemodeOf(factory.fromClientSecret(MERCHANT, 'pi_1', true))).toBe(true);
+      expect(livemodeOf(factory.fromClientSecret(MERCHANT, 'pi_1', false))).toBe(false);
     });
   });
 
@@ -187,7 +194,7 @@ describe('PrincipalFactory', () => {
       ['user:usr_01HQ8ZZZ0000000000000009', factory.fromSessionUser(userRow)],
       ['staff:stf_0001', factory.fromStaff('stf_0001', 'risk', null)],
       ['service:payzeno-ledger', factory.fromInternalService('payzeno-ledger')],
-      ['client_secret:pi_1', factory.fromClientSecret(MERCHANT, 'pi_1')],
+      ['client_secret:pi_1', factory.fromClientSecret(MERCHANT, 'pi_1', true)],
     ])('renders %s', (expected, principal) => {
       expect(describePrincipal(principal as AuthPrincipal | null)).toBe(expected);
     });

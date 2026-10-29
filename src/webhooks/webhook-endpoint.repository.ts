@@ -10,6 +10,10 @@ export class WebhookEndpointRepository extends PayzenoRepository<WebhookEndpoint
     super(WebhookEndpointEntity, dataSource.createEntityManager());
   }
 
+  protected get alias(): string {
+    return 'webhook_endpoint';
+  }
+
   /**
    * The fanout lookup. `enabled_events` is a text[] so this is a containment test, not a
    * join — the whole point of storing the vocabulary on the row.
@@ -65,7 +69,10 @@ export class WebhookEndpointRepository extends PayzenoRepository<WebhookEndpoint
       .andWhere('e.consecutive_failure_count >= :minConsecutiveFailures', {
         minConsecutiveFailures,
       })
-      .andWhere('(e.last_success_at is null or e.last_success_at < :olderThan)', { olderThan })
+      // "72h with no success" counts from creation for an endpoint that has never succeeded.
+      // `last_success_at is null` alone disabled a brand-new endpoint the moment its receiver
+      // missed 20 deliveries — minutes, not days, when the receiver is briefly down.
+      .andWhere('coalesce(e.last_success_at, e.created_at) < :olderThan', { olderThan })
       .limit(limit)
       .getMany();
   }

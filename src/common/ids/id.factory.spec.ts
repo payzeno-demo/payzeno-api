@@ -32,6 +32,7 @@ describe('IdFactory', () => {
     ['refundId', API_ID_PREFIXES.refund],
     ['disputeId', API_ID_PREFIXES.dispute],
     ['webhookEventId', API_ID_PREFIXES.webhookEvent],
+    ['checkoutSessionId', API_ID_PREFIXES.checkoutSession],
   ];
 
   describe.each(minters)('%s', (method, prefix) => {
@@ -60,7 +61,7 @@ describe('IdFactory', () => {
     });
   });
 
-  it('covers all nine payzeno-owned prefixes', () => {
+  it('covers all ten payzeno-owned prefixes', () => {
     expect(minters).toHaveLength(Object.keys(API_ID_PREFIXES).length);
   });
 
@@ -103,8 +104,8 @@ describe('IdFactory', () => {
 });
 
 describe('id.prefix', () => {
-  it('lists nine payzeno-owned prefixes', () => {
-    expect(Object.keys(API_ID_PREFIXES)).toHaveLength(9);
+  it('lists ten payzeno-owned prefixes', () => {
+    expect(Object.keys(API_ID_PREFIXES)).toHaveLength(10);
   });
 
   it('includes the foreign prefixes payzeno-api stores but never mints', () => {

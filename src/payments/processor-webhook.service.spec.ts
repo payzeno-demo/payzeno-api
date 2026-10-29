@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing';
 
-import { NoopLogger, PayzenoLogger } from 'src/common/logging/logger';
+import { NoopLogger, PAYZENO_LOGGER } from 'src/common/logging/logger';
 import { ChargesService } from 'src/payments/charges.service';
 import { DisputesService } from 'src/disputes/disputes.service';
 import { OutboxEventPublisher } from 'src/events/outbox-event.publisher';
@@ -47,7 +47,7 @@ describe('ProcessorWebhookService', () => {
         { provide: RefundsService, useValue: refunds },
         { provide: OutboxEventPublisher, useValue: publisher },
         { provide: ProcessorRouter, useValue: router },
-        { provide: PayzenoLogger, useValue: new NoopLogger() },
+        { provide: PAYZENO_LOGGER, useValue: new NoopLogger() },
       ],
     }).compile();
 

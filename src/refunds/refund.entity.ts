@@ -22,7 +22,7 @@ import { ChargeEntity } from '../payments/charge.entity';
 
 @Entity({ name: 'refund' })
 @Index('ix_refund_charge_id', ['charge_id'])
-@Index('ix_refund_merchant_created', ['merchant_id', 'created_at'])
+@Index('ix_refund_merchant_created', ['merchantId', 'createdAt'])
 @Index('uq_refund_processor_reference', ['processor_reference'], {
   unique: true,
   where: 'processor_reference IS NOT NULL',

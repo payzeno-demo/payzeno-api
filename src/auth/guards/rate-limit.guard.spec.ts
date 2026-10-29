@@ -114,6 +114,22 @@ describe('RateLimitGuard', () => {
     expect(credKeys[0]).toBe(credKeys[1]);
   });
 
+  it('gives a route its own @RateLimit budget instead of spending the IP\'s shared one', async () => {
+    // Five ordinary requests from the console used to exhaust login's five-per-minute.
+    const redis = makeRedis();
+    for (let i = 0; i < 5; i += 1) {
+      await guardWith(redis).canActivate(guardContext({ ip: '203.0.113.9' }).context);
+    }
+
+    await expect(
+      guardWith(redis, { limit: 5, windowSec: 60 }).canActivate(guardContext({ ip: '203.0.113.9' }).context),
+    ).resolves.toBe(true);
+
+    const [shared, declared] = [redis.keys[0], redis.keys[5]];
+    expect(shared).toContain('ip:203.0.113.9:all');
+    expect(declared).toContain('ip:203.0.113.9:route:TestController.handler');
+  });
+
   it('publishes X-RateLimit-* headers on a request that is allowed', async () => {
     const redis = makeRedis();
     const { context, response } = guardContext({ ip: '203.0.113.9' });

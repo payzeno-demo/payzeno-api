@@ -43,7 +43,7 @@ describe('WebhookFanoutConsumer', () => {
       {} as never,
       {} as never,
       logger as never,
-      { SQS_API_WEBHOOKS_URL: 'http://localstack:4566/000000000000/payzeno-api-webhooks' } as never,
+      { aws: { sqsApiWebhooksUrl: 'http://localstack:4566/000000000000/payzeno-api-webhooks' } } as never,
       {
         get: (token: unknown) =>
           (token as { name?: string }).name === 'WebhookEndpointsService' ? endpoints : events,
@@ -55,6 +55,14 @@ describe('WebhookFanoutConsumer', () => {
   it('only handles types that are in the merchant-facing vocabulary', () => {
     for (const type of consumer.handledTypes) {
       expect(PUBLIC_EVENT_TYPES as readonly string[]).toContain(type);
+    }
+  });
+
+  // Regression: the payment lifecycle reached the queue (the subscription filter has it) and
+  // was acknowledged and dropped here, so no shop ever got `payment.captured`.
+  it('fans out the payment lifecycle the webhooks queue subscribes to', () => {
+    for (const type of ['payment.authorized', 'payment.captured', 'payment.canceled', 'payment.failed']) {
+      expect(consumer.handledTypes.has(type as never)).toBe(true);
     }
   });
 

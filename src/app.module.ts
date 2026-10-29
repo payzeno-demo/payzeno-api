@@ -26,6 +26,7 @@ import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { RateLimitGuard } from './auth/guards/rate-limit.guard';
 import { BillingModule } from './billing/billing.module';
+import { CheckoutModule } from './checkout/checkout.module';
 import { CommonModule } from './common/common.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { validationExceptionFactory } from './common/filters/validation-exception.factory';
@@ -52,9 +53,19 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { PaymentsModule } from './payments/payments.module';
 import { RefundsModule } from './refunds/refunds.module';
 import { ReportingModule } from './reporting/reporting.module';
+import { EmailModule } from './notifications/email/email.module';
+import { AdminModule } from './admin/admin.module';
+import { OnboardingModule } from './onboarding/onboarding.module';
 import { StaffModule } from './staff/staff.module';
 import { SupportModule } from './support/support.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
+// --- platform-v2: money imports ---
+import { RecurringBillingModule } from './billing/recurring/recurring-billing.module';
+import { CustomersModule } from './customers/customers.module';
+import { FxModule } from './fx/fx.module';
+import { ReviewsModule } from './risk/reviews.module';
+import { RiskModule } from './risk/risk.module';
+// --- end money imports ---
 
 /**
  * The root connection. `synchronize` and `migrationsRun` are both false in
@@ -117,6 +128,7 @@ const REQUEST_CHAIN = [
     SupportModule,
     MerchantsModule,
     PaymentsModule,
+    CheckoutModule,
     RefundsModule,
     DisputesModule,
     LedgerModule,
@@ -127,6 +139,18 @@ const REQUEST_CHAIN = [
     InternalModule,
     JobsModule,
     ReportingModule,
+    // --- platform-v2: identity (staff, email, signup/KYC, invites, admin) ---
+    EmailModule,
+    OnboardingModule,
+    AdminModule,
+    // --- end identity ---
+    // --- platform-v2: money (customers, fx, risk, billing) ---
+    CustomersModule,
+    FxModule,
+    RiskModule,
+    ReviewsModule,
+    RecurringBillingModule,
+    // --- end money ---
   ],
   controllers: [MetaController],
   providers: [...REQUEST_CHAIN],

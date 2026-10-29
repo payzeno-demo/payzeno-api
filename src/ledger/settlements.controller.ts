@@ -41,6 +41,13 @@ interface RetryItemRequest {
   reason?: string;
 }
 
+/**
+ * The global ValidationPipe converts query params implicitly, and a missing `limit` arrives as
+ * `Number(undefined)`, i.e. NaN. Forwarded, that is `limit=NaN` and the ledger 422s the page.
+ */
+const optionalLimit = (limit?: number): number | undefined =>
+  limit !== undefined && Number.isFinite(limit) ? limit : undefined;
+
 @Controller('v1/settlements')
 @MerchantScoped()
 @UseGuards(SessionGuard, StaffGuard, MerchantScopeGuard)
@@ -59,7 +66,7 @@ export class SettlementsController {
       currency,
       status,
       cursor,
-      limit,
+      limit: optionalLimit(limit),
     });
   }
 
@@ -83,7 +90,7 @@ export class SettlementsController {
     return this.readThrough.listSettlementItems(merchantIdOf(principal), batchId, {
       status,
       cursor,
-      limit,
+      limit: optionalLimit(limit),
     });
   }
 

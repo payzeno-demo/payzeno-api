@@ -22,6 +22,7 @@
  * same `Idempotency-Key`. — dhotfix, PAY-1284
  */
 import { Inject, Injectable } from '@nestjs/common';
+import type { EntityManager } from 'typeorm';
 
 import type { CreateMerchantRequest, CurrencyCode, MerchantId } from '@payzeno/contracts';
 
@@ -46,6 +47,20 @@ const DEFAULTS = {
   settlementToleranceMinor: 100,
 } as const;
 
+export interface OnboardMerchantOptions {
+  /**
+   * Join the caller's transaction instead of opening one. Self-serve signup does: the merchant,
+   * its owner, the verification token and the `signup_verify` email are one commit.
+   */
+  manager?: EntityManager;
+  /**
+   * Also bootstrap the test-mode chart of accounts, in the same transaction. Signup and the demo
+   * seed both want a merchant that can take test payments the moment it exists (RFC §3: "test
+   * mode works from signup"); a staff-created merchant historically got the live chart only.
+   */
+  bootstrapTestMode?: boolean;
+}
+
 @Injectable()
 export class MerchantOnboardingService {
   constructor(
@@ -58,7 +73,12 @@ export class MerchantOnboardingService {
     @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
   ) {}
 
-  async onboard(request: CreateMerchantRequest, livemode: boolean, actor: string): Promise<MerchantEntity> {
+  async onboard(
+    request: CreateMerchantRequest,
+    livemode: boolean,
+    actor: string,
+    options: OnboardMerchantOptions = {},
+  ): Promise<MerchantEntity> {
     await this.assertNotDuplicate(request.legal_name, request.country);
 
     const merchant = this.build(request, livemode);
@@ -98,6 +118,9 @@ export class MerchantOnboardingService {
       );
 
       await this.bootstrapLedgerAccounts(merchant.id, merchant.defaultCurrency, merchant.livemode);
+      if (options.bootstrapTestMode && merchant.livemode) {
+        await this.bootstrapLedgerAccounts(merchant.id, merchant.defaultCurrency, false);
+      }
 
       this.logger.info('merchant.onboarded', {
         merchant_id: merchant.id,
@@ -108,7 +131,7 @@ export class MerchantOnboardingService {
       });
 
       return merchant;
-    });
+    }, options.manager);
   }
 
   /**

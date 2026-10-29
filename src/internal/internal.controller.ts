@@ -45,6 +45,12 @@ import { AuditLog, CurrentPrincipal, InternalOnly } from '../common/decorators';
 import type { AuthPrincipal } from '@payzeno/contracts';
 
 import { IsPayzenoId } from '../common/validators/payzeno-id.validator';
+import {
+  SUPPORT_TASK_KINDS,
+  SUPPORT_TASK_SEVERITIES,
+  type SupportTaskKind,
+  type SupportTaskSeverity,
+} from '../support/support-task.entity';
 
 import {
   InternalService,
@@ -78,9 +84,8 @@ export class MarkChargeSettledDto implements MarkChargeSettledInput {
 }
 
 export class CreateSupportTaskDto implements CreateSupportTaskInput {
-  @IsString()
-  @MaxLength(64)
-  kind!: string;
+  @IsIn(SUPPORT_TASK_KINDS)
+  kind!: SupportTaskKind;
 
   @IsPayzenoId('mch_')
   merchant_id!: MerchantId;
@@ -90,8 +95,8 @@ export class CreateSupportTaskDto implements CreateSupportTaskInput {
   @IsPayzenoId('ch_')
   charge_id?: string | null;
 
-  @IsIn(['low', 'medium', 'high', 'critical'])
-  severity!: 'low' | 'medium' | 'high' | 'critical';
+  @IsIn(SUPPORT_TASK_SEVERITIES)
+  severity!: SupportTaskSeverity;
 
   @IsString()
   @MinLength(1)

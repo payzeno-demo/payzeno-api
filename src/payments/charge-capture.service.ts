@@ -21,22 +21,28 @@
  * charges on the night of PAY-2041. It is correct, it is still here, and the postmortem's
  * action items are on the ledger side. See docs/runbooks/payzeno-api.md §"duplicate settlement
  * remediation" and payzeno-ledger/docs/postmortems/2041-duplicate-settlement.md.
+ *
+ * RFC platform-v2: the capture commit also queues the shopper's `receipt` (when the intent has
+ * a receipt email) and tags `payment.captured` with the intent's subscription, so a merchant can
+ * tell a renewal from a one-off payment.
  */
 
 import { Inject, Injectable } from '@nestjs/common';
 import type { Merchant } from '@payzeno/contracts';
 
-import { EVENT_PUBLISHER, type EventPublisher } from '../events/publisher';
 import { ChargeNotCapturableException } from '../common/errors/state.exceptions';
-import { CLOCK, type Clock } from '../common/time/clock';
 import { LOGGER, type PayzenoLogger } from '../common/logging/logger';
 import { TransactionManager } from '../common/persistence/transaction.manager';
-import { ChargeEntity } from './charge.entity';
-import { ChargeRepository } from './charge.repository';
-import { ChargeStateMachine } from './state/charge.state-machine';
-import { ProcessorRouter } from './processor/processor.router';
+import { CLOCK, type Clock } from '../common/time/clock';
+import { EVENT_PUBLISHER, type EventPublisher } from '../events/publisher';
 import { LedgerReadThroughService } from '../ledger/ledger-read-through.service';
 import { ledgerKey } from '../ledger/ledger.types';
+
+import { ChargeEntity } from './charge.entity';
+import { ChargeRepository } from './charge.repository';
+import { ProcessorRouter } from './processor/processor.router';
+import { ReceiptEmailsService } from './receipt-emails.service';
+import { ChargeStateMachine } from './state/charge.state-machine';
 
 export interface CaptureChargeCommand {
   charge: ChargeEntity;
@@ -62,6 +68,7 @@ export class ChargeCaptureService {
     private readonly stateMachine: ChargeStateMachine,
     private readonly transactions: TransactionManager,
     private readonly ledger: LedgerReadThroughService,
+    private readonly receipts: ReceiptEmailsService,
     @Inject(EVENT_PUBLISHER) private readonly events: EventPublisher,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(LOGGER) private readonly logger: PayzenoLogger,
@@ -103,6 +110,14 @@ export class ChargeCaptureService {
       });
     }
 
+    // The envelope's `occurred_at` is when the capture became true HERE (contracts: "when the
+    // fact became true in the producer"), so it always follows this service's own
+    // `payment.authorized`. `capturedAt` stays the acquirer's clock, in the payload and on the
+    // row. They differ for a sale — authorise and capture in one acquirer call — where the
+    // acquirer dates the capture at the authorisation instant, BEFORE our `authorized_at`; the
+    // ledger's projection-ordering guard then dropped every automatic capture as stale.
+    const recordedAt = this.clock.now();
+
     await this.transactions.runInTransaction(async (manager) => {
       const affected = await this.charges.markCaptured(manager, charge.id, {
         capturedAmountMinor: amountMinor,
@@ -115,6 +130,8 @@ export class ChargeCaptureService {
         throw new ChargeNotCapturableException(charge.id, charge.status);
       }
 
+      const intent = await this.receipts.intentOf(manager, charge.payment_intent_id);
+
       await this.events.publish(
         'payment.captured',
         {
@@ -125,15 +142,21 @@ export class ChargeCaptureService {
           authorized_amount_minor: Number(charge.amount_minor),
           currency: charge.currency,
           captured_at: capturedAt.toISOString(),
+          // Present only when set: the ledger validates this payload with extra='forbid'.
+          ...(intent?.subscription_id ? { subscription_id: intent.subscription_id } : {}),
         },
         {
           merchantId: merchant.id,
           correlationId: command.correlationId,
           causationId: null,
           livemode: charge.livemode,
-          occurredAt: capturedAt.toISOString(),
+          occurredAt: recordedAt.toISOString(),
         },
       );
+
+      if (intent) {
+        await this.receipts.queueReceipt(manager, intent, charge, merchant, amountMinor, capturedAt);
+      }
     });
 
     // Synchronous ledger post so the console's balance is right on the next poll. It carries

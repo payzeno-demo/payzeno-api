@@ -10,12 +10,16 @@ import {
   type SettlementDuplicateDetectedPayload,
   type SettlementVarianceDetectedPayload,
 } from '@payzeno/contracts/events';
+import type { CurrencyCode, MerchantId } from '@payzeno/contracts';
 import { API_CONFIG } from '../config/config.module';
 import type { ApiConfig } from '../config/api-config.type';
 import { PAYZENO_LOGGER, type PayzenoLogger } from '../common/logging/logger';
 import { TransactionManager } from '../common/persistence/transaction.manager';
 import { AuditService } from '../audit/audit.service';
 import { ChargesService } from '../payments/charges.service';
+import { formatMoney } from '../common/money/money.util';
+import { BankAccountRepository } from '../merchants/bank-accounts/bank-accounts.service';
+import { MerchantMailerService } from '../merchants/merchant-mailer.service';
 import { MerchantsService } from '../merchants/merchants.service';
 import { SupportTasksService } from '../support/support-tasks.service';
 import { BaseEventConsumer } from './consumer';
@@ -58,6 +62,8 @@ export class LedgerEventsConsumer extends BaseEventConsumer implements OnModuleI
   private merchants!: MerchantsService;
   private audit!: AuditService;
   private supportTasks!: SupportTasksService;
+  private mailer!: MerchantMailerService;
+  private bankAccounts!: BankAccountRepository;
 
   constructor(
     sqs: SQSClient,
@@ -76,6 +82,8 @@ export class LedgerEventsConsumer extends BaseEventConsumer implements OnModuleI
     this.merchants = this.moduleRef.get(MerchantsService, { strict: false });
     this.audit = this.moduleRef.get(AuditService, { strict: false });
     this.supportTasks = this.moduleRef.get(SupportTasksService, { strict: false });
+    this.mailer = this.moduleRef.get(MerchantMailerService, { strict: false });
+    this.bankAccounts = this.moduleRef.get(BankAccountRepository, { strict: false });
   }
 
   async handle(event: PayzenoEvent, tx: EntityManager): Promise<void> {
@@ -100,9 +108,22 @@ export class LedgerEventsConsumer extends BaseEventConsumer implements OnModuleI
       return;
     }
     if (isEventOfType(event, 'ledger.imbalance_detected')) {
+      const merchantId = event.payload.merchant_id;
+      if (!merchantId) {
+        // A `trial_balance` imbalance belongs to no merchant and `support_task` is
+        // merchant-scoped, so there is no row to open. Same shape as the unattributed
+        // duplicate branch below, at error because the event is `critical`.
+        this.logger.error('ledger.imbalance_unattributed', undefined, {
+          check: event.payload.check,
+          currency: event.payload.currency,
+          delta_minor: event.payload.delta_minor,
+          source_event_id: event.id,
+        });
+        return;
+      }
       await this.supportTasks.open(tx, {
         kind: 'ledger_imbalance',
-        merchantId: event.payload.merchant_id,
+        merchantId,
         chargeId: null,
         severity: 'critical',
         title: `Ledger imbalance detected (${event.payload.check})`,
@@ -223,7 +244,7 @@ export class LedgerEventsConsumer extends BaseEventConsumer implements OnModuleI
     }
 
     const merchant = await this.merchants.findInternal(payload.merchant_id);
-    if (!merchant?.capture_at_settlement) {
+    if (!merchant?.captureAtSettlement) {
       return;
     }
 
@@ -274,7 +295,7 @@ export class LedgerEventsConsumer extends BaseEventConsumer implements OnModuleI
         kind: 'settlement_variance',
         merchantId: payload.merchant_id,
         chargeId: payload.charge_id,
-        severity: 'medium',
+        severity: 'normal',
         title: `Settlement variance on batch ${payload.batch_id}`,
         body:
           `expected=${payload.expected_gross_minor} actual=${payload.actual_gross_minor} ` +
@@ -302,5 +323,70 @@ export class LedgerEventsConsumer extends BaseEventConsumer implements OnModuleI
       after: event.payload as unknown as Record<string, unknown>,
       livemode: event.livemode,
     });
+
+    await this.emailPayoutOutcome(event, tx);
+  }
+
+  /**
+   * RFC platform-v2 §2: `payout_paid` / `payout_failed` to the merchant's owners and admins, in
+   * the handler's transaction — a redelivered event is already claimed and emails nobody twice.
+   * A return is a failure as far as the merchant is concerned: the money came back.
+   *
+   * `payout.paid` carries no bank account, so the last four are the default account's for the
+   * payout currency — the account a scheduled payout goes to. Blank when there is none.
+   */
+  private async emailPayoutOutcome(event: PayzenoEvent, tx: EntityManager): Promise<void> {
+    if (isEventOfType(event, 'payout.paid')) {
+      const { merchant_id: merchantId, amount_minor: amountMinor, currency } = event.payload;
+      await this.mailer.queueToAdmins(
+        merchantId,
+        'payout_paid',
+        {
+          amount: formatMoney({ amount_minor: amountMinor, currency }),
+          bank_last4: await this.defaultBankLast4(merchantId, currency, event.livemode),
+        },
+        { manager: tx, livemode: event.livemode },
+      );
+      return;
+    }
+
+    if (isEventOfType(event, 'payout.failed')) {
+      const payload = event.payload;
+      const account = await this.bankAccounts.findOne({ where: { id: payload.bank_account_id } });
+      await this.mailer.queueToAdmins(
+        payload.merchant_id,
+        'payout_failed',
+        {
+          amount: formatMoney({ amount_minor: payload.amount_minor, currency: payload.currency }),
+          bank_last4: account?.lastFour ?? null,
+          failure_reason: payload.failure_message || payload.failure_code.replace(/_/g, ' '),
+        },
+        { manager: tx, livemode: event.livemode },
+      );
+      return;
+    }
+
+    if (isEventOfType(event, 'payout.returned')) {
+      const payload = event.payload;
+      await this.mailer.queueToAdmins(
+        payload.merchant_id,
+        'payout_failed',
+        {
+          amount: formatMoney({ amount_minor: payload.amount_minor, currency: payload.currency }),
+          bank_last4: await this.defaultBankLast4(payload.merchant_id, payload.currency, event.livemode),
+          failure_reason: `returned by the bank (${payload.return_code})`,
+        },
+        { manager: tx, livemode: event.livemode },
+      );
+    }
+  }
+
+  private async defaultBankLast4(
+    merchantId: MerchantId,
+    currency: CurrencyCode,
+    livemode: boolean,
+  ): Promise<string | null> {
+    const account = await this.bankAccounts.findDefault(merchantId, currency, livemode);
+    return account?.lastFour ?? null;
   }
 }

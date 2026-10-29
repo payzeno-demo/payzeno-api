@@ -11,11 +11,17 @@ import type { MerchantEntity } from 'src/merchants/merchant.entity';
 import type { MerchantRepository } from 'src/merchants/merchant.repository';
 import type { MerchantUserEntity } from 'src/merchants/users/merchant-user.entity';
 import type { MerchantUserRepository } from 'src/merchants/users/merchant-user.repository';
+import type { MerchantUserTokensService } from 'src/merchants/users/user-tokens.service';
+import { InvalidLinkTokenException } from 'src/common/errors/identity.exceptions';
+import type { TransactionManager } from 'src/common/persistence/transaction.manager';
+import type { ApiConfig } from 'src/config/api-config.type';
+import type { EmailService } from 'src/notifications/email/email.service';
 import type { StaffUsersService } from 'src/staff/staff-users.service';
 
 jest.mock('argon2', () => ({
   argon2id: 2,
   verify: jest.fn(async (stored: string, presented: string) => stored === `hash:${presented}`),
+  hash: jest.fn(async (plain: string) => `hash:${plain}`),
 }));
 
 /**
@@ -36,12 +42,20 @@ describe('AuthService', () => {
   const MERCHANT_A = 'mch_01HQ8ZZZ000000000000000A';
   const MERCHANT_B = 'mch_01HQ8ZZZ000000000000000B';
 
-  let users: jest.Mocked<Pick<MerchantUserRepository, 'findLoginCandidates' | 'findByIdForMerchant' | 'touchLastLogin'>>;
+  let users: jest.Mocked<
+    Pick<
+      MerchantUserRepository,
+      'findLoginCandidates' | 'findByIdForMerchant' | 'touchLastLogin' | 'activateInvited' | 'replacePassword'
+    >
+  >;
   let merchants: jest.Mocked<Pick<MerchantRepository, 'findById'>>;
   let sessions: jest.Mocked<
     Pick<SessionService, 'issue' | 'issueStaff' | 'requireRecord' | 'refreshCsrf' | 'destroy' | 'destroyAllForUser'>
   >;
-  let staff: jest.Mocked<Pick<StaffUsersService, 'authenticate'>>;
+  let staff: jest.Mocked<Pick<StaffUsersService, 'authenticate' | 'resolveActive'>>;
+  let tokens: jest.Mocked<Pick<MerchantUserTokensService, 'issue' | 'consume'>>;
+  let email: jest.Mocked<Pick<EmailService, 'queue'>>;
+  const manager = { tx: true };
   let service: AuthService;
 
   function user(overrides: Partial<MerchantUserEntity> = {}): MerchantUserEntity {
@@ -72,6 +86,8 @@ describe('AuthService', () => {
       metadata: {},
       createdAt: NOW,
       updatedAt: NOW,
+      toIsoCreatedAt: () => NOW.toISOString(),
+      toIsoUpdatedAt: () => NOW.toISOString(),
     } as unknown as MerchantEntity;
   }
 
@@ -84,6 +100,8 @@ describe('AuthService', () => {
       findLoginCandidates: jest.fn(async () => []),
       findByIdForMerchant: jest.fn(async () => null),
       touchLastLogin: jest.fn(async () => undefined),
+      activateInvited: jest.fn(async () => 1),
+      replacePassword: jest.fn(async () => 1),
     } as never;
 
     merchants = { findById: jest.fn(async () => merchant()) } as never;
@@ -97,9 +115,18 @@ describe('AuthService', () => {
       destroyAllForUser: jest.fn(async () => 1),
     } as never;
 
-    staff = { authenticate: jest.fn(async () => null) } as never;
+    staff = { authenticate: jest.fn(async () => null), resolveActive: jest.fn() } as never;
+    tokens = {
+      issue: jest.fn(async () => 'raw-token/with+chars'),
+      consume: jest.fn(async () => ({ id: 'tok_1', userId: 'usr_0001', merchantId: MERCHANT_A })),
+    } as never;
+    email = { queue: jest.fn(async () => undefined) } as never;
 
     const clock = { nowMs: () => NOW.getTime(), now: () => NOW } as Clock;
+    const transactions = {
+      runInTransaction: jest.fn((fn: (m: unknown) => Promise<unknown>) => fn(manager)),
+    } as unknown as TransactionManager;
+    const config = { publicUrls: { console: 'http://console.test', admin: null } } as unknown as ApiConfig;
 
     service = new AuthService(
       users as unknown as MerchantUserRepository,
@@ -108,6 +135,10 @@ describe('AuthService', () => {
       staff as unknown as StaffUsersService,
       clock,
       new NoopLogger(),
+      transactions,
+      tokens as unknown as MerchantUserTokensService,
+      email as unknown as EmailService,
+      config,
     );
   });
 
@@ -229,8 +260,23 @@ describe('AuthService', () => {
   });
 
   describe('loginStaff', () => {
+    const operator = {
+      id: 'stf_0001',
+      role: 'risk',
+      toStaffUser: () => ({ id: 'stf_0001', object: 'staff_user', email: 'ops@payzeno.com', full_name: 'Ops', role: 'risk' }),
+    };
+
+    it('answers with the operator, never the hash', async () => {
+      staff.authenticate.mockResolvedValue(operator as never);
+
+      const outcome = await service.loginStaff('Ops@Payzeno.com ', 'hunter2', origin);
+
+      expect(staff.authenticate).toHaveBeenCalledWith('ops@payzeno.com', 'hunter2');
+      expect(outcome.body).toEqual({ object: 'staff_session', staff: operator.toStaffUser() });
+    });
+
     it('delegates the credential check to StaffUsersService', async () => {
-      staff.authenticate.mockResolvedValue({ id: 'stf_0001', role: 'risk' } as never);
+      staff.authenticate.mockResolvedValue(operator as never);
 
       await service.loginStaff('ops@payzeno.com', 'hunter2', origin);
 
@@ -247,11 +293,32 @@ describe('AuthService', () => {
     });
 
     it('never issues a merchant session for an operator', async () => {
-      staff.authenticate.mockResolvedValue({ id: 'stf_0001', role: 'support' } as never);
+      staff.authenticate.mockResolvedValue(operator as never);
 
       await service.loginStaff('ops@payzeno.com', 'hunter2', origin);
 
       expect(sessions.issue).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('describeStaffSession', () => {
+    it('re-reads the operator row and refreshes pz_csrf', async () => {
+      sessions.requireRecord.mockResolvedValue({ id: 'sess_staff', kind: 'staff', staffId: 'stf_0001' } as never);
+      staff.resolveActive.mockResolvedValue({
+        toStaffUser: () => ({ id: 'stf_0001', object: 'staff_user', email: 'a@b', full_name: 'A', role: 'admin' }),
+      } as never);
+
+      const described = await service.describeStaffSession('sess_staff');
+
+      expect(staff.resolveActive).toHaveBeenCalledWith('stf_0001');
+      expect(described.body).toMatchObject({ object: 'staff_session', staff: { role: 'admin' } });
+      expect(described.csrfToken).toBe('fresh-csrf');
+    });
+
+    it('refuses a merchant session presented as a staff one', async () => {
+      sessions.requireRecord.mockResolvedValue({ id: 'sess_1', kind: 'merchant_user', userId: 'usr_1' } as never);
+
+      await expect(service.describeStaffSession('sess_1')).rejects.toBeInstanceOf(AuthenticationRequiredException);
     });
   });
 
@@ -274,13 +341,15 @@ describe('AuthService', () => {
       expect(described.csrfToken).toBe('fresh-csrf');
     });
 
-    it('gives a viewer no permissions at all', async () => {
+    it('gives a viewer read permissions and nothing that writes', async () => {
       sessions.requireRecord.mockResolvedValue(record as never);
       users.findByIdForMerchant.mockResolvedValue(user({ role: 'viewer' } as never));
 
       const described = await service.describeSession('sess_1');
 
-      expect(described.body.permissions).toEqual([]);
+      // The console filters its navigation by these strings; an empty list would hide it.
+      expect(described.body.permissions).toContain('payments:read');
+      expect(described.body.permissions.some((p) => p.endsWith(':write'))).toBe(false);
     });
 
     it('refuses a staff session — /v1/auth/me is the merchant console call', async () => {
@@ -302,24 +371,119 @@ describe('AuthService', () => {
   });
 
   describe('requestPasswordReset', () => {
-    it('revokes every live session for the address', async () => {
+    it('emails one single-use link per login on the address, each naming its merchant', async () => {
       users.findLoginCandidates.mockResolvedValue([
         user({ id: 'usr_a', merchantId: MERCHANT_A }),
         user({ id: 'usr_b', merchantId: MERCHANT_B }),
       ]);
 
+      await service.requestPasswordReset('  Dana@Example.com ');
+
+      expect(users.findLoginCandidates).toHaveBeenCalledWith('dana@example.com');
+      expect(tokens.issue).toHaveBeenCalledTimes(2);
+      expect(tokens.issue).toHaveBeenCalledWith(expect.objectContaining({ id: 'usr_a' }), 'password_reset', manager);
+      expect(email.queue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          template: 'password_reset',
+          to: 'dana@example.com',
+          merchantId: MERCHANT_A,
+          data: {
+            reset_url: 'http://console.test/reset-password?token=raw-token%2Fwith%2Bchars',
+            merchant_name: 'Northwind',
+          },
+        }),
+        manager,
+      );
+    });
+
+    it('does NOT revoke sessions — anyone can request a reset for anyone', async () => {
+      users.findLoginCandidates.mockResolvedValue([user({ id: 'usr_a' })]);
+
       await service.requestPasswordReset('dana@example.com');
 
-      // A reset that does not invalidate the attacker's session resets nothing.
-      expect(sessions.destroyAllForUser).toHaveBeenCalledWith('usr_a');
-      expect(sessions.destroyAllForUser).toHaveBeenCalledWith('usr_b');
+      expect(sessions.destroyAllForUser).not.toHaveBeenCalled();
     });
 
     it('resolves quietly for an unknown address — the route is always 202', async () => {
       users.findLoginCandidates.mockResolvedValue([]);
 
       await expect(service.requestPasswordReset('nobody@example.com')).resolves.toBeUndefined();
+      expect(tokens.issue).not.toHaveBeenCalled();
+      expect(email.queue).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('confirmPasswordReset', () => {
+    it('spends the token, replaces the hash, then revokes every session of that login', async () => {
+      await service.confirmPasswordReset('raw', 'a-new-long-password');
+
+      expect(tokens.consume).toHaveBeenCalledWith('raw', 'password_reset', manager);
+      expect(users.replacePassword).toHaveBeenCalledWith(MERCHANT_A, 'usr_0001', 'hash:a-new-long-password', manager);
+      // A reset that does not invalidate the attacker's session resets nothing.
+      expect(sessions.destroyAllForUser).toHaveBeenCalledWith('usr_0001');
+    });
+
+    it('refuses when the login is no longer active, and keeps the sessions', async () => {
+      users.replacePassword.mockResolvedValue(0);
+
+      await expect(service.confirmPasswordReset('raw', 'a-new-long-password')).rejects.toBeInstanceOf(
+        InvalidLinkTokenException,
+      );
       expect(sessions.destroyAllForUser).not.toHaveBeenCalled();
+    });
+
+    it('lets a bad link through as the token service raised it', async () => {
+      tokens.consume.mockRejectedValue(new InvalidLinkTokenException('token_expired'));
+
+      await expect(service.confirmPasswordReset('raw', 'a-new-long-password')).rejects.toMatchObject({
+        reason: 'token_expired',
+      });
+      expect(users.replacePassword).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('verifyEmail', () => {
+    it('activates the invited owner and signs them in', async () => {
+      users.findByIdForMerchant.mockResolvedValue(user({ role: 'owner' } as never));
+
+      const outcome = await service.verifyEmail('raw', origin);
+
+      expect(tokens.consume).toHaveBeenCalledWith('raw', 'email_verification', manager);
+      expect(users.activateInvited).toHaveBeenCalledWith(MERCHANT_A, 'usr_0001', {}, manager);
+      expect(sessions.issue).toHaveBeenCalledWith('usr_0001', MERCHANT_A, 'owner', origin);
+      expect(outcome.body.object).toBe('login');
+    });
+
+    it('refuses a link for a login that is no longer invited', async () => {
+      users.activateInvited.mockResolvedValue(0);
+
+      await expect(service.verifyEmail('raw', origin)).rejects.toBeInstanceOf(InvalidLinkTokenException);
+      expect(sessions.issue).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('acceptInvitation', () => {
+    it('sets the chosen name and password, activates the login and signs in', async () => {
+      users.findByIdForMerchant.mockResolvedValue(user());
+
+      await service.acceptInvitation('raw', '  Dana Ops  ', 'correct-horse-battery', origin);
+
+      expect(tokens.consume).toHaveBeenCalledWith('raw', 'invitation', manager);
+      expect(users.activateInvited).toHaveBeenCalledWith(
+        MERCHANT_A,
+        'usr_0001',
+        { passwordHash: 'hash:correct-horse-battery', fullName: 'Dana Ops' },
+        manager,
+      );
+      expect(sessions.issue).toHaveBeenCalled();
+    });
+
+    it('does not sign in a login that was removed after the invitation went out', async () => {
+      users.findByIdForMerchant.mockResolvedValue(user({ canLogIn: () => false } as never));
+
+      await expect(
+        service.acceptInvitation('raw', 'Dana', 'correct-horse-battery', origin),
+      ).rejects.toBeInstanceOf(AuthenticationRequiredException);
     });
   });
 

@@ -72,6 +72,22 @@ describe('MerchantOnboardingService', () => {
     expect(ledger.bootstrapAccounts).toHaveBeenCalledTimes(1);
   });
 
+  it('bootstraps the test-mode chart too when asked — signup and the seed (RFC platform-v2 §3)', async () => {
+    const merchant = await service.onboard(request, true, 'signup', { bootstrapTestMode: true });
+
+    expect(ledger.bootstrapAccounts).toHaveBeenCalledTimes(2);
+    expect(ledger.bootstrapAccounts).toHaveBeenNthCalledWith(1, merchant.id, 'GBP', true);
+    expect(ledger.bootstrapAccounts).toHaveBeenNthCalledWith(2, merchant.id, 'GBP', false);
+  });
+
+  it('joins the caller transaction instead of opening its own', async () => {
+    const callerTx = { caller: true } as unknown as EntityManager;
+
+    await service.onboard(request, true, 'signup', { manager: callerTx });
+
+    expect(transactions.runInTransaction).toHaveBeenCalledWith(expect.any(Function), callerTx);
+  });
+
   it('normalises the inputs the console lets a human type', async () => {
     const merchant = await service.onboard(request, true, 'stf_operator');
 

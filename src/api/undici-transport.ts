@@ -5,7 +5,7 @@
  * Nothing above L2 imports undici. That is the point of `HttpTransport`.
  */
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { Agent, request as undiciRequest } from 'undici';
 
 import {
@@ -35,7 +35,8 @@ export class UndiciTransport implements HttpTransport {
 
   private readonly agent: Agent;
 
-  constructor(options: UndiciTransportOptions = DEFAULT_UNDICI_OPTIONS) {
+  // Nest constructs this with the defaults; `@Optional()` stops it resolving a provider for them.
+  constructor(@Optional() options: UndiciTransportOptions = DEFAULT_UNDICI_OPTIONS) {
     this.agent = new Agent({
       connections: options.connections,
       keepAliveTimeout: options.keepAliveTimeoutMs,

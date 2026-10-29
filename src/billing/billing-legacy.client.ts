@@ -209,16 +209,10 @@ export class BillingLegacyClient extends BaseHttpClient {
     }
     // The Java service answers with its own error shape, not `ApiError`. Anything non-2xx that
     // is not a 404 is an upstream problem as far as the merchant is concerned.
-    throw new LegacyBillingUnavailableException(
-      `payzeno-billing-legacy responded ${failure.status} for ${failure.spec.method} ${failure.spec.path}`,
-      { status: failure.status },
-    );
+    throw new LegacyBillingUnavailableException(`${failure.spec.method} ${failure.spec.path}`);
   }
 
-  protected mapTransportFailure(err: TransportError, spec: RequestSpec<unknown>): never {
-    throw new LegacyBillingUnavailableException(
-      `payzeno-billing-legacy ${err.kind} on ${spec.method} ${spec.path}`,
-      { failure: err.kind },
-    );
+  protected mapTransportFailure(_err: TransportError, spec: RequestSpec<unknown>): never {
+    throw new LegacyBillingUnavailableException(`${spec.method} ${spec.path}`);
   }
 }

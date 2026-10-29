@@ -9,6 +9,7 @@ import { TransactionManager } from 'src/common/persistence/transaction.manager';
 import { ResourceNotFoundException } from 'src/common/errors/not-found.exceptions';
 import type { EventPublisher } from 'src/events/publisher';
 import { LedgerReadThroughService } from 'src/ledger/ledger-read-through.service';
+import type { ReceiptEmailsService } from 'src/payments/receipt-emails.service';
 import { RefundsService } from 'src/refunds/refunds.service';
 import { RefundRepository } from 'src/refunds/refund.repository';
 import { RefundPolicyService } from 'src/refunds/refund-policy.service';
@@ -33,6 +34,7 @@ describe('RefundsService', () => {
   let policy: jest.Mocked<RefundPolicyService>;
   let router: jest.Mocked<ProcessorRouter>;
   let ledger: jest.Mocked<LedgerReadThroughService>;
+  let receipts: Pick<ReceiptEmailsService, 'queueRefundReceipt'>;
   let transactions: TransactionManager;
   let ids: jest.Mocked<IdFactory>;
   let events: jest.Mocked<EventPublisher>;
@@ -49,6 +51,7 @@ describe('RefundsService', () => {
     return {
       id: TEST_CHARGE_ID,
       merchantId: TEST_MERCHANT_ID,
+      payment_intent_id: 'pi_refunded',
       status: 'captured',
       currency: 'GBP',
       acquirer: 'worldflow',
@@ -103,6 +106,7 @@ describe('RefundsService', () => {
     charges = {
       addRefundedAmount: jest.fn().mockResolvedValue(undefined),
       findScoped: jest.fn().mockResolvedValue(chargeRow()),
+      findOne: jest.fn().mockResolvedValue(chargeRow()),
     } as unknown as jest.Mocked<ChargeRepository>;
 
     policy = {
@@ -134,6 +138,8 @@ describe('RefundsService', () => {
 
     clock = new FixedClock('2026-01-15T12:00:00.000Z');
 
+    // RFC platform-v2 §2: the refund receipt is queued in the success commit.
+    receipts = { queueRefundReceipt: jest.fn().mockResolvedValue(undefined) };
     service = new RefundsService(
       refunds,
       charges,
@@ -141,6 +147,7 @@ describe('RefundsService', () => {
       new RefundStateMachine(),
       router,
       ledger,
+      receipts as ReceiptEmailsService,
       transactions,
       ids,
       events,
@@ -248,6 +255,18 @@ describe('RefundsService', () => {
       expect(refund).toMatchObject({ status: 'succeeded', processor_reference: 'WF-RF-77120' });
     });
 
+    it('queues the shopper’s refund receipt in the success commit', async () => {
+      await service.create(principal, dto(), 'corr_1');
+
+      expect(receipts.queueRefundReceipt).toHaveBeenCalledWith(manager, {
+        merchantId: TEST_MERCHANT_ID,
+        paymentIntentId: 'pi_refunded',
+        amountMinor: 1_500,
+        currency: 'GBP',
+        livemode: expect.any(Boolean),
+      });
+    });
+
     it('throws when the charge vanished from the principal’s scope between commit and submit', async () => {
       charges.findScoped.mockResolvedValue(null as never);
 
@@ -318,6 +337,7 @@ describe('RefundsService', () => {
 
       expect(refunds.markSucceeded).toHaveBeenCalledWith(manager, REFUND_ID, 'WF-RF-77120', clock.now());
       expect(row).toMatchObject({ status: 'succeeded' });
+      expect(receipts.queueRefundReceipt).toHaveBeenCalledWith(manager, expect.objectContaining({ paymentIntentId: 'pi_refunded' }));
     });
 
     it('reverses the reservation when the file says the reversal failed two days later', async () => {

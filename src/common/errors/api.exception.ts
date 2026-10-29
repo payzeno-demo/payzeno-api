@@ -78,7 +78,7 @@ export class ValidationException extends ApiException {
 
   constructor(
     message: string,
-    readonly fieldErrors: FieldError[] = [],
+    override readonly fieldErrors: FieldError[] = [],
     details?: Record<string, unknown>,
   ) {
     super(message, details);

@@ -10,6 +10,7 @@
 
 import { Inject, Injectable } from '@nestjs/common';
 import type { Invoice, InvoiceStatus, MerchantId, Paginated } from '@payzeno/contracts';
+import type { EntityManager } from 'typeorm';
 
 import { CLOCK, type Clock } from '../../common/time/clock';
 import { InvoiceProjectionEntity } from './invoice-projection.entity';
@@ -25,8 +26,9 @@ export interface ProjectionUpsert {
   subtotalMinor: number;
   taxMinor: number;
   totalMinor: number;
-  amountPaidMinor: number;
-  lines: Invoice['lines'];
+  /** Absent on an `invoice.issued`, which carries neither; present on a legacy cache fill. */
+  amountPaidMinor?: number;
+  lines?: Invoice['lines'];
   periodStart: string;
   periodEnd: string;
   dueAt: string | null;
@@ -61,28 +63,34 @@ export class InvoiceProjectionService {
     return row ? toInvoice(row) : null;
   }
 
-  /** Called by `InvoiceProjectionConsumer` on every `invoice.issued`. */
-  async refresh(upsert: ProjectionUpsert): Promise<boolean> {
-    return this.projections.upsertIfNewer({
-      id: upsert.invoiceId,
-      merchant_id: upsert.merchantId,
-      subscription_id: upsert.subscriptionId,
-      number: upsert.number,
-      status: upsert.status,
-      currency: upsert.currency,
-      subtotal_minor: upsert.subtotalMinor,
-      tax_minor: upsert.taxMinor,
-      total_minor: upsert.totalMinor,
-      amount_paid_minor: upsert.amountPaidMinor,
-      lines: upsert.lines,
-      period_start: upsert.periodStart,
-      period_end: upsert.periodEnd,
-      due_at: upsert.dueAt ? new Date(upsert.dueAt) : null,
-      migrated_to_ledger: upsert.migratedToLedger,
-      source_occurred_at: new Date(upsert.sourceOccurredAt),
-      source: upsert.source,
-      refreshed_at: this.clock.now(),
-    });
+  /**
+   * Called by `InvoiceProjectionConsumer` on every `invoice.issued`, with the consumer's claim
+   * transaction so the row and the `processed_event` claim commit together.
+   */
+  async refresh(upsert: ProjectionUpsert, manager?: EntityManager): Promise<boolean> {
+    return this.projections.upsertIfNewer(
+      {
+        id: upsert.invoiceId,
+        merchant_id: upsert.merchantId,
+        subscription_id: upsert.subscriptionId,
+        number: upsert.number,
+        status: upsert.status,
+        currency: upsert.currency,
+        subtotal_minor: upsert.subtotalMinor,
+        tax_minor: upsert.taxMinor,
+        total_minor: upsert.totalMinor,
+        ...(upsert.amountPaidMinor === undefined ? {} : { amount_paid_minor: upsert.amountPaidMinor }),
+        ...(upsert.lines === undefined ? {} : { lines: upsert.lines }),
+        period_start: upsert.periodStart,
+        period_end: upsert.periodEnd,
+        due_at: upsert.dueAt ? new Date(upsert.dueAt) : null,
+        migrated_to_ledger: upsert.migratedToLedger,
+        source_occurred_at: new Date(upsert.sourceOccurredAt),
+        source: upsert.source,
+        refreshed_at: this.clock.now(),
+      },
+      manager,
+    );
   }
 
   /** Fills the cache from a legacy response, so the next read for this merchant is local. */
@@ -138,6 +146,6 @@ function toInvoice(row: InvoiceProjectionEntity): Invoice {
     period_end: row.period_end,
     due_at: row.due_at ? row.due_at.toISOString() : null,
     migrated_to_ledger: row.migrated_to_ledger,
-    created_at: row.created_at.toISOString(),
+    created_at: row.createdAt.toISOString(),
   };
 }

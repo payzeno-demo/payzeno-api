@@ -1,7 +1,7 @@
 import { Test } from '@nestjs/testing';
 
 import { ChargeNotFoundException } from 'src/common/errors/not-found.exceptions';
-import { NoopLogger, PayzenoLogger } from 'src/common/logging/logger';
+import { NoopLogger, PAYZENO_LOGGER } from 'src/common/logging/logger';
 import { ChargeRepository } from 'src/payments/charge.repository';
 import { ChargesService } from 'src/payments/charges.service';
 import { LedgerReadThroughService } from 'src/ledger/ledger-read-through.service';
@@ -40,7 +40,7 @@ describe('ChargesService', () => {
         ChargesService,
         { provide: ChargeRepository, useValue: repo },
         { provide: LedgerReadThroughService, useValue: ledger },
-        { provide: PayzenoLogger, useValue: new NoopLogger() },
+        { provide: PAYZENO_LOGGER, useValue: new NoopLogger() },
       ],
     }).compile();
 

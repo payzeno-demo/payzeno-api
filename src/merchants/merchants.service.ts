@@ -18,6 +18,7 @@
  * duplicate detected against a merchant we have since closed is a log line, not a 404.
  */
 import { Inject, Injectable } from '@nestjs/common';
+import type { EntityManager } from 'typeorm';
 
 import type {
   CreateMerchantRequest,
@@ -189,19 +190,24 @@ export class MerchantsService extends BaseService<MerchantEntity> {
    * The state machine decides legality; the conditional UPDATE decides who won. A zero-row
    * result means somebody else moved the merchant between our read and our write, and it
    * surfaces as the same 409 an illegal transition would.
+   *
+   * `manager` joins a caller's transaction — the onboarding decision, whose state change, staff
+   * audit row and email must commit with the status change or not at all.
    */
   async changeStatus(
     merchantId: MerchantId,
     to: MerchantStatus,
     reason: string,
     actor: string,
+    manager?: EntityManager,
   ): Promise<Merchant> {
-    const merchant = await this.getById(merchantId);
+    const merchant = await this.merchants.findById(merchantId, manager);
+    if (!merchant) throw new MerchantNotFoundException(merchantId);
     const event = this.statuses.eventFor(merchant.status, to);
     const next = this.statuses.apply(merchant.status, event);
 
-    const updated = await this.transactions.runInTransaction(async (manager) => {
-      const affected = await this.merchants.transitionStatus(merchantId, merchant.status, next, manager);
+    const updated = await this.transactions.runInTransaction(async (tx) => {
+      const affected = await this.merchants.transitionStatus(merchantId, merchant.status, next, tx);
 
       if (affected === 0) {
         throw new InvalidMerchantTransitionException(merchant.status, event);
@@ -226,10 +232,10 @@ export class MerchantsService extends BaseService<MerchantEntity> {
         },
       );
 
-      const row = await this.merchants.findById(merchantId, manager);
+      const row = await this.merchants.findById(merchantId, tx);
       if (!row) throw new MerchantNotFoundException(merchantId);
       return row;
-    });
+    }, manager);
 
     this.logger.info('merchant.status_changed', {
       merchant_id: merchantId,

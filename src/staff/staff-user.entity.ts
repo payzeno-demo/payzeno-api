@@ -13,7 +13,7 @@
  */
 import { Column, Entity, Index, JoinColumn, ManyToOne } from 'typeorm';
 
-import type { StaffRole } from '@payzeno/contracts';
+import type { StaffRole, StaffUser as StaffUserResponse } from '@payzeno/contracts';
 
 import { AppendOnlyEntity, BaseEntity } from '../common/base/base.entity';
 
@@ -76,6 +76,17 @@ export class StaffUser extends BaseEntity {
    */
   requiresMfa(): boolean {
     return this.role !== 'support';
+  }
+
+  /** The wire shape (`StaffSessionResponse.staff`). No hash, no MFA state, no timestamps. */
+  toStaffUser(): StaffUserResponse {
+    return {
+      id: this.id,
+      object: 'staff_user',
+      email: this.email,
+      full_name: this.fullName,
+      role: this.role,
+    };
   }
 }
 

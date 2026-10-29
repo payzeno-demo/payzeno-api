@@ -4,12 +4,14 @@ import {
   Module,
   OnApplicationBootstrap,
   OnApplicationShutdown,
+  Optional,
 } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { API_CONFIG } from '../config/config.module';
 import type { ApiConfig } from '../config/api-config.type';
 import { CommonModule } from '../common/common.module';
 import { PAYZENO_LOGGER, type PayzenoLogger } from '../common/logging/logger';
+import { BACKGROUND_WORK, type BackgroundWork } from '../common/runtime/background-work';
 import { BaseEventConsumer } from './consumer';
 import { DeadLetterConsumer } from './dead-letter.consumer';
 import { EventOutbox } from './event-outbox.entity';
@@ -80,6 +82,7 @@ export class EventsModule implements OnApplicationBootstrap, OnApplicationShutdo
     private readonly webhookFanout: WebhookFanoutConsumer,
     private readonly invoiceProjection: InvoiceProjectionConsumer,
     private readonly deadLetter: DeadLetterConsumer,
+    @Optional() @Inject(BACKGROUND_WORK) private readonly background?: BackgroundWork,
   ) {}
 
   /**
@@ -87,6 +90,12 @@ export class EventsModule implements OnApplicationBootstrap, OnApplicationShutdo
    * receive a message before the services it resolved in `onModuleInit` are usable.
    */
   onApplicationBootstrap(): void {
+    if (this.background === 'disabled') {
+      // A one-shot script (the demo seed) using the publisher; the queues are the API's.
+      this.logger.info('events.consumers_disabled', {});
+      return;
+    }
+
     const consumers: BaseEventConsumer[] = [
       this.ledgerEvents,
       this.webhookFanout,

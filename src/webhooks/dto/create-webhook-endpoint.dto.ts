@@ -17,8 +17,10 @@ import { Redact } from '../../common/decorators/redact.decorator';
  */
 @Redact('url')
 export class CreateWebhookEndpointDto implements CreateWebhookEndpointRequest {
+  // http or https here; WebhookEndpointsService applies the environment's scheme rule
+  // (`assertCallbackUrl` — https in production, either elsewhere).
   @IsString()
-  @IsUrl({ protocols: ['https'], require_protocol: true, require_tld: false })
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true, require_tld: false })
   url!: string;
 
   @ArrayNotEmpty()

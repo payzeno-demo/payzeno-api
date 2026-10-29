@@ -12,6 +12,8 @@ import { Injectable } from '@nestjs/common';
 import { DataSource, EntityManager, type FindOptionsWhere } from 'typeorm';
 import type { InvoiceStatus, MerchantId, Paginated } from '@payzeno/contracts';
 
+import { resolveListQuery } from '../../common/pagination/list-query.dto';
+import { applyCursor, toPage } from '../../common/persistence/cursor';
 import { PayzenoRepository } from '../../common/persistence/payzeno.repository';
 import { InvoiceProjectionEntity } from './invoice-projection.entity';
 
@@ -27,21 +29,28 @@ export class InvoiceProjectionRepository extends PayzenoRepository<InvoiceProjec
     super(InvoiceProjectionEntity, dataSource.createEntityManager());
   }
 
+  protected get alias(): string {
+    return 'invoice_projection';
+  }
+
+  /**
+   * Keyset page over `(created_at, id)` — the one ordering `cursor.ts` and the cursor codec
+   * speak. Not `paginateCursor`: this table has no `livemode` column on the entity, so the
+   * scoped builder's mode predicate has nothing to bind to.
+   */
   async listForMerchant(
     merchantId: MerchantId,
     query: InvoiceProjectionQuery,
   ): Promise<Paginated<InvoiceProjectionEntity>> {
-    const where: FindOptionsWhere<InvoiceProjectionEntity> = {
-      merchant_id: merchantId,
-    } as FindOptionsWhere<InvoiceProjectionEntity>;
+    const { limit, cursor } = resolveListQuery(query);
+    let qb = this.createQueryBuilder(this.alias).where(`${this.alias}.merchant_id = :merchantId`, {
+      merchantId,
+    });
     if (query.status) {
-      (where as Record<string, unknown>).status = query.status;
+      qb = qb.andWhere(`${this.alias}.status = :status`, { status: query.status });
     }
-    return this.paginateCursor(
-      { cursor: query.cursor, limit: query.limit },
-      where,
-      { column: 'period_start', direction: 'DESC' },
-    );
+    const rows = await applyCursor(qb, { limit, cursor, alias: this.alias }).getMany();
+    return toPage(rows, limit);
   }
 
   findByIdForMerchant(merchantId: MerchantId, invoiceId: string): Promise<InvoiceProjectionEntity | null> {
@@ -61,44 +70,41 @@ export class InvoiceProjectionRepository extends PayzenoRepository<InvoiceProjec
   /**
    * Conditional upsert. Returns true when the row was written, false when an existing row was
    * already at or ahead of `source_occurred_at`.
+   *
+   * Two statements, because TypeORM's `orUpdate` has no way to put a WHERE on its DO UPDATE
+   * arm. Each is a single guarded write and neither reads first: an insert that does nothing
+   * on conflict, then an update whose WHERE carries the ordering guard. Columns absent from
+   * `row` are left alone on the update — an `invoice.issued` carries no lines, and must not
+   * blank the ones a legacy cache fill wrote.
    */
   async upsertIfNewer(
     row: Partial<InvoiceProjectionEntity> & { id: string; source_occurred_at: Date },
     manager?: EntityManager,
   ): Promise<boolean> {
     const repo = manager ? manager.getRepository(InvoiceProjectionEntity) : this;
-    const result = await repo
+    const inserted = await repo
       .createQueryBuilder()
       .insert()
       .into(InvoiceProjectionEntity)
       .values(row)
-      .orUpdate(
-        [
-          'merchant_id',
-          'subscription_id',
-          'number',
-          'status',
-          'currency',
-          'subtotal_minor',
-          'tax_minor',
-          'total_minor',
-          'amount_paid_minor',
-          'lines',
-          'period_start',
-          'period_end',
-          'due_at',
-          'migrated_to_ledger',
-          'source_occurred_at',
-          'source',
-          'refreshed_at',
-        ],
-        ['id'],
-        { skipUpdateIfNoValuesChanged: true },
-      )
-      .setParameter('incoming_occurred_at', row.source_occurred_at)
-      .where('invoice_projection.source_occurred_at < :incoming_occurred_at')
+      .orIgnore()
+      .returning('id')
       .execute();
-    return (result.raw as unknown[]).length > 0;
+    if ((inserted.raw as unknown[]).length > 0) {
+      return true;
+    }
+
+    const { id, ...columns } = row;
+    const updated = await repo
+      .createQueryBuilder()
+      .update(InvoiceProjectionEntity)
+      .set(columns)
+      .where('id = :id', { id })
+      .andWhere('source_occurred_at < :incomingOccurredAt', {
+        incomingOccurredAt: row.source_occurred_at,
+      })
+      .execute();
+    return (updated.affected ?? 0) > 0;
   }
 
   /** Used by the invoice void path so the cache does not serve a voided invoice as `open`. */

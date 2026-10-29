@@ -9,7 +9,7 @@
  * from "somebody else holds it with a different fingerprint", and doing that as GET-then-SET
  * is the race the whole subsystem exists to prevent.
  */
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import type { Redis } from 'ioredis';
 
 import { API_CONFIG, type ApiConfig } from '../../config/api-config.type';
@@ -48,7 +48,8 @@ export class RedisIdempotencyStore implements IdempotencyStore {
   constructor(
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
     @Inject(API_CONFIG) private readonly config: ApiConfig,
-    private readonly livemode: boolean = true,
+    // See PostgresIdempotencyStore: the harness passes this; Nest must not try to resolve it.
+    @Optional() private readonly livemode: boolean = true,
   ) {}
 
   private key(merchantId: string, key: string): string {

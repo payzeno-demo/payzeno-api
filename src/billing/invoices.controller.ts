@@ -8,7 +8,6 @@
  */
 
 import { Controller, Get, Header, Param, Post, Query, Res, UseGuards } from '@nestjs/common';
-import type { Response } from 'express';
 import type { AuthPrincipal, Invoice, InvoiceStatus, Paginated } from '@payzeno/contracts';
 
 import { ApiKeyGuard } from '../auth/guards/api-key.guard';
@@ -22,9 +21,14 @@ import { Idempotent } from '../common/decorators/idempotent.decorator';
 import { MerchantScoped } from '../common/decorators/merchant-scoped.decorator';
 import { RequiredScopes } from '../common/decorators/required-scopes.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
-import { ListQueryDto } from '../common/pagination/list-query.dto';
+import { StatusListQueryDto } from '../common/pagination/filtered-list-query.dto';
 import { InvoiceSourceResolver } from './invoice-source.resolver';
 import { InvoicesService } from './invoices.service';
+
+/** The one response method the list route touches; typed here rather than importing express. */
+interface HeaderResponse {
+  setHeader(name: string, value: string): void;
+}
 
 @Controller('v1/invoices')
 @MerchantScoped()
@@ -41,8 +45,8 @@ export class InvoicesController extends BaseController {
   @RequiredScopes('invoices:read')
   async list(
     @CurrentPrincipal() principal: AuthPrincipal,
-    @Query() query: ListQueryDto,
-    @Res({ passthrough: true }) res: Response,
+    @Query() query: StatusListQueryDto,
+    @Res({ passthrough: true }) res: HeaderResponse,
     @Query('status') status?: InvoiceStatus,
   ): Promise<Paginated<Invoice>> {
     res.setHeader('X-Payzeno-Invoice-Source', this.resolver.currentSource());

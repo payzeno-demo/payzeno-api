@@ -12,11 +12,12 @@
  *   2. it refuses when the route's `:paymentIntentId` is a different intent — otherwise one
  *      customer's client secret reads another customer's payment on the same merchant.
  */
-import { Injectable, type OnModuleInit } from '@nestjs/common';
-import { ModuleRef } from '@nestjs/core';
+import { Injectable, type ExecutionContext, type OnModuleInit } from '@nestjs/common';
+import { ModuleRef, Reflector } from '@nestjs/core';
 
 import type { AuthPrincipal } from '@payzeno/contracts';
 
+import { ACCEPTS_CLIENT_SECRET_KEY } from '../../common/decorators/accepts-client-secret.decorator';
 import { AuthenticationRequiredException, PermissionDeniedException } from '../../common/errors/auth.exceptions';
 import { PaymentIntentRepository } from '../../payments/payment-intent.repository';
 import { PrincipalFactory } from '../principal/principal.factory';
@@ -42,12 +43,23 @@ export class ClientSecretGuard extends BaseAuthGuard implements OnModuleInit {
   constructor(
     private readonly moduleRef: ModuleRef,
     private readonly principals: PrincipalFactory,
+    private readonly reflector: Reflector,
   ) {
     super();
   }
 
   onModuleInit(): void {
     this.intents = this.moduleRef.get(PaymentIntentRepository, { strict: false });
+  }
+
+  /** Only handlers marked `@AcceptsClientSecret()`; everywhere else a secret is ignored. */
+  protected override appliesTo(context: ExecutionContext): boolean {
+    return (
+      this.reflector.getAllAndOverride<boolean | undefined>(ACCEPTS_CLIENT_SECRET_KEY, [
+        context.getHandler(),
+        context.getClass(),
+      ]) === true
+    );
   }
 
   protected async authenticate(request: AuthenticatedRequest): Promise<AuthPrincipal | null> {
@@ -66,7 +78,8 @@ export class ClientSecretGuard extends BaseAuthGuard implements OnModuleInit {
 
     this.assertRouteMatches(request, intent.id);
 
-    return this.principals.fromClientSecret(intent.merchantId, intent.id);
+    // The intent's own mode — a test-mode intent's secret must scope to test-mode rows.
+    return this.principals.fromClientSecret(intent.merchantId, intent.id, intent.livemode);
   }
 
   private assertRouteMatches(request: AuthenticatedRequest, intentId: string): void {

@@ -37,6 +37,25 @@ export interface RiskEvaluation {
   action: 'restricted' | 'reinstated' | 'none';
 }
 
+/**
+ * One merchant's line in `RiskEvaluationJob`'s report. A merchant whose evaluation threw comes
+ * back with `error` set instead of stopping the batch; the job counts and logs it.
+ */
+export interface RiskOutcome {
+  merchantId: MerchantId;
+  action: 'restricted' | 'released' | 'unchanged';
+  disputeRateBps: number;
+  disputeCount: number;
+  chargeCount: number;
+  error?: unknown;
+}
+
+const OUTCOME_ACTION: Record<RiskEvaluation['action'], RiskOutcome['action']> = {
+  restricted: 'restricted',
+  reinstated: 'released',
+  none: 'unchanged',
+};
+
 /** One page of merchants per pass. The job loops until a page comes back short. */
 const PAGE_SIZE = 200;
 
@@ -52,9 +71,9 @@ export class RiskEvaluationService {
     @Inject(PAYZENO_LOGGER) private readonly logger: PayzenoLogger,
   ) {}
 
-  /** One merchant. `RiskEvaluationJob` maps this over the live, active population. */
-  async evaluate(merchant: MerchantEntity): Promise<RiskEvaluation> {
-    const since = this.calculator.windowStart(this.clock.now());
+  /** One merchant, as of `at` — the job's clock when it has one, ours otherwise. */
+  async evaluate(merchant: MerchantEntity, at: Date = this.clock.now()): Promise<RiskEvaluation> {
+    const since = this.calculator.windowStart(at);
 
     const [capturedCharges, disputesOpened] = await Promise.all([
       this.charges.countCapturedSince(merchant.id, since),
@@ -119,5 +138,38 @@ export class RiskEvaluationService {
     }
 
     return results;
+  }
+
+  /**
+   * `RiskEvaluationJob`'s entry point: at most `limit` live, active merchants (one page — the
+   * job's per-run cap, so the lease cannot outlive its TTL), evaluated as of the job's clock.
+   */
+  async evaluateActiveMerchants(at: Date, limit: number): Promise<RiskOutcome[]> {
+    const page = await this.merchants.listActiveLive(limit, null);
+    const outcomes: RiskOutcome[] = [];
+
+    for (const merchant of page) {
+      try {
+        const evaluation = await this.evaluate(merchant, at);
+        outcomes.push({
+          merchantId: evaluation.merchantId,
+          action: OUTCOME_ACTION[evaluation.action],
+          disputeRateBps: evaluation.rate.bps,
+          disputeCount: evaluation.rate.disputesOpened,
+          chargeCount: evaluation.rate.capturedCharges,
+        });
+      } catch (err) {
+        outcomes.push({
+          merchantId: merchant.id,
+          action: 'unchanged',
+          disputeRateBps: 0,
+          disputeCount: 0,
+          chargeCount: 0,
+          error: err,
+        });
+      }
+    }
+
+    return outcomes;
   }
 }

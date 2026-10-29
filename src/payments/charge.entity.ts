@@ -11,7 +11,6 @@
  * defence against the ledger's double capture (data-model §1.6).
  */
 
-import { Column, Entity, Index, JoinColumn, ManyToOne } from 'typeorm';
 import type {
   Acquirer,
   CaptureMethod,
@@ -23,17 +22,20 @@ import type {
   DeclineCode,
   Metadata,
   PaymentIntentId,
+  RiskOutcome,
   ScaExemption,
   SettlementBatchId,
   ThreeDSecureResult,
 } from '@payzeno/contracts';
+import { Column, Entity, Index, JoinColumn, ManyToOne } from 'typeorm';
 
 import { MerchantScopedEntity } from '../common/base/merchant-scoped.entity';
 import { currencyTransformer, requiredMinorUnitsTransformer, trimmedCharTransformer } from '../common/typeorm/minor-units.transformer';
+
 import { PaymentIntentEntity } from './payment-intent.entity';
 
 @Entity({ name: 'charge' })
-@Index('ix_charge_merchant_created', ['merchant_id', 'created_at'])
+@Index('ix_charge_merchant_created', ['merchantId', 'createdAt'])
 @Index('ix_charge_payment_intent_id', ['payment_intent_id'])
 @Index('ix_charge_status', ['status'])
 @Index('uq_charge_processor_reference', ['acquirer', 'processor_reference'], {
@@ -162,6 +164,24 @@ export class ChargeEntity extends MerchantScopedEntity {
   /** `authorized_at + 7d`, or `+ 30d` for MCCs 3000-3999 / 7011 / 7512. See ChargeExpiryPolicy. */
   @Column({ type: 'timestamptz', nullable: true })
   authorization_expires_at: Date | null;
+
+  // -- RFC platform-v2 §8 risk signals (migration platform-v2 money 4) -------------------------
+
+  /** The vault's keyed card hash. Card velocity is a query over this; never logged with a merchant id. */
+  @Column({ type: 'text', nullable: true })
+  card_fingerprint: string | null;
+
+  /** First `X-Forwarded-For` hop of a checkout confirm. Distinct-cards-per-address velocity. */
+  @Column({ type: 'text', nullable: true })
+  shopper_ip: string | null;
+
+  /** The edge's view of the shopper's country at confirm time. */
+  @Column({ type: 'char', length: 2, nullable: true, transformer: trimmedCharTransformer })
+  shopper_country: string | null;
+
+  /** What the platform rules decided for this authorisation. Null for charges before §8. */
+  @Column({ type: 'text', nullable: true })
+  risk_outcome: RiskOutcome | null;
 
   /** The one place the six flat `card_*` columns become the contracted nested object. */
   toCardSummary(): CardSummary {

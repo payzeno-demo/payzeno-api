@@ -16,9 +16,9 @@
  */
 
 import { Controller, HttpCode, Param, Post, Req, UseGuards } from '@nestjs/common';
-import type { Request } from 'express';
 import type { Acquirer } from '@payzeno/contracts';
 
+import type { AuthenticatedRequest } from '../auth/guards/base-auth.guard';
 import { ProcessorSignatureGuard } from '../auth/guards/processor-signature.guard';
 import { AuditLog } from '../common/decorators/audit-log.decorator';
 import { RateLimit } from '../common/decorators/rate-limit.decorator';
@@ -26,8 +26,11 @@ import { PAYZENO_LOGGER, type PayzenoLogger } from '../common/logging/logger';
 import { Inject } from '@nestjs/common';
 import { ProcessorWebhookService } from './processor-webhook.service';
 
-/** Express does not expose the raw body unless the JSON parser was told to keep it. */
-type RawBodyRequest = Request & { rawBody?: Buffer };
+/**
+ * Express does not expose the raw body unless the JSON parser was told to keep it; `main.ts`
+ * tells it to, and `AuthenticatedRequest` already carries the `rawBody` the guard verified.
+ */
+type RawBodyRequest = AuthenticatedRequest;
 
 @Controller('v1/processor/webhooks')
 export class ProcessorWebhookController {

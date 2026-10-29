@@ -29,6 +29,7 @@ import type { AuditActorType, AuthPrincipal } from '@payzeno/contracts';
 import { AUDIT_LOG_KEY, type AuditLogSpec } from '../decorators/audit-log.decorator';
 import { PAYZENO_LOGGER, type PayzenoLogger } from '../logging/logger';
 import { getRequestContext } from '../logging/request-context';
+import { scrubForAudit } from '../redaction/scrub';
 
 export interface AuditEntry {
   merchantId: string | null;
@@ -44,7 +45,9 @@ export interface AuditEntry {
   livemode: boolean;
 }
 
-export interface StaffAuditEntry extends Omit<AuditEntry, 'merchantId' | 'actorType' | 'livemode'> {
+/** `staffId` is the actor; `staff_audit_log` has no separate actor column. */
+export interface StaffAuditEntry
+  extends Omit<AuditEntry, 'merchantId' | 'actorType' | 'actorId' | 'livemode'> {
   staffId: string;
   actingMerchantId: string | null;
   reason: string | null;
@@ -116,7 +119,10 @@ export class AuditLogInterceptor implements NestInterceptor {
       resourceType: spec.resourceType ?? spec.action.split('.')[0],
       resourceId,
       before: null,
-      after: body ?? null,
+      // Scrubbed here because this runs inside RedactionInterceptor: the response pass has not
+      // happened yet, and a route that returns a credential (an API key's `secret`, a webhook
+      // `signing_secret`, a `client_secret`) would otherwise persist it in plaintext.
+      after: body === undefined || body === null ? null : scrubForAudit(body),
       requestId: ctx?.requestId ?? 'unknown',
       ip: req.ip ?? null,
     };
