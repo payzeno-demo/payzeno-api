@@ -1,9 +1,13 @@
-# CI-only workspace root.
+# The workspace root, kept here because payzeno-api's CI assembles it.
 #
-# payzeno-api and payzeno-contracts are separate repos but a single pnpm workspace at
-# build time — that is what makes "@payzeno/contracts": "workspace:*" resolve without a
-# publish step. ci.yml checks both out side by side and copies this file to the parent
-# directory. Locally, `git clone` them as siblings and do the same; see README §Setup.
+# contracts, api, console and checkout are separate repos but one pnpm workspace: that is
+# what makes "@payzeno/contracts": "workspace:*" resolve without a publish step, and the
+# single lockfile (payzeno-api/pnpm-lock.yaml) covers all four. CI checks the four out side
+# by side and copies this file, package.json and the lockfile to the parent directory;
+# locally, clone them as siblings and do the same (see README §Setup). The api, console and
+# checkout Dockerfiles build with that parent directory as their context.
 packages:
   - 'payzeno-contracts'
   - 'payzeno-api'
+  - 'payzeno-console'
+  - 'payzeno-checkout'
