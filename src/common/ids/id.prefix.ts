@@ -25,6 +25,7 @@ export const API_ID_PREFIXES = {
   refund: 're_',
   dispute: 'dp_',
   webhookEvent: 'evt_',
+  checkoutSession: 'cs_',
 } as const;
 
 export type ApiIdPrefix = (typeof API_ID_PREFIXES)[keyof typeof API_ID_PREFIXES];

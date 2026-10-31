@@ -22,25 +22,106 @@ import {
 } from '@nestjs/common';
 import { IsEmail, IsString, MaxLength, MinLength } from 'class-validator';
 
-import type { LoginRequest, LoginResponse, MerchantId, SessionResponse } from '@payzeno/contracts';
+import type {
+  AcceptInvitationRequest,
+  LoginRequest,
+  LoginResponse,
+  MerchantId,
+  PasswordResetConfirmRequest,
+  PasswordResetRequest,
+  SessionResponse,
+} from '@payzeno/contracts';
 
 import { AuditLog } from '../common/decorators/audit-log.decorator';
 import { RateLimit } from '../common/decorators/rate-limit.decorator';
+import { AcceptsSecretFields } from '../common/decorators/secret-fields.decorator';
 import { AuthenticationRequiredException } from '../common/errors/auth.exceptions';
 
 import { AuthService } from './auth.service';
 import type { AuthenticatedRequest } from './guards/base-auth.guard';
 import { SessionGuard } from './guards/session.guard';
-import { SESSION_COOKIE, SessionService } from './session/session.service';
+import {
+  originOf,
+  SESSION_COOKIE,
+  SessionService,
+  writeSessionCookies,
+  type CookieResponse,
+} from './session/session.service';
 
 /**
- * The two methods of the response object this controller touches. Typing them here rather
- * than importing express keeps the controller testable with a plain object and keeps the
- * platform out of the layer.
+ * The response shape the cookie-setting controllers type against. Defined beside the cookie
+ * contract in SessionService, so the staff and signup controllers share it without reaching
+ * into this one; re-exported here for the callers that always imported it from this file.
  */
-export interface CookieResponse {
-  cookie(name: string, value: string, options: Record<string, unknown>): void;
-  clearCookie(name: string, options?: Record<string, unknown>): void;
+export type { CookieOptions, CookieResponse } from './session/session.service';
+
+/**
+ * Declared here rather than in a `dto/` folder: `src/auth` has no DTO directory by design —
+ * two request shapes do not earn one. It `implements LoginRequest`; it does not restate it.
+ *
+ * Both DTOs sit ABOVE the controller. `emitDecoratorMetadata` writes `design:paramtypes` for
+ * `login` and `requestPasswordReset` while `AuthController` is being defined, and a class
+ * declared further down the file is still in its temporal dead zone at that point — the
+ * module throws a ReferenceError on load.
+ */
+export class LoginRequestDto implements LoginRequest {
+  @IsEmail()
+  @MaxLength(320)
+  email!: string;
+
+  /**
+   * The maximum is not decoration. argon2 hashes whatever it is given and a 4MB "password"
+   * is a free denial of service against the one endpoint that cannot be rate-limited per
+   * merchant.
+   */
+  @IsString()
+  @MinLength(8)
+  @MaxLength(256)
+  password!: string;
+}
+
+export class PasswordResetRequestDto implements PasswordResetRequest {
+  @IsEmail()
+  @MaxLength(320)
+  email!: string;
+}
+
+/**
+ * A password someone is CHOOSING (invite, reset, signup). Ten characters, not the eight
+ * `LoginRequestDto` accepts: login has to keep accepting passwords set under the old rule.
+ */
+export const NEW_PASSWORD_MIN_LENGTH = 10;
+
+/** The emailed secret: 32 random bytes, base64url — 43 characters. Bounded, not exact. */
+export const LINK_TOKEN_MAX_LENGTH = 128;
+
+export class AcceptInvitationDto implements AcceptInvitationRequest {
+  @IsString()
+  @MinLength(16)
+  @MaxLength(LINK_TOKEN_MAX_LENGTH)
+  token!: string;
+
+  @IsString()
+  @MinLength(2)
+  @MaxLength(140)
+  full_name!: string;
+
+  @IsString()
+  @MinLength(NEW_PASSWORD_MIN_LENGTH)
+  @MaxLength(256)
+  password!: string;
+}
+
+export class PasswordResetConfirmDto implements PasswordResetConfirmRequest {
+  @IsString()
+  @MinLength(16)
+  @MaxLength(LINK_TOKEN_MAX_LENGTH)
+  token!: string;
+
+  @IsString()
+  @MinLength(NEW_PASSWORD_MIN_LENGTH)
+  @MaxLength(256)
+  password!: string;
 }
 
 @Controller('v1/auth')
@@ -61,28 +142,17 @@ export class AuthController {
   @HttpCode(200)
   @RateLimit(5, 60)
   @AuditLog('auth.login', { resourceType: 'session' })
+  // Without this the denylist hands the handler '[REDACTED]' and no password ever verifies.
+  @AcceptsSecretFields('password')
   async login(
     @Body() body: LoginRequestDto,
     @Query('merchant_id') merchantId: MerchantId | undefined,
     @Req() request: AuthenticatedRequest,
     @Res({ passthrough: true }) response: CookieResponse,
   ): Promise<LoginResponse> {
-    const outcome = await this.auth.login(body.email, body.password, merchantId ?? null, {
-      userAgent: headerOf(request, 'user-agent'),
-      ip: request.ip ?? null,
-    });
+    const outcome = await this.auth.login(body.email, body.password, merchantId ?? null, originOf(request));
 
-    response.cookie(
-      outcome.issued.sessionCookie.name,
-      outcome.issued.sessionCookie.value,
-      outcome.issued.sessionCookie.options,
-    );
-    response.cookie(
-      outcome.issued.csrfCookie.name,
-      outcome.issued.csrfCookie.value,
-      outcome.issued.csrfCookie.options,
-    );
-
+    writeSessionCookies(response, outcome.issued);
     return outcome.body;
   }
 
@@ -132,36 +202,37 @@ export class AuthController {
   async requestPasswordReset(@Body() body: PasswordResetRequestDto): Promise<void> {
     await this.auth.requestPasswordReset(body.email);
   }
-}
-
-function headerOf(request: AuthenticatedRequest, name: string): string | null {
-  const raw = request.headers[name];
-  if (Array.isArray(raw)) return raw[0] ?? null;
-  return raw ?? null;
-}
-
-/**
- * Declared here rather than in a `dto/` folder: `src/auth` has no DTO directory by design —
- * two request shapes do not earn one. It `implements LoginRequest`; it does not restate it.
- */
-export class LoginRequestDto implements LoginRequest {
-  @IsEmail()
-  @MaxLength(320)
-  email!: string;
 
   /**
-   * The maximum is not decoration. argon2 hashes whatever it is given and a 4MB "password"
-   * is a free denial of service against the one endpoint that cannot be rate-limited per
-   * merchant.
+   * `POST /v1/auth/password/reset/confirm`. Public; the token is the credential. 204, and no
+   * session — every session of the login is revoked and the console sends the user to /login.
+   * `400 invalid_request` with `details.reason` `token_invalid` | `token_expired` on a bad link.
    */
-  @IsString()
-  @MinLength(8)
-  @MaxLength(256)
-  password!: string;
-}
+  @Post('password/reset/confirm')
+  @HttpCode(204)
+  @RateLimit(10, 60)
+  @AcceptsSecretFields('password')
+  async confirmPasswordReset(@Body() body: PasswordResetConfirmDto): Promise<void> {
+    await this.auth.confirmPasswordReset(body.token, body.password);
+  }
 
-export class PasswordResetRequestDto {
-  @IsEmail()
-  @MaxLength(320)
-  email!: string;
+  /**
+   * `POST /v1/auth/invitations/accept` (RFC platform-v2 §4). Public; the token is the
+   * credential. Sets the name and password, activates the login and signs in: the response sets
+   * `pz_session` + `pz_csrf` exactly like `/login` and carries the same `LoginResponse`.
+   */
+  @Post('invitations/accept')
+  @HttpCode(200)
+  @RateLimit(10, 60)
+  @AcceptsSecretFields('password')
+  async acceptInvitation(
+    @Body() body: AcceptInvitationDto,
+    @Req() request: AuthenticatedRequest,
+    @Res({ passthrough: true }) response: CookieResponse,
+  ): Promise<LoginResponse> {
+    const outcome = await this.auth.acceptInvitation(body.token, body.full_name, body.password, originOf(request));
+
+    writeSessionCookies(response, outcome.issued);
+    return outcome.body;
+  }
 }

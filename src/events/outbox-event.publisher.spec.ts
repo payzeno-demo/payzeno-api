@@ -28,7 +28,7 @@ describe('OutboxEventPublisher', () => {
     publisher = new OutboxEventPublisher(
       outbox as never,
       transactions as never,
-      { generate: () => 'evt_01HTEST' } as never,
+      { webhookEventId: () => 'evt_01HTEST' } as never,
       { now: () => now } as never,
       { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn(), child: jest.fn() } as never,
     );

@@ -1,16 +1,16 @@
 /**
  * L7. `GET /v1/balance`.
  *
- * Thin on purpose: the balance is the ledger's, and payzeno-api holds no copy of it. The only
- * business rule that lives here is the currency default — a merchant with volume in three
- * currencies has three balances, and answering with an arbitrary one is worse than answering
- * with the default one.
+ * Thin on purpose: the balance is the ledger's, and payzeno-api holds no copy of it. A merchant
+ * with volume in three currencies has three balances (RFC platform-v2 §7): `?currency=` reads
+ * one, and no currency lists them all — never an arbitrary one.
  */
 
 import { Injectable } from '@nestjs/common';
 import type { Balance, CurrencyCode, MerchantId } from '@payzeno/contracts';
 
 import { LedgerReadThroughService } from './ledger-read-through.service';
+import type { BalanceList } from './ledger.types';
 
 @Injectable()
 export class BalanceService {
@@ -18,6 +18,11 @@ export class BalanceService {
 
   get(merchantId: MerchantId, currency: CurrencyCode, livemode: boolean): Promise<Balance> {
     return this.readThrough.getBalance(merchantId, currency, livemode);
+  }
+
+  /** RFC platform-v2 §7: one balance per currency, for the console's all-currencies summary. */
+  list(merchantId: MerchantId, livemode: boolean): Promise<BalanceList> {
+    return this.readThrough.listBalances(merchantId, livemode);
   }
 
   /**

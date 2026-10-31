@@ -69,7 +69,14 @@ export class ApiKeyResolver {
     if (!split) throw new InvalidApiKeyException();
 
     const lookupHash = this.hasher.lookupHash(split.secret);
-    const candidate = await this.keys.findOne({ where: { lookupHash } });
+    // `secret_hash` is `select: false` on the entity so no other read ever carries it; this is
+    // the one lookup that needs it, and without the explicit addSelect the verify below gets
+    // undefined and every key fails.
+    const candidate = await this.keys
+      .createQueryBuilder('api_key')
+      .addSelect('api_key.secretHash')
+      .where('api_key.lookupHash = :lookupHash', { lookupHash })
+      .getOne();
 
     if (!candidate) throw new InvalidApiKeyException();
 

@@ -50,6 +50,16 @@ jobs:
           ref: main
           token: ${{ secrets.PAYZENO_CI_TOKEN }}
           path: payzeno-contracts
+      - uses: actions/checkout@v4
+        with:
+          repository: payzeno/payzeno-console
+          token: ${{ secrets.PAYZENO_CI_TOKEN }}
+          path: payzeno-console
+      - uses: actions/checkout@v4
+        with:
+          repository: payzeno/payzeno-checkout
+          token: ${{ secrets.PAYZENO_CI_TOKEN }}
+          path: payzeno-checkout
       - name: assemble workspace
         run: |
           cp payzeno-api/.github/workspace/pnpm-workspace.yaml .

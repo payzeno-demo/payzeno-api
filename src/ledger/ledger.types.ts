@@ -8,6 +8,7 @@
 
 import type {
   Acquirer,
+  Balance,
   ChargeId,
   CurrencyCode,
   IsoDate,
@@ -27,6 +28,15 @@ export interface BalanceQuery {
   currency?: CurrencyCode;
   as_of?: IsoTimestamp;
   livemode?: boolean;
+}
+
+/**
+ * `GET /internal/v1/balances/{merchant_id}` without `?currency=` (RFC platform-v2 §7): one
+ * balance per currency the merchant has posted in, ordered by code. Also `GET /v1/balance`'s
+ * answer when no currency is asked for.
+ */
+export interface BalanceList {
+  data: Balance[];
 }
 
 export interface BalanceHistoryQuery {
@@ -167,6 +177,10 @@ export interface SettlementFundingBody {
  * Do not "improve" this by appending an attempt number. The uniqueness of this key is the only
  * thing standing between Payzeno and a duplicate settlement.
  */
-export function ledgerKey(purpose: LedgerPurpose | 'capture' | 'auth', scopeId: string, subjectId = ''): string {
+export function ledgerKey(
+  purpose: LedgerPurpose | 'capture' | 'auth' | 'authrelease',
+  scopeId: string,
+  subjectId = '',
+): string {
   return `${purpose}:${scopeId}:${subjectId}`;
 }

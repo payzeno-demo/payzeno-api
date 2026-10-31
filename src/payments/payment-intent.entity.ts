@@ -6,26 +6,32 @@
  * `synchronize` is off everywhere: the schema is what `src/migrations/` says it is.
  */
 
-import { Column, Entity, Index, OneToMany } from 'typeorm';
 import type {
   CancellationReason,
   CaptureMethod,
   ChargeId,
   CurrencyCode,
+  CustomerId,
   Metadata,
   NextAction,
   PaymentIntentStatus,
+  PaymentMethodId,
   PaymentMethodToken,
+  Presentment,
+  ReviewId,
+  SubscriptionId,
 } from '@payzeno/contracts';
+import { Column, Entity, Index, OneToMany } from 'typeorm';
 
 import { MerchantScopedEntity } from '../common/base/merchant-scoped.entity';
 import { currencyTransformer, requiredMinorUnitsTransformer } from '../common/typeorm/minor-units.transformer';
+
 import { ChargeEntity } from './charge.entity';
 
 @Entity({ name: 'payment_intent' })
-@Index('ix_payment_intent_merchant_created', ['merchant_id', 'created_at'])
+@Index('ix_payment_intent_merchant_created', ['merchantId', 'createdAt'])
 @Index('ix_payment_intent_status', ['status'])
-@Index('ix_payment_intent_customer_reference', ['merchant_id', 'customer_reference'])
+@Index('ix_payment_intent_customer_reference', ['merchantId', 'customer_reference'])
 export class PaymentIntentEntity extends MerchantScopedEntity {
   @Column({ type: 'bigint', name: 'amount_minor', transformer: requiredMinorUnitsTransformer })
   amount_minor: number;
@@ -85,6 +91,32 @@ export class PaymentIntentEntity extends MerchantScopedEntity {
     nullable: true,
   })
   cancellation_reason: CancellationReason | null;
+
+  // -- RFC platform-v2 (migration platform-v2 money 4) -------------------------------------
+
+  /** §5. The customer this payment belongs to, when it has one. */
+  @Column({ type: 'text', nullable: true })
+  customer_id: CustomerId | null;
+
+  /** §5. The saved card this payment used — the token above is that card's vault token. */
+  @Column({ type: 'text', nullable: true })
+  payment_method_id: PaymentMethodId | null;
+
+  /** Where the `receipt` email goes once the payment is captured. */
+  @Column({ type: 'text', nullable: true })
+  receipt_email: string | null;
+
+  /** §7. Set when the shopper pays in another currency: `amount_minor`/`currency` are then the converted price. */
+  @Column({ type: 'jsonb', nullable: true })
+  presentment: Presentment | null;
+
+  /** §8. The risk review that held this payment, open or closed. */
+  @Column({ type: 'text', nullable: true })
+  review_id: ReviewId | null;
+
+  /** §6. Set on every payment a subscription takes, the first and each renewal. */
+  @Column({ type: 'text', nullable: true })
+  subscription_id: SubscriptionId | null;
 
   @OneToMany(() => ChargeEntity, (charge) => charge.payment_intent)
   charges?: ChargeEntity[];

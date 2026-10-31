@@ -25,7 +25,8 @@ describe('migrations', () => {
   });
 
   it('registers the full contracted migration set', () => {
-    expect(migrations.length).toBe(32);
+    // 32 contracted (data-model.md §2), 4 from the platform bring-up, 8 from RFC platform-v2.
+    expect(migrations.length).toBe(44);
   });
 
   it('has strictly increasing timestamps — the class name carries the order', () => {

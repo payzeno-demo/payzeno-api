@@ -75,7 +75,9 @@ export class VolumeTimeseriesQuery {
           and c.currency = $3
           and c.created_at >= $4
           and c.created_at < $5
-          and c.status in ('captured', 'settled', 'partially_refunded', 'refunded')
+          -- refunded / partially_refunded are not charge states (charge.state-machine.ts):
+          -- a refunded charge stays captured or settled, so these two cover it.
+          and c.status in ('captured', 'settled')
         group by 1
         order by 1 asc`,
       [input.merchantId, input.livemode, input.currency, input.from, input.to],
@@ -107,7 +109,7 @@ export class VolumeTimeseriesQuery {
       refunded_minor: string;
     }> = await this.dataSource.query(
       `select
-         count(*) filter (where c.status in ('captured','settled','partially_refunded','refunded')) as succeeded,
+         count(*) filter (where c.status in ('captured','settled')) as succeeded,
          count(*) filter (where c.status = 'failed') as failed,
          coalesce(sum(c.captured_amount_minor), 0) as gross_minor,
          coalesce(sum(c.refunded_amount_minor), 0) as refunded_minor

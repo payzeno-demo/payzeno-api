@@ -57,22 +57,28 @@ export function redactLogContext(ctx: LogContext): LogContext {
   return out;
 }
 
+export const NO_EXEMPTIONS: ReadonlySet<string> = new Set();
+
 /**
  * Deep, structure-preserving scrub used on request and response bodies by
  * RedactionInterceptor. Arrays keep their length — a merchant debugging a 422 needs to know
  * which element failed.
+ *
+ * `exempt` is the route's `@AcceptsSecretFields` / `@ReturnsSecretFields` list, lower-case. An
+ * exempted key keeps its value but its children are still scrubbed.
  */
-export function redactDeep(value: unknown, depth = 0): unknown {
+export function redactDeep(value: unknown, depth = 0, exempt: ReadonlySet<string> = NO_EXEMPTIONS): unknown {
   if (depth > 12 || value === null || value === undefined) return value;
 
   if (Array.isArray(value)) {
-    return value.map((item) => redactDeep(item, depth + 1));
+    return value.map((item) => redactDeep(item, depth + 1, exempt));
   }
 
   if (typeof value === 'object') {
     const out: Record<string, unknown> = {};
     for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-      out[key] = isDeniedField(key) ? REDACTED : redactDeep(child, depth + 1);
+      const denied = isDeniedField(key) && !exempt.has(key.toLowerCase());
+      out[key] = denied ? REDACTED : redactDeep(child, depth + 1, exempt);
     }
     return out;
   }

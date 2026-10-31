@@ -23,7 +23,7 @@ import { MerchantScoped } from '../common/decorators/merchant-scoped.decorator';
 import { RateLimit } from '../common/decorators/rate-limit.decorator';
 import { RequiredScopes } from '../common/decorators/required-scopes.decorator';
 import { currentCorrelationId } from '../common/logging/request-context';
-import { ListQueryDto } from '../common/pagination/list-query.dto';
+import { RefundListQueryDto } from '../common/pagination/filtered-list-query.dto';
 import { CreateRefundDto } from './dto/create-refund.dto';
 import { RefundsService } from './refunds.service';
 
@@ -50,7 +50,7 @@ export class RefundsController extends BaseController {
   @RequiredScopes('refunds:read')
   list(
     @CurrentPrincipal() principal: AuthPrincipal,
-    @Query() query: ListQueryDto,
+    @Query() query: RefundListQueryDto,
     @Query('charge_id') chargeId?: ChargeId,
   ): Promise<Paginated<Refund>> {
     return this.refunds.list(principal, { ...query, limit: query.effectiveLimit(), charge_id: chargeId });

@@ -30,11 +30,13 @@ import type {
 } from '@payzeno/contracts';
 
 import { ResourceNotFoundException } from '../common/errors/not-found.exceptions';
+
 import { LedgerHttpClient } from './ledger-http.client';
 import {
   ledgerKey,
   type AuthReleaseCommand,
   type BalanceHistoryQuery,
+  type BalanceList,
   type CapturePostingCommand,
   type CreatePayoutBody,
   type DisputePostingCommand,
@@ -45,8 +47,12 @@ import {
   type SettlementItemListQuery,
 } from './ledger.types';
 
-/** How many of a merchant's items we aggregate to build `MerchantSettlementBatch`. */
-const ITEM_AGGREGATION_PAGE_SIZE = 500;
+/**
+ * Page size for aggregating a merchant's items into `MerchantSettlementBatch`. The ledger caps
+ * pages at 200 (`MAX_PAGE_SIZE`) and answers 422 above it, so this is the cap, and
+ * `toMerchantView` walks pages rather than trusting the first one to be all of them.
+ */
+const ITEM_AGGREGATION_PAGE_SIZE = 200;
 
 @Injectable()
 export class LedgerReadThroughService {
@@ -54,8 +60,18 @@ export class LedgerReadThroughService {
 
   // -- balances ------------------------------------------------------------
 
-  getBalance(merchantId: MerchantId, currency?: CurrencyCode, livemode = true): Promise<Balance> {
+  getBalance(merchantId: MerchantId, currency: CurrencyCode, livemode = true): Promise<Balance> {
     return this.ledger.getBalance(merchantId, { currency, livemode });
+  }
+
+  /**
+   * Every currency the merchant holds a balance in (RFC platform-v2 §7: balances are per
+   * currency, and nothing converts at capture). A ledger that predates the list answers the
+   * currency-less read with one default-currency balance; that is a list of one.
+   */
+  async listBalances(merchantId: MerchantId, livemode = true): Promise<BalanceList> {
+    const answer = await this.ledger.getBalance(merchantId, { livemode });
+    return 'data' in answer ? { data: answer.data } : { data: [answer] };
   }
 
   getBalanceHistory(merchantId: MerchantId, query: BalanceHistoryQuery): Promise<BalanceHistoryResponse> {
@@ -95,7 +111,10 @@ export class LedgerReadThroughService {
     const netMinor = command.amountMinor - feeMinor - reserveMinor;
 
     return this.ledger.postTransaction({
-      idempotency_key: ledgerKey('capture', command.chargeId),
+      // Scoped by merchant, exactly as the ledger's PaymentEventConsumer keys the same fact.
+      // Whichever of the two posts first wins; the other is a no-op on
+      // uq_ledger_transaction_idempotency_key. Different keys meant both posted.
+      idempotency_key: ledgerKey('capture', command.merchantId, command.chargeId),
       purpose: 'capture',
       merchant_id: command.merchantId,
       currency: command.currency,
@@ -115,7 +134,7 @@ export class LedgerReadThroughService {
 
   recordRefund(command: RefundPostingCommand): Promise<LedgerTransaction> {
     return this.ledger.postTransaction({
-      idempotency_key: ledgerKey('refund', command.chargeId, command.refundId),
+      idempotency_key: ledgerKey('refund', command.merchantId, command.refundId),
       purpose: 'refund',
       merchant_id: command.merchantId,
       currency: command.currency,
@@ -135,7 +154,7 @@ export class LedgerReadThroughService {
    */
   recordDispute(command: DisputePostingCommand): Promise<LedgerTransaction> {
     return this.ledger.postTransaction({
-      idempotency_key: ledgerKey('dispute', command.chargeId, command.disputeId),
+      idempotency_key: ledgerKey('dispute', command.merchantId, command.disputeId),
       purpose: 'dispute',
       merchant_id: command.merchantId,
       currency: command.currency,
@@ -154,7 +173,9 @@ export class LedgerReadThroughService {
   /** `voided` and `expired` both post this. There is no purpose named `ReleaseHold`. */
   releaseAuthorization(command: AuthReleaseCommand): Promise<LedgerTransaction> {
     return this.ledger.postTransaction({
-      idempotency_key: ledgerKey('auth_release', command.chargeId),
+      // `authrelease`, no underscore: the key purpose the ledger consumer uses, not the
+      // posting purpose below.
+      idempotency_key: ledgerKey('authrelease', command.merchantId, command.chargeId),
       purpose: 'auth_release',
       merchant_id: command.merchantId,
       currency: command.currency,
@@ -253,11 +274,19 @@ export class LedgerReadThroughService {
     merchantId: MerchantId,
     batch: SettlementBatch,
   ): Promise<MerchantSettlementBatch> {
-    const items = await this.ledger.listSettlementItems(batch.id, {
-      merchant_id: merchantId,
-      limit: ITEM_AGGREGATION_PAGE_SIZE,
-    });
-    const netMinor = items.data.reduce((sum, item) => sum + Number(item.net_minor), 0);
+    let itemCount = 0;
+    let netMinor = 0;
+    let cursor: string | undefined;
+    do {
+      const page = await this.ledger.listSettlementItems(batch.id, {
+        merchant_id: merchantId,
+        limit: ITEM_AGGREGATION_PAGE_SIZE,
+        cursor,
+      });
+      itemCount += page.data.length;
+      netMinor += page.data.reduce((sum, item) => sum + Number(item.net_minor), 0);
+      cursor = page.has_more && page.next_cursor ? page.next_cursor : undefined;
+    } while (cursor);
     return {
       id: batch.id,
       object: 'merchant_settlement_batch',
@@ -266,7 +295,7 @@ export class LedgerReadThroughService {
       processing_date: batch.processing_date,
       acquirer: batch.acquirer,
       status: batch.status,
-      item_count: items.data.length,
+      item_count: itemCount,
       net_minor: netMinor,
       funded_at: batch.funded_at,
     };

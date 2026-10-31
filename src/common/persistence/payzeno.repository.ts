@@ -145,3 +145,20 @@ export abstract class PayzenoRepository<T extends ObjectLiteral & CursorRow> ext
     }
   }
 }
+
+/**
+ * A fully built entity, typed as what `insert()` / `.values()` accept.
+ *
+ * TypeORM types those with `QueryDeepPartialEntity<T>`, which recurses into every property —
+ * jsonb columns declared `Record<string, unknown>` and relation arrays included — and has no
+ * mapping for an `unknown` leaf, so an entity with a jsonb payload is not assignable to its
+ * own insert. The row is complete and the runtime value is exactly what the driver wants; this
+ * is the one place that says so, instead of a cast at every append-only write.
+ */
+export function toInsertRow<T extends ObjectLiteral>(row: T): QueryDeepPartialEntity<T> {
+  return row as QueryDeepPartialEntity<T>;
+}
+
+export function toInsertRows<T extends ObjectLiteral>(rows: readonly T[]): QueryDeepPartialEntity<T>[] {
+  return rows.map(toInsertRow);
+}

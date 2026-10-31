@@ -30,7 +30,7 @@ import { ChargeEntity } from '../payments/charge.entity';
   unique: true,
   where: "status in ('needs_response','under_review')",
 })
-@Index('ix_dispute_merchant_status', ['merchant_id', 'status'])
+@Index('ix_dispute_merchant_status', ['merchantId', 'status'])
 @Index('pix_dispute_evidence_due', ['evidence_due_by'], { where: "status = 'needs_response'" })
 export class DisputeEntity extends MerchantScopedEntity {
   @Column({ type: 'text' })

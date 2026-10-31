@@ -19,7 +19,7 @@ import { TEST_CHARGE_ID, TEST_MERCHANT_ID } from 'test/factories/ids';
 
 interface Row {
   id: string;
-  created_at: Date;
+  createdAt: Date;
   merchant_id: string;
 }
 
@@ -61,7 +61,7 @@ describe('BaseService', () => {
   let service: TestService;
 
   const scope: MerchantScope = { merchantId: TEST_MERCHANT_ID, livemode: true };
-  const row: Row = { id: TEST_CHARGE_ID, created_at: new Date('2026-01-15T12:00:00Z'), merchant_id: TEST_MERCHANT_ID };
+  const row: Row = { id: TEST_CHARGE_ID, createdAt: new Date('2026-01-15T12:00:00Z'), merchant_id: TEST_MERCHANT_ID };
 
   beforeEach(() => {
     repo = {
@@ -101,9 +101,7 @@ describe('BaseService', () => {
     it('names the entity in the thrown exception', async () => {
       repo.findScoped.mockResolvedValue(null);
 
-      const err = await service.find(TEST_CHARGE_ID, scope).catch((e: Error) => e);
-
-      expect(err.message).toContain('test_entity');
+      await expect(service.find(TEST_CHARGE_ID, scope)).rejects.toThrow('test_entity');
     });
 
     it('honours a subclass override of notFound()', async () => {

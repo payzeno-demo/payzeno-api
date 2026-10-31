@@ -1,0 +1,10 @@
+**/.git
+**/node_modules
+**/dist
+**/coverage
+**/target
+**/.venv
+**/__pycache__
+**/.pytest_cache
+sim-world
+payzeno-wiki

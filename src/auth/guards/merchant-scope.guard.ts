@@ -61,6 +61,9 @@ export class MerchantScopeGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const principal = request.principal;
 
+    // The backstop. Credential guards pass through on a missing credential while a later
+    // scheme can still answer, so this guard must come after every one of them in the chain —
+    // and when none of them authenticated, this is where the request stops.
     if (!principal) throw new AuthenticationRequiredException();
 
     const merchantId = this.resolveScope(principal, options);
@@ -122,10 +125,7 @@ export class MerchantScopeGuard implements CanActivate {
     if (!merchant) throw new MerchantNotFoundException(merchantId);
 
     if (WRITE_BLOCKED_STATUSES.has(merchant.status)) {
-      throw new MerchantRestrictedException(
-        merchantId,
-        `merchant status ${merchant.status} may not ${method.toUpperCase()}`,
-      );
+      throw new MerchantRestrictedException(merchantId, merchant.status, method.toUpperCase());
     }
   }
 }

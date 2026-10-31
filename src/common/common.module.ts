@@ -98,7 +98,9 @@ const HTTP_PLUMBING = [
 @Module({
   imports: [ConfigModule.forRoot(), TypeOrmModule.forFeature([IdempotencyRecord])],
   providers: [
-    IdFactory,
+    // A factory, not the bare class: the constructor's only parameter is the injectable ULID
+    // generator specs pass in, and Nest would otherwise try to resolve a provider for `Function`.
+    { provide: IdFactory, useFactory: (): IdFactory => new IdFactory() },
     SystemClock,
     RedisLockService,
     TransactionManager,

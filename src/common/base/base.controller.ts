@@ -24,7 +24,7 @@ export abstract class BaseController {
       case 'dashboard_session':
         return { merchantId: principal.merchant_id, livemode: true };
       case 'client_secret':
-        return { merchantId: principal.merchant_id, livemode: true };
+        return { merchantId: principal.merchant_id, livemode: principal.livemode };
       case 'staff_session':
         if (!principal.acting_merchant_id) {
           throw new PermissionDeniedException('merchant_id is required for this staff request');

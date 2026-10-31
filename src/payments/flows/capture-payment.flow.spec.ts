@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing';
 
-import { NoopLogger, PayzenoLogger } from 'src/common/logging/logger';
+import { NoopLogger, PAYZENO_LOGGER } from 'src/common/logging/logger';
 import { TransactionManager } from 'src/common/persistence/transaction.manager';
 import { CapturePaymentFlow } from 'src/payments/flows/capture-payment.flow';
 import { ChargeCaptureService } from 'src/payments/charge-capture.service';
@@ -52,7 +52,7 @@ describe('CapturePaymentFlow', () => {
         { provide: LedgerHttpClient, useValue: ledger },
         { provide: MerchantsService, useValue: { getById: jest.fn().mockResolvedValue(makeMerchant()) } },
         { provide: TransactionManager, useValue: { runInTransaction } },
-        { provide: PayzenoLogger, useValue: new NoopLogger() },
+        { provide: PAYZENO_LOGGER, useValue: new NoopLogger() },
       ],
     }).compile();
 

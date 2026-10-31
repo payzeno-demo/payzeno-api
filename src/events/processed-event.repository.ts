@@ -1,13 +1,15 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource, EntityManager, LessThan } from 'typeorm';
-import { PayzenoRepository } from '../common/persistence/payzeno.repository';
+import { DataSource, EntityManager, LessThan, Repository } from 'typeorm';
 import { PROCESSED_EVENT_RETENTION_DAYS, ProcessedEvent } from './processed-event.entity';
 
 /**
  * The dedupe table. One method matters — `claim` — and it is the reason ADR 0011 exists.
+ *
+ * A plain `Repository`, not a `PayzenoRepository`: the key is `(event_id, consumer)`, there is
+ * no tenant and no `created_at`, so there is nothing to scope or to page by.
  */
 @Injectable()
-export class ProcessedEventRepository extends PayzenoRepository<ProcessedEvent> {
+export class ProcessedEventRepository extends Repository<ProcessedEvent> {
   constructor(dataSource: DataSource) {
     super(ProcessedEvent, dataSource.createEntityManager());
   }

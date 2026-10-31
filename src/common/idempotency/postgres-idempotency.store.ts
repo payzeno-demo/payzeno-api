@@ -7,7 +7,7 @@
  * which happened. Two statements here is the PAY-1602 race: two requests both read "no row",
  * both insert, one gets a 23505 that nothing catches.
  */
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
 import { API_CONFIG, type ApiConfig } from '../../config/api-config.type';
@@ -31,7 +31,9 @@ export class PostgresIdempotencyStore implements IdempotencyStore {
     private readonly dataSource: DataSource,
     @Inject(API_CONFIG) private readonly config: ApiConfig,
     @Inject(CLOCK) private readonly clock: Clock,
-    private readonly livemode: boolean = true,
+    // Not a provider — the idempotency harness passes it explicitly. `@Optional()` makes Nest hand
+    // over undefined, so the default applies, instead of hunting for a `Boolean` token.
+    @Optional() private readonly livemode: boolean = true,
   ) {}
 
   async begin(merchantId: string, key: string, fingerprint: string): Promise<IdempotencyBeginResult> {

@@ -37,6 +37,21 @@ describe('PaymentIntentStateMachine', () => {
     });
   });
 
+  describe('confirming with the payment method on the request', () => {
+    // Regression: `confirm` was only an edge out of requires_confirmation, so the one-call confirm
+    // every client makes (hosted checkout included) was refused from requires_payment_method.
+    it('requires_payment_method → processing on confirm', () => {
+      expect(fsm.apply('requires_payment_method', 'confirm')).toBe('processing');
+    });
+
+    it('a decline sends the intent back for another card, and that card can be confirmed', () => {
+      const declined = fsm.apply('processing', 'decline');
+
+      expect(declined).toBe('requires_payment_method');
+      expect(fsm.apply(declined, 'confirm')).toBe('processing');
+    });
+  });
+
   describe('the SCA branch', () => {
     it('processing → requires_action when the issuer demands a challenge', () => {
       expect(fsm.apply('processing', 'require_action')).toBe('requires_action');

@@ -27,6 +27,19 @@ export function createRedisClient(config: ApiConfig): Redis {
   return new Redis(config.redis.url, buildRedisOptions(config));
 }
 
+/**
+ * The client, connected before anything can use it. `lazyConnect` with the offline queue off
+ * meant the FIRST command after boot always failed ("Stream isn't writeable"): the first
+ * /healthz answered 500 and the first tick of every Redis-locked job errored. A Redis that is
+ * down at boot still does not stop the API — every caller has a fallback, /readyz reports it,
+ * and `retryStrategy` keeps reconnecting — so a failed first connect is not thrown.
+ */
+export async function connectRedisClient(config: ApiConfig): Promise<Redis> {
+  const client = createRedisClient(config);
+  await client.connect().catch(() => undefined);
+  return client;
+}
+
 /** Namespaces used across the repo. Kept here so two features cannot collide. */
 export const REDIS_NAMESPACES = {
   session: 'sess',

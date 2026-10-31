@@ -77,8 +77,8 @@ export class PrincipalFactory {
   }
 
   /** ClientSecretGuard. Scoped to exactly one PaymentIntent — no merchant-wide read. */
-  fromClientSecret(merchantId: MerchantId, paymentIntentId: PaymentIntentId): AuthPrincipal {
-    return { kind: 'client_secret', merchant_id: merchantId, payment_intent_id: paymentIntentId };
+  fromClientSecret(merchantId: MerchantId, paymentIntentId: PaymentIntentId, livemode: boolean): AuthPrincipal {
+    return { kind: 'client_secret', merchant_id: merchantId, payment_intent_id: paymentIntentId, livemode };
   }
 }
 
@@ -134,9 +134,11 @@ export function livemodeOf(principal: AuthPrincipal): boolean {
   switch (principal.kind) {
     case 'api_key':
       return principal.mode === 'live';
+    case 'client_secret':
+      // The intent's mode, stamped by ClientSecretGuard / CheckoutSecretGuard off the row.
+      return principal.livemode;
     case 'dashboard_session':
     case 'staff_session':
-    case 'client_secret':
       return true;
     case 'internal_service':
       return true;

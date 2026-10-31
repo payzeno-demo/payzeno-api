@@ -1,6 +1,8 @@
 import type { CallHandler, ExecutionContext } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { firstValueFrom, of } from 'rxjs';
 
+import { AcceptsSecretFields, ReturnsSecretFields } from 'src/common/decorators/secret-fields.decorator';
 import type { ApiConfig } from 'src/config/api-config.type';
 import { REDACTED } from 'src/common/redaction/redaction.denylist';
 import { REDACTED_PAN } from 'src/common/redaction/pan.matcher';
@@ -20,9 +22,20 @@ describe('RedactionInterceptor', () => {
     return { flags: { redactPanInLogs: redact } } as unknown as ApiConfig;
   }
 
-  function context(request: Record<string, unknown>): ExecutionContext {
+  class PlainController {
+    handle(): void {}
+  }
+
+  function context(
+    request: Record<string, unknown>,
+    controller: new () => object = PlainController,
+    method = 'handle',
+  ): ExecutionContext {
+    const handler = Reflect.get(controller.prototype, method) as () => void;
     return {
       getType: () => 'http',
+      getHandler: () => handler,
+      getClass: () => controller,
       switchToHttp: () => ({ getRequest: () => request, getResponse: () => ({}) }),
     } as unknown as ExecutionContext;
   }
@@ -31,7 +44,7 @@ describe('RedactionInterceptor', () => {
     return { handle: () => of(body) };
   }
 
-  const interceptor = new RedactionInterceptor(config());
+  const interceptor = new RedactionInterceptor(config(), new Reflector());
 
   describe('the field denylist', () => {
     it.each([
@@ -182,8 +195,77 @@ describe('RedactionInterceptor', () => {
       expect(() => interceptor.scrub(deep)).not.toThrow();
     });
 
+    describe('route exemptions', () => {
+      class LoginController {
+        @AcceptsSecretFields('password')
+        login(): void {}
+      }
+
+      @ReturnsSecretFields('client_secret')
+      class IntentsController {
+        create(): void {}
+      }
+
+      it('hands a route its own accepted credential, and still scrubs everything else', async () => {
+        // Regression: login received '[REDACTED]' as the password and no user could sign in.
+        const req = {
+          method: 'POST',
+          originalUrl: '/v1/auth/login',
+          body: { email: 'a@b.example', password: 'hunter2-hunter2', cvv: '123' },
+        };
+
+        await firstValueFrom(interceptor.intercept(context(req, LoginController, 'login'), handler({})));
+
+        expect(req.body).toEqual({ email: 'a@b.example', password: 'hunter2-hunter2', cvv: REDACTED });
+      });
+
+      it('returns a route-issued credential at any depth, and nothing else denied', async () => {
+        // Regression: every PaymentIntent and checkout session came back with client_secret
+        // '[REDACTED]', so no browser could tokenise or confirm.
+        const req = { method: 'POST', originalUrl: '/v1/payment_intents', body: undefined };
+
+        const result = await firstValueFrom(
+          interceptor.intercept(
+            context(req, IntentsController, 'create'),
+            handler({ client_secret: 'pi_1_secret_x', payment: { client_secret: 'pi_2_secret_y' }, iban: 'GB33' }),
+          ),
+        );
+
+        expect(result).toEqual({
+          client_secret: 'pi_1_secret_x',
+          payment: { client_secret: 'pi_2_secret_y' },
+          iban: REDACTED,
+        });
+      });
+
+      it('exempts a returned field on the way out only', async () => {
+        const req = { method: 'POST', originalUrl: '/v1/payment_intents', body: { client_secret: 'pi_1_secret_x' } };
+
+        await firstValueFrom(interceptor.intercept(context(req, IntentsController, 'create'), handler({})));
+
+        expect((req.body as Record<string, unknown>).client_secret).toBe(REDACTED);
+      });
+
+      it('still masks a PAN inside an exempted field', () => {
+        const scrubbed = interceptor.scrub({ password: '4242424242424242' }, new Set(['password'])) as Record<
+          string,
+          unknown
+        >;
+
+        expect(scrubbed.password).toBe(REDACTED_PAN);
+      });
+
+      it('exempts nothing on an undecorated route', async () => {
+        const req = { method: 'GET', originalUrl: '/v1/x', body: undefined };
+
+        const result = await firstValueFrom(interceptor.intercept(context(req), handler({ client_secret: 'x' })));
+
+        expect(result).toEqual({ client_secret: REDACTED });
+      });
+    });
+
     it('passes straight through when the flag is off', async () => {
-      const off = new RedactionInterceptor(config(false));
+      const off = new RedactionInterceptor(config(false), new Reflector());
       const req = { method: 'POST', originalUrl: '/v1/x', body: { cvv: '123' } };
 
       const result = await firstValueFrom(off.intercept(context(req), handler({ cvv: '123' })));

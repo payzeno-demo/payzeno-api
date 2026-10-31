@@ -7,18 +7,26 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import { DataSource, EntityManager, type FindOptionsWhere } from 'typeorm';
 import type {
   CancellationReason,
   ChargeId,
+  CurrencyCode,
   MerchantId,
   Paginated,
   PaymentIntentId,
   PaymentIntentListQuery,
   PaymentIntentStatus,
+  PaymentMethodId,
+  Presentment,
+  ReviewId,
+  SubscriptionId,
 } from '@payzeno/contracts';
+import { DataSource, EntityManager, type FindOptionsWhere } from 'typeorm';
 
+import type { MerchantScope } from '../common/base/merchant-scoped.entity';
+import { resolveListQuery } from '../common/pagination/list-query.dto';
 import { PayzenoRepository } from '../common/persistence/payzeno.repository';
+
 import { PaymentIntentEntity } from './payment-intent.entity';
 
 @Injectable()
@@ -44,21 +52,23 @@ export class PaymentIntentRepository extends PayzenoRepository<PaymentIntentEnti
     return manager.save(PaymentIntentEntity, entity);
   }
 
-  findScopedById(merchantId: MerchantId, id: PaymentIntentId): Promise<PaymentIntentEntity | null> {
-    return this.findOneScoped(merchantId, id);
+  findScopedById(scope: MerchantScope, id: PaymentIntentId): Promise<PaymentIntentEntity | null> {
+    return this.findScoped(id, scope);
   }
 
-  list(merchantId: MerchantId, query: PaymentIntentListQuery): Promise<Paginated<PaymentIntentEntity>> {
-    const where: FindOptionsWhere<PaymentIntentEntity> = {
-      merchant_id: merchantId,
-    } as FindOptionsWhere<PaymentIntentEntity>;
-    if (query.status) {
-      (where as Record<string, unknown>).status = query.status;
-    }
-    if (query.customer_reference) {
-      (where as Record<string, unknown>).customer_reference = query.customer_reference;
-    }
-    return this.paginateCursor(query, where, { column: 'created_at', direction: 'DESC' });
+  list(scope: MerchantScope, query: PaymentIntentListQuery): Promise<Paginated<PaymentIntentEntity>> {
+    return this.paginateCursor(scope, resolveListQuery(query), (qb) => {
+      let builder = qb;
+      if (query.status) {
+        builder = builder.andWhere('payment_intent.status = :status', { status: query.status });
+      }
+      if (query.customer_reference) {
+        builder = builder.andWhere('payment_intent.customer_reference = :customerReference', {
+          customerReference: query.customer_reference,
+        });
+      }
+      return builder;
+    });
   }
 
   /** Used by `ClientSecretGuard` only. The secret is the credential; there is no merchant scope yet. */
@@ -68,7 +78,7 @@ export class PaymentIntentRepository extends PayzenoRepository<PaymentIntentEnti
 
   /** `SELECT … FOR UPDATE` on the intent. Every flow takes this before it touches state. */
   lockIntent(manager: EntityManager, id: PaymentIntentId): Promise<PaymentIntentEntity | null> {
-    return this.lockForUpdate(manager, id);
+    return this.lockForUpdate(id, manager);
   }
 
   /**
@@ -82,10 +92,13 @@ export class PaymentIntentRepository extends PayzenoRepository<PaymentIntentEnti
     from: PaymentIntentStatus,
     to: PaymentIntentStatus,
     patch: Partial<{
+      payment_method_token: PaymentIntentEntity['payment_method_token'];
+      payment_method_id: PaymentMethodId | null;
       latest_charge_id: ChargeId | null;
       next_action: PaymentIntentEntity['next_action'];
       canceled_at: Date | null;
       cancellation_reason: CancellationReason | null;
+      review_id: ReviewId | null;
     }> = {},
   ): Promise<number> {
     const result = await manager
@@ -95,6 +108,35 @@ export class PaymentIntentRepository extends PayzenoRepository<PaymentIntentEnti
       .where('id = :id AND status = :from', { id, from })
       .execute();
     return result.affected ?? 0;
+  }
+
+  /**
+   * RFC platform-v2 §7. Re-prices an intent that has not been confirmed yet: the shopper chose to
+   * pay in another currency (or switched back). Conditional on the intent still waiting for a
+   * payment method, so a price can never change under an authorisation.
+   */
+  async applyPresentment(
+    manager: EntityManager,
+    id: PaymentIntentId,
+    price: { amount_minor: number; currency: CurrencyCode; presentment: Presentment | null },
+  ): Promise<number> {
+    const result = await manager
+      .createQueryBuilder()
+      .update(PaymentIntentEntity)
+      .set(price)
+      .where('id = :id', { id })
+      .andWhere('status in (:...open)', { open: ['requires_payment_method', 'requires_confirmation'] })
+      .execute();
+    return result.affected ?? 0;
+  }
+
+  /** §5/§6 links written after the fact: the card saved at completion, the subscription it started. */
+  async linkBilling(
+    manager: EntityManager,
+    id: PaymentIntentId,
+    links: Partial<{ payment_method_id: PaymentMethodId; subscription_id: SubscriptionId; customer_id: string }>,
+  ): Promise<void> {
+    await manager.createQueryBuilder().update(PaymentIntentEntity).set(links).where('id = :id', { id }).execute();
   }
 
   async setLatestCharge(manager: EntityManager, id: PaymentIntentId, chargeId: ChargeId): Promise<void> {
@@ -108,11 +150,11 @@ export class PaymentIntentRepository extends PayzenoRepository<PaymentIntentEnti
 
   /** Terminal intents accept a metadata patch and nothing else (domain-model §2). */
   async patchMetadata(
-    merchantId: MerchantId,
+    scope: MerchantScope,
     id: PaymentIntentId,
     metadata: Record<string, string>,
   ): Promise<void> {
-    await this.updateScoped(merchantId, id, { metadata } as never);
+    await this.updateScoped(id, scope, { metadata } as never);
   }
 
   countByStatus(merchantId: MerchantId, status: PaymentIntentStatus): Promise<number> {

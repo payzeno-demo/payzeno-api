@@ -2,7 +2,7 @@
   "name": "@payzeno/api",
   "version": "1.34.0",
   "private": true,
-  "description": "Payzeno public REST API — auth, merchants, payment intents, refunds, disputes, webhooks",
+  "description": "Payzeno public REST API \u2014 auth, merchants, payment intents, refunds, disputes, webhooks",
   "license": "UNLICENSED",
   "engines": {
     "node": ">=20.11 <21"
@@ -22,13 +22,14 @@
     "test:watch": "jest --config jest.config.ts --watch",
     "test:cov": "jest --config jest.config.ts --coverage",
     "test:e2e": "jest --config jest.e2e.config.ts --runInBand",
-    "migration:run": "typeorm-ts-node-commonjs migration:run -d src/migrations/data-source.ts",
+    "migration:run": "typeorm-ts-node-commonjs migration:run --transaction each -d src/migrations/data-source.ts",
     "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/migrations/data-source.ts",
     "migration:generate": "typeorm-ts-node-commonjs migration:generate -d src/migrations/data-source.ts",
     "jobs": "node dist/jobs/cli.js"
   },
   "dependencies": {
     "@aws-sdk/client-kms": "3.577.0",
+    "@aws-sdk/client-s3": "3.577.0",
     "@aws-sdk/client-sns": "3.577.0",
     "@aws-sdk/client-sqs": "3.577.0",
     "@nestjs/common": "10.3.7",
@@ -51,6 +52,7 @@
     "class-validator": "0.14.1",
     "cookie-parser": "1.4.6",
     "ioredis": "5.4.1",
+    "nodemailer": "6.9.13",
     "opossum": "8.1.3",
     "pg": "8.11.5",
     "pino": "9.1.0",
@@ -70,6 +72,7 @@
     "@types/cookie-parser": "1.4.7",
     "@types/jest": "29.5.12",
     "@types/node": "20.12.7",
+    "@types/nodemailer": "6.4.15",
     "@types/opossum": "8.1.7",
     "@types/pg": "8.11.5",
     "@types/supertest": "6.0.2",

@@ -3,7 +3,9 @@ name: ci
 # payzeno-api CI.
 #
 # payzeno-api resolves "@payzeno/contracts": "workspace:*", so every job checks the
-# contracts repo out as a sibling and installs from the generated workspace root. If
+# contracts repo out as a sibling and installs from the generated workspace root. The
+# lockfile covers the whole workspace (contracts, api, console, checkout), so the console
+# and checkout repos are checked out too or `--frozen-lockfile` refuses to install. If
 # contracts main is broken, this repo is red — that is intentional. Pin the contracts
 # ref on a PR by adding a `contracts-ref: <sha>` line to the PR body.
 
@@ -20,7 +22,7 @@ concurrency:
 
 env:
   NODE_VERSION: '20.11.1'
-  PNPM_VERSION: '8.15.8'
+  PNPM_VERSION: '9.1.1'
   CONTRACTS_REF: main
 
 jobs:
@@ -37,6 +39,16 @@ jobs:
           ref: ${{ env.CONTRACTS_REF }}
           token: ${{ secrets.PAYZENO_CI_TOKEN }}
           path: payzeno-contracts
+      - uses: actions/checkout@v4
+        with:
+          repository: payzeno/payzeno-console
+          token: ${{ secrets.PAYZENO_CI_TOKEN }}
+          path: payzeno-console
+      - uses: actions/checkout@v4
+        with:
+          repository: payzeno/payzeno-checkout
+          token: ${{ secrets.PAYZENO_CI_TOKEN }}
+          path: payzeno-checkout
       - name: assemble workspace
         run: |
           cp payzeno-api/.github/workspace/pnpm-workspace.yaml .
@@ -70,6 +82,16 @@ jobs:
           ref: ${{ env.CONTRACTS_REF }}
           token: ${{ secrets.PAYZENO_CI_TOKEN }}
           path: payzeno-contracts
+      - uses: actions/checkout@v4
+        with:
+          repository: payzeno/payzeno-console
+          token: ${{ secrets.PAYZENO_CI_TOKEN }}
+          path: payzeno-console
+      - uses: actions/checkout@v4
+        with:
+          repository: payzeno/payzeno-checkout
+          token: ${{ secrets.PAYZENO_CI_TOKEN }}
+          path: payzeno-checkout
       - name: assemble workspace
         run: |
           cp payzeno-api/.github/workspace/pnpm-workspace.yaml .
@@ -132,6 +154,16 @@ jobs:
           ref: ${{ env.CONTRACTS_REF }}
           token: ${{ secrets.PAYZENO_CI_TOKEN }}
           path: payzeno-contracts
+      - uses: actions/checkout@v4
+        with:
+          repository: payzeno/payzeno-console
+          token: ${{ secrets.PAYZENO_CI_TOKEN }}
+          path: payzeno-console
+      - uses: actions/checkout@v4
+        with:
+          repository: payzeno/payzeno-checkout
+          token: ${{ secrets.PAYZENO_CI_TOKEN }}
+          path: payzeno-checkout
       - name: assemble workspace
         run: |
           cp payzeno-api/.github/workspace/pnpm-workspace.yaml .
@@ -185,6 +217,16 @@ jobs:
           ref: ${{ env.CONTRACTS_REF }}
           token: ${{ secrets.PAYZENO_CI_TOKEN }}
           path: payzeno-contracts
+      - uses: actions/checkout@v4
+        with:
+          repository: payzeno/payzeno-console
+          token: ${{ secrets.PAYZENO_CI_TOKEN }}
+          path: payzeno-console
+      - uses: actions/checkout@v4
+        with:
+          repository: payzeno/payzeno-checkout
+          token: ${{ secrets.PAYZENO_CI_TOKEN }}
+          path: payzeno-checkout
       - name: assemble workspace
         run: |
           cp payzeno-api/.github/workspace/pnpm-workspace.yaml .
@@ -218,6 +260,16 @@ jobs:
           ref: ${{ env.CONTRACTS_REF }}
           token: ${{ secrets.PAYZENO_CI_TOKEN }}
           path: payzeno-contracts
+      - uses: actions/checkout@v4
+        with:
+          repository: payzeno/payzeno-console
+          token: ${{ secrets.PAYZENO_CI_TOKEN }}
+          path: payzeno-console
+      - uses: actions/checkout@v4
+        with:
+          repository: payzeno/payzeno-checkout
+          token: ${{ secrets.PAYZENO_CI_TOKEN }}
+          path: payzeno-checkout
       - name: assemble workspace
         run: |
           cp payzeno-api/.github/workspace/pnpm-workspace.yaml .

@@ -49,7 +49,11 @@ interface NordpayAuthorizationResponse {
     status: 'Y' | 'A' | 'N' | 'U';
     eci: string;
     liability_shift: boolean;
+    /** Present while `outcome` is `AUTHENTICATION_REQUIRED`. */
+    challenge_url?: string;
   } | null;
+  /** Same page as `authentication.challenge_url`; older sandbox builds only send this one. */
+  redirect_url?: string;
 }
 
 interface NordpayCaptureResponse {
@@ -123,32 +127,14 @@ export class NordpayAdapter implements ProcessorAdapter {
       req.idempotencyKey,
     );
 
-    return {
-      approved: res.outcome === 'APPROVED',
-      networkTransactionId: res.scheme_transaction_id,
-      authorizationCode: res.auth_code,
-      processorReference: res.reference,
-      declineCode: res.outcome === 'DECLINED' ? mapDeclineCode(res.refusal_reason) : null,
-      riskScore: res.fraud_score ?? 0,
-      card: {
-        brand: normaliseScheme(res.card.scheme),
-        last_four: res.card.last_digits,
-        exp_month: res.card.expiry_month,
-        exp_year: res.card.expiry_year,
-        country: res.card.issuer_country_code,
-        funding: normaliseFundingSource(res.card.funding_source),
-      },
-      threeDSecure: res.authentication
-        ? {
-            version: res.authentication.protocol_version,
-            authenticationFlow: res.authentication.flow,
-            result: AUTHENTICATION_RESULT_BY_STATUS[res.authentication.status],
-            eci: res.authentication.eci,
-            liabilityShifted: res.authentication.liability_shift,
-          }
-        : null,
-      raw: res as unknown as Record<string, unknown>,
-    };
+    return toAuthorizeResult(res);
+  }
+
+  async getAuthorization(processorReference: string): Promise<AuthorizeResult> {
+    const res = await this.http.getJson<NordpayAuthorizationResponse>(
+      `/v2/authorizations/${encodeURIComponent(processorReference)}`,
+    );
+    return toAuthorizeResult(res);
   }
 
   async capture(req: CaptureRequest): Promise<CaptureResult> {
@@ -223,6 +209,39 @@ export class NordpayAdapter implements ProcessorAdapter {
       return false;
     }
   }
+}
+
+/** One mapping for both reads — the authorize response and `GET /v2/authorizations/{id}`. */
+function toAuthorizeResult(res: NordpayAuthorizationResponse): AuthorizeResult {
+  const pending = res.outcome === 'AUTHENTICATION_REQUIRED';
+  return {
+    approved: res.outcome === 'APPROVED',
+    pendingAuthentication: pending,
+    challengeUrl: pending ? (res.authentication?.challenge_url ?? res.redirect_url ?? null) : null,
+    networkTransactionId: res.scheme_transaction_id,
+    authorizationCode: res.auth_code,
+    processorReference: res.reference,
+    declineCode: res.outcome === 'DECLINED' ? mapDeclineCode(res.refusal_reason) : null,
+    riskScore: res.fraud_score ?? 0,
+    card: {
+      brand: normaliseScheme(res.card.scheme),
+      last_four: res.card.last_digits,
+      exp_month: res.card.expiry_month,
+      exp_year: res.card.expiry_year,
+      country: res.card.issuer_country_code,
+      funding: normaliseFundingSource(res.card.funding_source),
+    },
+    threeDSecure: res.authentication
+      ? {
+          version: res.authentication.protocol_version,
+          authenticationFlow: res.authentication.flow,
+          result: AUTHENTICATION_RESULT_BY_STATUS[res.authentication.status],
+          eci: res.authentication.eci,
+          liabilityShifted: res.authentication.liability_shift,
+        }
+      : null,
+    raw: res as unknown as Record<string, unknown>,
+  };
 }
 
 function normaliseScheme(raw: string): CardBrand {

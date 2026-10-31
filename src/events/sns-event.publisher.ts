@@ -11,7 +11,6 @@ import { API_CONFIG } from '../config/config.module';
 import type { ApiConfig } from '../config/api-config.type';
 import { CLOCK, type Clock } from '../common/time/clock';
 import { IdFactory } from '../common/ids/id.factory';
-import { ApiIdPrefix } from '../common/ids/id.prefix';
 import { PAYZENO_LOGGER, type PayzenoLogger } from '../common/logging/logger';
 import { type EventPublisher, topicOf } from './publisher';
 import type { PublishContext, TopicName } from './publisher.types';
@@ -140,7 +139,7 @@ export class SnsEventPublisher implements EventPublisher {
     ctx: PublishContext,
   ): PayzenoEvent {
     const envelope: EventEnvelope<T, PayloadOfType<T>> = {
-      id: this.ids.generate(ApiIdPrefix.EVENT),
+      id: this.ids.webhookEventId(),
       type,
       version: EVENT_SCHEMA_VERSIONS[type],
       occurred_at: ctx.occurredAt ?? this.clock.now().toISOString(),

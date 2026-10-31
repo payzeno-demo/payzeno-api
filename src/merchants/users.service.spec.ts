@@ -3,8 +3,13 @@ import { PermissionDeniedException } from 'src/common/errors/auth.exceptions';
 import { ResourceNotFoundException } from 'src/common/errors/not-found.exceptions';
 import { IdFactory } from 'src/common/ids/id.factory';
 import { NoopLogger } from 'src/common/logging/logger';
+import type { TransactionManager } from 'src/common/persistence/transaction.manager';
+import type { ApiConfig } from 'src/config/api-config.type';
+import type { MerchantRepository } from 'src/merchants/merchant.repository';
 import type { MerchantUserRepository } from 'src/merchants/users/merchant-user.repository';
+import type { MerchantUserTokensService } from 'src/merchants/users/user-tokens.service';
 import { MerchantUsersService } from 'src/merchants/users/users.service';
+import type { EmailService } from 'src/notifications/email/email.service';
 
 import { TEST_MERCHANT_ID, TEST_USER_ID, fixedId } from 'test/factories/ids';
 import { FixedClock } from 'test/support/fixed-clock';
@@ -15,9 +20,9 @@ import { FixedClock } from 'test/support/fixed-clock';
  * merchant nobody can administer and the only fix is a staff operator with database access.
  * It has happened twice.
  *
- * The invite path deliberately does NOT assert the email is sent, because it is not sent —
- * see the TODO(PAY-1907) in the service. A test asserting behaviour the code does not have
- * is worse than no test.
+ * The invite path now sends `team_invite` with a single-use token (RFC platform-v2 §4), and
+ * the row, the token and the email are one transaction — asserted below against the same
+ * manager.
  */
 describe('MerchantUsersService', () => {
   const clock = new FixedClock('2026-05-02T11:30:00.000Z');
@@ -33,6 +38,10 @@ describe('MerchantUsersService', () => {
     countOwners: jest.Mock;
   };
   let service: MerchantUsersService;
+  let tokens: { issue: jest.Mock };
+  let email: { queue: jest.Mock };
+  let merchants: { findById: jest.Mock };
+  const manager = { tx: true };
 
   function userRow(overrides: Record<string, unknown> = {}) {
     const row = {
@@ -68,11 +77,20 @@ describe('MerchantUsersService', () => {
       countOwners: jest.fn().mockResolvedValue(2),
     };
 
+    tokens = { issue: jest.fn().mockResolvedValue('raw-invite-token') };
+    email = { queue: jest.fn().mockResolvedValue(undefined) };
+    merchants = { findById: jest.fn().mockResolvedValue({ id: TEST_MERCHANT_ID, displayName: 'Aurora Coffee' }) };
+
     service = new MerchantUsersService(
       users as unknown as MerchantUserRepository,
       new IdFactory(),
       clock,
       new NoopLogger(),
+      { runInTransaction: jest.fn((fn: (m: unknown) => Promise<unknown>) => fn(manager)) } as unknown as TransactionManager,
+      tokens as unknown as MerchantUserTokensService,
+      email as unknown as EmailService,
+      merchants as unknown as MerchantRepository,
+      { publicUrls: { console: 'http://console.test', admin: null } } as unknown as ApiConfig,
     );
   });
 
@@ -150,6 +168,69 @@ describe('MerchantUsersService', () => {
         ValidationException,
       );
       expect(users.insertMapped).not.toHaveBeenCalled();
+      expect(email.queue).not.toHaveBeenCalled();
+    });
+
+    it('issues a 72h invitation token and emails team_invite in the same transaction', async () => {
+      users.findByIdForMerchant.mockResolvedValue(userRow({ fullName: 'Aurora Owner' }));
+
+      await service.invite(TEST_MERCHANT_ID, input, TEST_USER_ID);
+
+      const [row] = users.insertMapped.mock.calls[0];
+      expect(users.insertMapped).toHaveBeenCalledWith(row, manager);
+      expect(tokens.issue).toHaveBeenCalledWith(row, 'invitation', manager);
+      expect(email.queue).toHaveBeenCalledWith(
+        {
+          template: 'team_invite',
+          to: 'new.person@aurora.example',
+          data: {
+            inviter_name: 'Aurora Owner',
+            merchant_name: 'Aurora Coffee',
+            accept_url: 'http://console.test/accept-invite?token=raw-invite-token',
+          },
+          merchantId: TEST_MERCHANT_ID,
+        },
+        manager,
+      );
+    });
+
+    it('signs an invitation from a Payzeno operator as the Payzeno team', async () => {
+      await service.invite(TEST_MERCHANT_ID, input, null);
+
+      expect(email.queue.mock.calls[0][0].data.inviter_name).toBe('The Payzeno team');
+    });
+
+    it('re-sends to an address that is still invited instead of refusing', async () => {
+      const pending = userRow({ status: 'invited', email: 'new.person@aurora.example' });
+      users.findByEmailForMerchant.mockResolvedValue(pending);
+
+      await service.invite(TEST_MERCHANT_ID, input);
+
+      expect(users.insertMapped).not.toHaveBeenCalled();
+      // A fresh link; issuing it revokes the one in the lost email.
+      expect(tokens.issue).toHaveBeenCalledWith(pending, 'invitation', manager);
+      expect(email.queue).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('createUser', () => {
+    it('creates a login with the caller\'s status and hash, and sends nothing', async () => {
+      const created = await service.createUser(
+        TEST_MERCHANT_ID,
+        { email: ' Owner@Aurora.example ', full_name: ' Ada ', role: 'owner' },
+        { status: 'invited', passwordHash: '$argon2id$known' },
+        manager as never,
+      );
+
+      expect(created).toMatchObject({
+        email: 'owner@aurora.example',
+        fullName: 'Ada',
+        role: 'owner',
+        status: 'invited',
+        passwordHash: '$argon2id$known',
+      });
+      expect(users.insertMapped).toHaveBeenCalledWith(created, manager);
+      expect(email.queue).not.toHaveBeenCalled();
     });
   });
 

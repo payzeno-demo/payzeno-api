@@ -9,6 +9,7 @@ import { NoopLogger } from 'src/common/logging/logger';
 import { TransactionManager } from 'src/common/persistence/transaction.manager';
 import type { EventPublisher } from 'src/events/publisher';
 import { LedgerReadThroughService } from 'src/ledger/ledger-read-through.service';
+import type { MerchantMailerService } from 'src/merchants/merchant-mailer.service';
 import { ChargeRepository } from 'src/payments/charge.repository';
 import { DisputesService, EVIDENCE_WINDOW_DAYS } from 'src/disputes/disputes.service';
 import { DisputeRepository } from 'src/disputes/dispute.repository';
@@ -44,6 +45,7 @@ describe('DisputesService', () => {
   let ids: jest.Mocked<IdFactory>;
   let events: jest.Mocked<EventPublisher>;
   let clock: FixedClock;
+  let mailer: { queueToAdmins: jest.Mock; consoleLink: jest.Mock };
   let service: DisputesService;
 
   const manager = {} as EntityManager;
@@ -133,6 +135,11 @@ describe('DisputesService', () => {
 
     clock = new FixedClock('2026-01-20T08:00:00.000Z');
 
+    mailer = {
+      queueToAdmins: jest.fn().mockResolvedValue(1),
+      consoleLink: jest.fn((path: string) => `http://console.test${path}`),
+    };
+
     service = new DisputesService(
       disputes,
       charges,
@@ -145,6 +152,7 @@ describe('DisputesService', () => {
       events,
       clock,
       new NoopLogger(),
+      mailer as unknown as MerchantMailerService,
     );
   });
 
@@ -215,6 +223,33 @@ describe('DisputesService', () => {
           amountMinor: 12_000,
           feeMinor: 1_500,
         }),
+      );
+    });
+
+    it('emails the merchant owners and admins in the same transaction (RFC platform-v2 §2)', async () => {
+      await service.openFromWebhook(openCommand());
+
+      expect(mailer.queueToAdmins).toHaveBeenCalledWith(
+        TEST_MERCHANT_ID,
+        'dispute_opened',
+        {
+          amount: '£120.00',
+          reason: 'fraudulent',
+          respond_by: '2026-02-05',
+          console_url: `http://console.test/disputes/${DISPUTE_ID}`,
+        },
+        { manager, livemode: true },
+      );
+    });
+
+    it('emails a warning without a respond-by date — there is no deadline to meet', async () => {
+      await service.openFromWebhook(openCommand({ isWarning: true }));
+
+      expect(mailer.queueToAdmins).toHaveBeenCalledWith(
+        TEST_MERCHANT_ID,
+        'dispute_opened',
+        expect.objectContaining({ respond_by: null }),
+        expect.anything(),
       );
     });
 

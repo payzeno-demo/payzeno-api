@@ -48,6 +48,13 @@ export interface AuthorizeRequest {
 
 export interface AuthorizeResult {
   approved: boolean;
+  /**
+   * True while the issuer is waiting on a 3-D Secure challenge: nothing is authorised or
+   * declined yet. `ProcessorAdapter.getAuthorization` reads the outcome back afterwards.
+   */
+  pendingAuthentication: boolean;
+  /** Where to send the cardholder for that challenge, when the acquirer hosts the page. */
+  challengeUrl: string | null;
   networkTransactionId: string | null;
   authorizationCode: string | null;
   processorReference: string;

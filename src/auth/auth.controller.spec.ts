@@ -2,8 +2,10 @@ import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
 
 import {
+  AcceptInvitationDto,
   AuthController,
   LoginRequestDto,
+  PasswordResetConfirmDto,
   PasswordResetRequestDto,
   type CookieResponse,
 } from 'src/auth/auth.controller';
@@ -19,7 +21,12 @@ import { AuthenticationRequiredException } from 'src/common/errors/auth.exceptio
  * mutation 403s, and a non-HttpOnly `pz_session` means a single XSS is a session handover.
  */
 describe('AuthController', () => {
-  let auth: jest.Mocked<Pick<AuthService, 'login' | 'logout' | 'describeSession' | 'requestPasswordReset'>>;
+  let auth: jest.Mocked<
+    Pick<
+      AuthService,
+      'login' | 'logout' | 'describeSession' | 'requestPasswordReset' | 'confirmPasswordReset' | 'acceptInvitation'
+    >
+  >;
   let sessions: jest.Mocked<Pick<SessionService, 'expiredCookies' | 'csrfCookieOptions'>> & {
     csrfCookieName: string;
   };
@@ -62,6 +69,8 @@ describe('AuthController', () => {
         body: { object: 'session' },
       })),
       requestPasswordReset: jest.fn(async () => undefined),
+      confirmPasswordReset: jest.fn(async () => undefined),
+      acceptInvitation: jest.fn(async () => ({ issued, body: { object: 'login' } })),
     } as never;
 
     sessions = {
@@ -203,6 +212,37 @@ describe('AuthController', () => {
       await expect(
         errorsFor({ email: 'dana@example.com', password: 'x'.repeat(4_000_000) }),
       ).resolves.toContain('password');
+    });
+  });
+
+  describe('emailed-link routes (RFC platform-v2 §4)', () => {
+    it('signs the invitee in with the same two cookies as /login', async () => {
+      const body = { token: 'x'.repeat(43), full_name: 'Dana', password: 'correct-horse-battery' } as AcceptInvitationDto;
+
+      const out = await controller.acceptInvitation(body, request(), response);
+
+      expect(auth.acceptInvitation).toHaveBeenCalledWith(body.token, 'Dana', 'correct-horse-battery', {
+        userAgent: 'Mozilla/5.0',
+        ip: '203.0.113.7',
+      });
+      expect(response.cookie).toHaveBeenCalledWith(SESSION_COOKIE, 'sess_1', expect.objectContaining({ httpOnly: true }));
+      expect(response.cookie).toHaveBeenCalledWith('pz_csrf', 'csrf-token', expect.objectContaining({ httpOnly: false }));
+      expect(out).toEqual({ object: 'login' });
+    });
+
+    it('confirms a reset without setting any cookie', async () => {
+      await controller.confirmPasswordReset({ token: 'x'.repeat(43), password: 'correct-horse-battery' } as PasswordResetConfirmDto);
+
+      expect(auth.confirmPasswordReset).toHaveBeenCalledWith('x'.repeat(43), 'correct-horse-battery');
+      expect(response.cookie).not.toHaveBeenCalled();
+    });
+
+    it('refuses a new password shorter than ten characters', async () => {
+      const dto = plainToInstance(PasswordResetConfirmDto, { token: 'x'.repeat(43), password: 'short-pw' });
+
+      const errors = await validate(dto);
+
+      expect(errors.map((e) => e.property)).toEqual(['password']);
     });
   });
 });

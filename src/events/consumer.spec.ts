@@ -1,7 +1,12 @@
-import type { Message } from '@aws-sdk/client-sqs';
-import type { EntityManager } from 'typeorm';
+import type { Message, SQSClient } from '@aws-sdk/client-sqs';
 import type { EventType, PayzenoEvent } from '@payzeno/contracts/events';
+import type { EntityManager } from 'typeorm';
+
+import type { PayzenoLogger } from '../common/logging/logger';
+import type { TransactionManager } from '../common/persistence/transaction.manager';
+
 import { BaseEventConsumer } from './consumer';
+import type { ProcessedEventRepository } from './processed-event.repository';
 
 class FakeSqs {
   readonly deleted: string[] = [];
@@ -21,6 +26,15 @@ class RecordingConsumer extends BaseEventConsumer {
   readonly handled: PayzenoEvent[] = [];
   shouldThrow = false;
 
+  constructor(
+    sqs: SQSClient,
+    transactions: TransactionManager,
+    processedEvents: ProcessedEventRepository,
+    logger: PayzenoLogger,
+  ) {
+    super(sqs, transactions, processedEvents, logger);
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async handle(event: PayzenoEvent, _tx: EntityManager): Promise<void> {
     if (this.shouldThrow) {
@@ -30,7 +44,7 @@ class RecordingConsumer extends BaseEventConsumer {
   }
 }
 
-function envelope(overrides: Partial<PayzenoEvent> = {}): Record<string, unknown> {
+function envelope(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     id: 'evt_01HZZZ',
     type: 'settlement.completed',

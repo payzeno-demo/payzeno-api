@@ -25,6 +25,14 @@ import { SESSION_STORE, type SessionRecord, type SessionStore } from './session.
 
 export const SESSION_COOKIE = 'pz_session';
 
+/**
+ * The staff back office's own cookie (RFC platform-v2 §1). Same store, same record shape, same
+ * `pz_csrf` double-submit — but a different name, so a browser holding both a merchant login
+ * and a staff login never presents one where the other was expected, and logging out of the
+ * console cannot end an operator's admin session (or the other way round).
+ */
+export const STAFF_SESSION_COOKIE = 'pz_staff_session';
+
 export interface SessionCookieOptions {
   httpOnly: true;
   secure: boolean;
@@ -42,6 +50,46 @@ export interface IssuedSession {
 export interface SessionOrigin {
   userAgent: string | null;
   ip: string | null;
+}
+
+/** The two methods of a response that setting a session needs. Express's satisfies it. */
+export interface SessionCookieWriter {
+  cookie(name: string, value: string, options: object): void;
+}
+
+/**
+ * The two methods of the response object the auth controllers touch. Typed here rather than by
+ * importing express, which keeps the controllers testable with a plain object and keeps the
+ * platform out of the layer.
+ */
+export interface CookieResponse {
+  cookie(name: string, value: string, options: CookieOptions): void;
+  clearCookie(name: string, options?: CookieOptions): void;
+}
+
+/** The flags SessionService and CsrfService actually set — a subset of express's own. */
+export interface CookieOptions {
+  httpOnly?: boolean;
+  secure?: boolean;
+  sameSite?: 'lax' | 'strict' | 'none';
+  path?: string;
+  maxAge?: number;
+}
+
+/** What a newly issued session records about where it came from (user agent, client IP). */
+export function originOf(request: {
+  ip?: string;
+  headers: Record<string, string | string[] | undefined>;
+}): SessionOrigin {
+  const raw = request.headers['user-agent'];
+  const userAgent = Array.isArray(raw) ? (raw[0] ?? null) : (raw ?? null);
+  return { userAgent, ip: request.ip ?? null };
+}
+
+/** Sets the session cookie and `pz_csrf`. Every route that logs someone in ends here. */
+export function writeSessionCookies(response: SessionCookieWriter, issued: IssuedSession): void {
+  response.cookie(issued.sessionCookie.name, issued.sessionCookie.value, issued.sessionCookie.options);
+  response.cookie(issued.csrfCookie.name, issued.csrfCookie.value, issued.csrfCookie.options);
 }
 
 @Injectable()
@@ -84,8 +132,8 @@ export class SessionService {
   }
 
   /**
-   * A Payzeno operator's session. Same cookie, same store, same CSRF — the difference is that
-   * it carries no merchant, so every merchant-scoped staff route has to name one with
+   * A Payzeno operator's session. Same store, same CSRF, its own cookie (`pz_staff_session`).
+   * It carries no merchant, so every merchant-scoped staff route has to name one with
    * `?merchant_id=` and MerchantScopeGuard is what enforces that.
    */
   async issueStaff(staffId: string, staffRole: StaffRole, origin: SessionOrigin): Promise<IssuedSession> {
@@ -101,7 +149,7 @@ export class SessionService {
     await this.store.create(record, this.ttlSec);
     this.logger.info('session.issued_staff', { staff_id: staffId, role: staffRole });
 
-    return this.issued(record);
+    return this.issued(record, STAFF_SESSION_COOKIE);
   }
 
   private newRecord(
@@ -119,10 +167,10 @@ export class SessionService {
     };
   }
 
-  private issued(record: SessionRecord): IssuedSession {
+  private issued(record: SessionRecord, cookieName: string = SESSION_COOKIE): IssuedSession {
     return {
       record,
-      sessionCookie: { name: SESSION_COOKIE, value: record.id, options: this.sessionCookieOptions() },
+      sessionCookie: { name: cookieName, value: record.id, options: this.sessionCookieOptions() },
       csrfCookie: { name: this.csrf.name, value: record.csrfToken, options: this.csrf.cookieOptions() },
     };
   }
@@ -226,9 +274,11 @@ export class SessionService {
   }
 
   /** Cookie clears are cookie sets with maxAge 0 — same flags, or the browser keeps them. */
-  expiredCookies(): Array<{ name: string; value: string; options: { path: '/'; maxAge: 0 } }> {
+  expiredCookies(
+    sessionCookieName: string = SESSION_COOKIE,
+  ): Array<{ name: string; value: string; options: { path: '/'; maxAge: 0 } }> {
     return [
-      { name: SESSION_COOKIE, value: '', options: { path: '/', maxAge: 0 } },
+      { name: sessionCookieName, value: '', options: { path: '/', maxAge: 0 } },
       { name: this.csrf.name, value: '', options: { path: '/', maxAge: 0 } },
     ];
   }

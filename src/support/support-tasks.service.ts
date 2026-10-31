@@ -21,10 +21,14 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 
-import type { ChargeId, MerchantId } from '@payzeno/contracts';
+import type { ChargeId, MerchantId, Paginated, SupportTask, SupportTaskStatus } from '@payzeno/contracts';
 
+import { ConflictException } from '../common/errors/api.exception';
+import { ResourceNotFoundException } from '../common/errors/not-found.exceptions';
 import { IdFactory } from '../common/ids/id.factory';
 import { PAYZENO_LOGGER, type PayzenoLogger } from '../common/logging/logger';
+import type { ResolvedListQuery } from '../common/pagination/list-query.dto';
+import { applyCursor, toPage } from '../common/persistence/cursor';
 import { CLOCK, type Clock } from '../common/time/clock';
 
 import {
@@ -32,6 +36,13 @@ import {
   type SupportTaskKind,
   type SupportTaskSeverity,
 } from './support-task.entity';
+
+/** `GET /v1/admin/support-tasks` filters. */
+export interface SupportTaskSearch {
+  status?: SupportTaskStatus;
+  kind?: SupportTaskKind;
+  merchantId?: MerchantId;
+}
 
 export interface OpenSupportTaskInput {
   kind: SupportTaskKind;
@@ -133,6 +144,52 @@ export class SupportTasksService {
       resolved_by: resolvedBy,
       affected: affected.affected ?? 0,
     });
+  }
+
+  /** The admin back office's queue: every merchant, newest first, cursor-paginated. */
+  async listForStaff(filter: SupportTaskSearch, query: ResolvedListQuery): Promise<Paginated<SupportTask>> {
+    const qb = this.dataSource.getRepository(SupportTaskEntity).createQueryBuilder('support_task');
+
+    if (filter.status) qb.andWhere('support_task.status = :status', { status: filter.status });
+    if (filter.kind) qb.andWhere('support_task.kind = :kind', { kind: filter.kind });
+    if (filter.merchantId) qb.andWhere('support_task.merchant_id = :merchantId', { merchantId: filter.merchantId });
+
+    const page = toPage(
+      await applyCursor(qb, { limit: query.limit, cursor: query.cursor, alias: 'support_task' }).getMany(),
+      query.limit,
+    );
+    return { data: page.data.map((task) => task.toSupportTask()), has_more: page.has_more, next_cursor: page.next_cursor };
+  }
+
+  /**
+   * `POST /v1/admin/support-tasks/:id/resolve`. Same conditional UPDATE as `resolve`, but it
+   * answers: 404 for an unknown task, 409 `conflict` for one already closed, and the resolved
+   * row otherwise.
+   */
+  async resolveForStaff(taskId: string, note: string | null, staffId: string): Promise<SupportTask> {
+    const repo = this.dataSource.getRepository(SupportTaskEntity);
+    const task = await repo.findOne({ where: { id: taskId } });
+    if (!task) throw new ResourceNotFoundException('support_task', taskId);
+
+    const result = await repo
+      .createQueryBuilder()
+      .update()
+      .set({ status: 'resolved', resolvedAt: this.clock.now(), resolutionNote: note, assignedTo: staffId })
+      .where('id = :taskId', { taskId })
+      .andWhere("status in ('open', 'acknowledged')")
+      .execute();
+
+    if ((result.affected ?? 0) === 0) {
+      throw new ConflictException(`Support task ${taskId} is already ${task.status}`, {
+        reason: 'support_task_closed',
+        status: task.status,
+      });
+    }
+
+    this.logger.info('support_task.resolved', { support_task_id: taskId, resolved_by: staffId, affected: 1 });
+    const resolved = await repo.findOne({ where: { id: taskId } });
+    if (!resolved) throw new ResourceNotFoundException('support_task', taskId);
+    return resolved.toSupportTask();
   }
 
   private build(input: OpenSupportTaskInput): SupportTaskEntity {

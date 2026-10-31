@@ -13,13 +13,17 @@
  * even one second keeps sending traffic to a task that has already told it not to.
  */
 import { Controller, Get, Header, HttpCode, HttpStatus, Res } from '@nestjs/common';
-import type { Response } from 'express';
 
 import type { HealthResponse, ReadinessResponse } from '@payzeno/contracts';
 
 import { legacyLog } from '../common/logging/logger';
 
 import { HealthService } from './health.service';
+
+/** The one response method `/readyz` touches. Same reasoning as `CookieResponse` in auth. */
+interface StatusResponse {
+  status(code: number): unknown;
+}
 
 @Controller()
 export class HealthController {
@@ -47,7 +51,7 @@ export class HealthController {
    */
   @Get('readyz')
   @Header('Cache-Control', 'no-store')
-  async readyz(@Res({ passthrough: true }) res: Response): Promise<ReadinessResponse> {
+  async readyz(@Res({ passthrough: true }) res: StatusResponse): Promise<ReadinessResponse> {
     const result = await this.health.readiness();
 
     res.status(

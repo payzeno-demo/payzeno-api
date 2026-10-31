@@ -1,6 +1,12 @@
 import { PrincipalFactory } from 'src/auth/principal/principal.factory';
 import { CsrfService } from 'src/auth/session/csrf.service';
-import { SESSION_COOKIE, SessionService } from 'src/auth/session/session.service';
+import {
+  originOf,
+  SESSION_COOKIE,
+  SessionService,
+  STAFF_SESSION_COOKIE,
+  writeSessionCookies,
+} from 'src/auth/session/session.service';
 import { InMemorySessionStore } from 'src/auth/session/session.store';
 import { AuthenticationRequiredException, PermissionDeniedException } from 'src/common/errors/auth.exceptions';
 import { NoopLogger } from 'src/common/logging/logger';
@@ -93,10 +99,40 @@ describe('SessionService', () => {
       expect(issued.record.staffRole).toBe('finance');
     });
 
-    it('uses the same cookie name as a merchant session', async () => {
+    it('uses its own cookie, never the console\'s pz_session (RFC platform-v2 §1)', async () => {
       const issued = await sessions.issueStaff('stf_0001', 'finance', origin);
 
-      expect(issued.sessionCookie.name).toBe(SESSION_COOKIE);
+      expect(issued.sessionCookie.name).toBe(STAFF_SESSION_COOKIE);
+      expect(issued.sessionCookie.name).not.toBe(SESSION_COOKIE);
+      // Same flags and the same double-submit cookie as a merchant session.
+      expect(issued.sessionCookie.options.httpOnly).toBe(true);
+      expect(issued.csrfCookie.name).toBe('pz_csrf');
+    });
+
+    it('clears the staff cookie, not pz_session, on logout', () => {
+      const cleared = sessions.expiredCookies(STAFF_SESSION_COOKIE).map((c) => c.name);
+
+      expect(cleared).toEqual([STAFF_SESSION_COOKIE, 'pz_csrf']);
+    });
+  });
+
+  describe('writeSessionCookies / originOf', () => {
+    it('sets the session cookie and pz_csrf with the issued flags', async () => {
+      const issued = await sessions.issue(USER, MERCHANT, 'owner', origin);
+      const response = { cookie: jest.fn() };
+
+      writeSessionCookies(response, issued);
+
+      expect(response.cookie).toHaveBeenNthCalledWith(1, SESSION_COOKIE, issued.record.id, issued.sessionCookie.options);
+      expect(response.cookie).toHaveBeenNthCalledWith(2, 'pz_csrf', issued.record.csrfToken, issued.csrfCookie.options);
+    });
+
+    it('records the first user-agent and the client ip', () => {
+      expect(originOf({ ip: '203.0.113.7', headers: { 'user-agent': ['bot/1', 'bot/2'] } })).toEqual({
+        userAgent: 'bot/1',
+        ip: '203.0.113.7',
+      });
+      expect(originOf({ headers: {} })).toEqual({ userAgent: null, ip: null });
     });
   });
 

@@ -23,9 +23,11 @@ import {
 import type { IncomingMessage } from 'node:http';
 import type { WebSocket } from 'ws';
 
-import type { MerchantId } from '@payzeno/contracts';
+import type { AuthPrincipal, MerchantId } from '@payzeno/contracts';
 
+import { livemodeOf } from '../auth/principal/principal.factory';
 import { SessionService } from '../auth/session/session.service';
+import { AuthenticationRequiredException, PermissionDeniedException } from '../common/errors/auth.exceptions';
 import { PAYZENO_LOGGER, type PayzenoLogger } from '../common/logging/logger';
 import { CLOCK, type Clock } from '../common/time/clock';
 
@@ -83,17 +85,33 @@ export class NotificationsGateway implements OnGatewayConnection, OnGatewayDisco
       return;
     }
 
-    const session = await this.sessions.read(sessionId);
-    if (!session) {
-      this.refuse(socket, 4401, 'authentication_required');
+    // Also checks the header against the session record's own token, not only the cookie.
+    let principal: AuthPrincipal;
+    try {
+      principal = await this.sessions.resolveForUpgrade(sessionId, csrfHeader);
+    } catch (err) {
+      if (err instanceof AuthenticationRequiredException) {
+        this.refuse(socket, 4401, 'authentication_required');
+        return;
+      }
+      if (err instanceof PermissionDeniedException) {
+        this.refuse(socket, 4403, 'permission_denied');
+        return;
+      }
+      throw err;
+    }
+
+    // A staff session carries no merchant, so there is no feed to pin the socket to.
+    if (principal.kind !== 'dashboard_session') {
+      this.refuse(socket, 4403, 'permission_denied');
       return;
     }
 
     const subscriber: Subscriber = {
       socket,
-      merchantId: session.merchantId,
-      livemode: session.livemode,
-      userId: session.userId,
+      merchantId: principal.merchant_id,
+      livemode: livemodeOf(principal),
+      userId: principal.user_id,
       connectedAtMs: this.clock.nowMs(),
     };
 

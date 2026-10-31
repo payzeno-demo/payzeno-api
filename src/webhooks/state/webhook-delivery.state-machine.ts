@@ -36,7 +36,7 @@ export class WebhookDeliveryStateMachine extends StateMachine<
     'dead',
   ]);
 
-  readonly entityName = 'webhook_event';
+  readonly entity = 'webhook_event';
 
   /**
    * The one piece of policy that is genuinely a state question rather than a timing one:

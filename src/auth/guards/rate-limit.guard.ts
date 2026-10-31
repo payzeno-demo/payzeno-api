@@ -53,16 +53,21 @@ export class RateLimitGuard implements CanActivate {
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const spec = this.reflector.getAllAndOverride<RateLimitSpec | undefined>(RATE_LIMIT_KEY, [
+    const declared = this.reflector.getAllAndOverride<RateLimitSpec | undefined>(RATE_LIMIT_KEY, [
       context.getHandler(),
       context.getClass(),
-    ]) ?? { limit: this.defaultLimit, windowSec: 60 };
+    ]);
+    const spec = declared ?? { limit: this.defaultLimit, windowSec: 60 };
+    // A route's own `@RateLimit` is a budget for THAT route. Sharing the IP's general bucket
+    // meant five console page loads in a minute used up the login allowance of five, and the
+    // sixth request — the login — was a 429. The default budget stays shared across routes.
+    const scope = declared ? `route:${context.getClass().name}.${context.getHandler().name}` : 'all';
 
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const response = context.switchToHttp().getResponse<RateLimitedResponse>();
 
     const buckets = await Promise.all(
-      this.bucketKeysFor(request).map((key) => this.hit(key, spec)),
+      this.bucketKeysFor(request).map((key) => this.hit(`${key}:${scope}`, spec)),
     );
 
     // Whichever bucket is tightest decides, and its numbers are the ones reported.
@@ -73,10 +78,7 @@ export class RateLimitGuard implements CanActivate {
     this.applyHeaders(response, tightest);
 
     if (tightest.count > tightest.limit) {
-      throw new RateLimitedException(tightest.resetInSec, {
-        limit: tightest.limit,
-        window_sec: spec.windowSec,
-      });
+      throw new RateLimitedException(tightest.resetInSec, tightest.limit);
     }
 
     return true;

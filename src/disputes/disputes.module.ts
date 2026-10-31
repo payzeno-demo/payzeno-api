@@ -7,7 +7,7 @@
  * `dispute.closed` keeps exactly one emitter.
  */
 
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { CommonModule } from '../common/common.module';
@@ -25,7 +25,8 @@ import { DisputeStateMachine } from './state/dispute.state-machine';
 @Module({
   imports: [
     CommonModule,
-    PaymentsModule,
+    // The other half of PaymentsModule's forwardRef — see RefundsModule.
+    forwardRef(() => PaymentsModule),
     LedgerModule,
     EventsModule,
     TypeOrmModule.forFeature([DisputeEntity, DisputeFeeScheduleEntity]),

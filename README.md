@@ -39,18 +39,22 @@ Invoices are a half-migrated mess and we are honest about it — see
 ## Setup
 
 payzeno-api resolves `"@payzeno/contracts": "workspace:*"`. It is a separate repo but the
-**same pnpm workspace**, so it has to be checked out as a sibling. This trips up everyone
-exactly once:
+**same pnpm workspace**, so it has to be checked out as a sibling. The one lockfile covers
+contracts, api, console and checkout, so all four are cloned side by side. This trips up
+everyone exactly once:
 
 ```bash
 mkdir payzeno && cd payzeno
 git clone git@github.com:payzeno/payzeno-contracts.git
 git clone git@github.com:payzeno/payzeno-api.git
+git clone git@github.com:payzeno/payzeno-console.git
+git clone git@github.com:payzeno/payzeno-checkout.git
 cp payzeno-api/.github/workspace/pnpm-workspace.yaml .
 cp payzeno-api/.github/workspace/package.json .
+cp payzeno-api/.github/workspace/.dockerignore .
 cp payzeno-api/pnpm-lock.yaml .
 
-corepack enable && corepack prepare pnpm@8.15.8 --activate
+corepack enable && corepack prepare pnpm@9.1.1 --activate
 pnpm install
 pnpm --filter @payzeno/contracts build
 ```

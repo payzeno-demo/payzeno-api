@@ -2,6 +2,7 @@ import type { ModuleRef } from '@nestjs/core';
 
 import { ClientSecretGuard } from 'src/auth/guards/client-secret.guard';
 import { PrincipalFactory } from 'src/auth/principal/principal.factory';
+import { ACCEPTS_CLIENT_SECRET_KEY } from 'src/common/decorators/accepts-client-secret.decorator';
 import {
   AuthenticationRequiredException,
   PermissionDeniedException,
@@ -9,7 +10,7 @@ import {
 import { PaymentIntentRepository } from 'src/payments/payment-intent.repository';
 
 import { TEST_MERCHANT_ID, TEST_PAYMENT_INTENT_ID, fixedId } from 'test/factories/ids';
-import { guardContext, rejectsWith } from 'test/support/guard-context';
+import { guardContext, makeReflector, rejectsWith } from 'test/support/guard-context';
 
 /**
  * The browser-side checkout credential. Anything it can reach is effectively public, so the
@@ -31,12 +32,14 @@ describe('ClientSecretGuard', () => {
       findByClientSecret: jest.fn().mockResolvedValue({
         id: TEST_PAYMENT_INTENT_ID,
         merchantId: TEST_MERCHANT_ID,
+        livemode: false,
       }),
     };
 
     guard = new ClientSecretGuard(
       { get: () => intents as unknown as PaymentIntentRepository } as unknown as ModuleRef,
       new PrincipalFactory(),
+      makeReflector({ [ACCEPTS_CLIENT_SECRET_KEY]: true }),
     );
     guard.onModuleInit();
   });
@@ -47,11 +50,30 @@ describe('ClientSecretGuard', () => {
     await expect(guard.canActivate(context)).resolves.toBe(true);
 
     expect(intents.findByClientSecret).toHaveBeenCalledWith(secret);
+    // `livemode` is the intent's — this one is a test-mode intent.
     expect(request.principal).toEqual({
       kind: 'client_secret',
       merchant_id: TEST_MERCHANT_ID,
       payment_intent_id: TEST_PAYMENT_INTENT_ID,
+      livemode: false,
     });
+  });
+
+  // Regression: the guard now sits in the controller's chain (ahead of MerchantScopeGuard), so
+  // it must not turn a client secret into a principal on handlers that never accepted one —
+  // a list route would otherwise hand the whole merchant to a browser.
+  it('ignores a client secret on a handler not marked @AcceptsClientSecret()', async () => {
+    const unmarked = new ClientSecretGuard(
+      { get: () => intents as unknown as PaymentIntentRepository } as unknown as ModuleRef,
+      new PrincipalFactory(),
+      makeReflector(),
+    );
+    unmarked.onModuleInit();
+    const { context, request } = guardContext({ headers: { authorization: `Bearer ${secret}` } });
+
+    await rejectsWith(unmarked.canActivate(context), AuthenticationRequiredException);
+    expect(intents.findByClientSecret).not.toHaveBeenCalled();
+    expect(request.principal).toBeUndefined();
   });
 
   it('admits the route whose :paymentIntentId matches the secret', async () => {

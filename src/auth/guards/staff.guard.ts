@@ -12,6 +12,9 @@
  *
  * Every request that gets past this guard writes `staff_audit_log` through
  * AuditLogInterceptor. That is not optional and it is why the decorator carries the action.
+ *
+ * `@StaffOnly()` with no roles means "any operator": the staff session routes themselves
+ * (`/v1/staff/auth/me`, `/logout`) use it, and so does every admin read all four roles share.
  */
 import { Injectable } from '@nestjs/common';
 import type { ExecutionContext } from '@nestjs/common';
@@ -23,7 +26,7 @@ import { satisfiesStaffRole, STAFF_ONLY_KEY } from '../../common/decorators/staf
 import { PermissionDeniedException } from '../../common/errors/auth.exceptions';
 import { StaffUsersService } from '../../staff/staff-users.service';
 import { CSRF_HEADER } from '../session/csrf.service';
-import { SESSION_COOKIE, SessionService } from '../session/session.service';
+import { SessionService, STAFF_SESSION_COOKIE } from '../session/session.service';
 
 import { BaseAuthGuard, headerValue, type AuthenticatedRequest } from './base-auth.guard';
 
@@ -71,8 +74,9 @@ export class StaffGuard extends BaseAuthGuard {
     return true;
   }
 
+  /** `pz_staff_session` — never the console's `pz_session` (RFC platform-v2 §1). */
   protected async authenticate(request: AuthenticatedRequest): Promise<AuthPrincipal | null> {
-    const sessionId = this.cookie(request, SESSION_COOKIE);
+    const sessionId = this.cookie(request, STAFF_SESSION_COOKIE);
     if (!sessionId) return null;
 
     return this.sessions.resolveStaff(

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource, EntityManager, In } from 'typeorm';
-import { PayzenoRepository } from '../common/persistence/payzeno.repository';
+import { DataSource, EntityManager, In, IsNull } from 'typeorm';
+import { PayzenoRepository, toInsertRow } from '../common/persistence/payzeno.repository';
 import { EventOutbox } from './event-outbox.entity';
 import { nextOutboxAttemptAt, OUTBOX_MAX_ATTEMPTS } from './publisher.types';
 
@@ -15,13 +15,17 @@ export class EventOutboxRepository extends PayzenoRepository<EventOutbox> {
     super(EventOutbox, dataSource.createEntityManager());
   }
 
+  protected get alias(): string {
+    return 'event_outbox';
+  }
+
   /**
    * Enqueue inside the caller's transaction. `tx` is the business transaction's
    * EntityManager — that is the whole point of the outbox and the reason this method takes
    * one instead of using `this.manager`.
    */
   async enqueue(tx: EntityManager, row: EventOutbox): Promise<string> {
-    await tx.insert(EventOutbox, row);
+    await tx.insert(EventOutbox, toInsertRow(row));
     return row.id;
   }
 
@@ -100,7 +104,7 @@ export class EventOutboxRepository extends PayzenoRepository<EventOutbox> {
   /** Ops surface: how far behind is the bus right now. Read by `HealthService.readyz`. */
   async pendingCount(): Promise<number> {
     return this.manager.count(EventOutbox, {
-      where: { publishedAt: null, deadAt: null },
+      where: { publishedAt: IsNull(), deadAt: IsNull() },
     });
   }
 

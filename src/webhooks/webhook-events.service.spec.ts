@@ -29,7 +29,7 @@ describe('WebhookEventsService', () => {
 
     service = new WebhookEventsService(
       repo as never,
-      { generate: () => `evt_${(sequence += 1)}` } as never,
+      { webhookEventId: () => `evt_${(sequence += 1)}` } as never,
       { now: () => now } as never,
       { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn(), child: jest.fn() } as never,
     );

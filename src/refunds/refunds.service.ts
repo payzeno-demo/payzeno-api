@@ -25,8 +25,8 @@ import type {
 } from '@payzeno/contracts';
 
 import { livemodeOf, merchantIdOf } from '../auth/principal/principal.factory';
-import type { MerchantScope } from '../common/base/merchant-scoped.entity';
 import { BaseService } from '../common/base/base.service';
+import type { MerchantScope } from '../common/base/merchant-scoped.entity';
 import { ResourceNotFoundException } from '../common/errors/not-found.exceptions';
 import { IdFactory } from '../common/ids/id.factory';
 import { PAYZENO_LOGGER, type PayzenoLogger } from '../common/logging/logger';
@@ -37,10 +37,12 @@ import { LedgerReadThroughService } from '../ledger/ledger-read-through.service'
 import { ledgerKey } from '../ledger/ledger.types';
 import { ChargeRepository } from '../payments/charge.repository';
 import { ProcessorRouter } from '../payments/processor/processor.router';
+import { ReceiptEmailsService } from '../payments/receipt-emails.service';
+
 import { CreateRefundDto } from './dto/create-refund.dto';
+import { RefundPolicyService } from './refund-policy.service';
 import { RefundEntity } from './refund.entity';
 import { RefundRepository } from './refund.repository';
-import { RefundPolicyService } from './refund-policy.service';
 import { RefundStateMachine } from './state/refund.state-machine';
 
 @Injectable()
@@ -52,6 +54,7 @@ export class RefundsService extends BaseService<RefundEntity> {
     private readonly states: RefundStateMachine,
     private readonly router: ProcessorRouter,
     private readonly ledger: LedgerReadThroughService,
+    private readonly receipts: ReceiptEmailsService,
     private readonly transactions: TransactionManager,
     private readonly ids: IdFactory,
     @Inject(EVENT_PUBLISHER) private readonly events: EventPublisher,
@@ -150,6 +153,14 @@ export class RefundsService extends BaseService<RefundEntity> {
       await this.transactions.runInTransaction(async (manager) => {
         this.states.apply(refund.status, 'succeed');
         await this.refunds.markSucceeded(manager, refund.id, result.processorReference, succeededAt);
+        // RFC platform-v2 §2: the shopper hears about it in the same commit.
+        await this.receipts.queueRefundReceipt(manager, {
+          merchantId: scope.merchantId,
+          paymentIntentId: charge.payment_intent_id,
+          amountMinor: Number(refund.amount_minor),
+          currency: refund.currency,
+          livemode: scope.livemode,
+        });
       });
 
       // The ledger posts the refund; a `captured` charge nets it into the open batch, a
@@ -251,6 +262,17 @@ export class RefundsService extends BaseService<RefundEntity> {
       await this.refunds.markSucceeded(manager, refund.id, processorReference, succeededAt);
       refund.status = 'succeeded';
       refund.succeeded_at = succeededAt;
+
+      const charge = await this.charges.findOne({ where: { id: refund.charge_id } });
+      if (charge) {
+        await this.receipts.queueRefundReceipt(manager, {
+          merchantId: refund.merchantId,
+          paymentIntentId: charge.payment_intent_id,
+          amountMinor: Number(refund.amount_minor),
+          currency: refund.currency,
+          livemode: refund.livemode,
+        });
+      }
     });
 
     this.logger.info('refund_settled_from_webhook', {

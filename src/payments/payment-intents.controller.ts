@@ -27,6 +27,7 @@ import { ClientSecretGuard } from '../auth/guards/client-secret.guard';
 import { MerchantScopeGuard } from '../auth/guards/merchant-scope.guard';
 import { SessionGuard } from '../auth/guards/session.guard';
 import { BaseController } from '../common/base/base.controller';
+import { AcceptsClientSecret } from '../common/decorators/accepts-client-secret.decorator';
 import { ApiVersion } from '../common/decorators/api-version.decorator';
 import { AuditLog } from '../common/decorators/audit-log.decorator';
 import { CurrentPrincipal } from '../common/decorators/current-principal.decorator';
@@ -34,7 +35,8 @@ import { Idempotent } from '../common/decorators/idempotent.decorator';
 import { MerchantScoped } from '../common/decorators/merchant-scoped.decorator';
 import { RateLimit } from '../common/decorators/rate-limit.decorator';
 import { RequiredScopes } from '../common/decorators/required-scopes.decorator';
-import { ListQueryDto } from '../common/pagination/list-query.dto';
+import { ReturnsSecretFields } from '../common/decorators/secret-fields.decorator';
+import { PaymentIntentListQueryDto } from '../common/pagination/filtered-list-query.dto';
 import { CancelPaymentIntentDto } from './dto/cancel-payment-intent.dto';
 import { CapturePaymentIntentDto } from './dto/capture-payment-intent.dto';
 import { ConfirmPaymentIntentDto } from './dto/confirm-payment-intent.dto';
@@ -43,7 +45,12 @@ import { PaymentIntentsService } from './payment-intents.service';
 
 @Controller('v1/payment_intents')
 @MerchantScoped()
-@UseGuards(ApiKeyGuard, SessionGuard, MerchantScopeGuard)
+// Credential guards first, scope check last. ClientSecretGuard only answers on handlers marked
+// `@AcceptsClientSecret()`, and it has to be in THIS list: a method-level guard would run after
+// MerchantScopeGuard, which would then see no principal.
+@UseGuards(ApiKeyGuard, SessionGuard, ClientSecretGuard, MerchantScopeGuard)
+// `client_secret` is part of every PaymentIntent (contracts) — the merchant hands it to its page.
+@ReturnsSecretFields('client_secret')
 export class PaymentIntentsController extends BaseController {
   constructor(private readonly intents: PaymentIntentsService) {
     super();
@@ -67,7 +74,7 @@ export class PaymentIntentsController extends BaseController {
   @RequiredScopes('payment_intents:read')
   list(
     @CurrentPrincipal() principal: AuthPrincipal,
-    @Query() query: ListQueryDto,
+    @Query() query: PaymentIntentListQueryDto,
     @Query('status') status?: PaymentIntentStatus,
     @Query('customer_reference') customerReference?: string,
   ): Promise<Paginated<PaymentIntent>> {
@@ -95,7 +102,7 @@ export class PaymentIntentsController extends BaseController {
    * one intent, so the id in the path is checked against the credential, not against a tenant.
    */
   @Post(':paymentIntentId/confirm')
-  @UseGuards(ClientSecretGuard)
+  @AcceptsClientSecret()
   @Idempotent()
   @RateLimit(300, 60)
   @RequiredScopes('payment_intents:write')

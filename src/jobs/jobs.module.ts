@@ -18,16 +18,19 @@ import { Module } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { CheckoutModule } from '../checkout/checkout.module';
 import { CommonModule } from '../common/common.module';
 import { IdempotencyRecord } from '../common/idempotency/idempotency-record.entity';
 import { DisputesModule } from '../disputes/disputes.module';
 import { EventsModule } from '../events/events.module';
 import { LedgerModule } from '../ledger/ledger.module';
 import { MerchantsModule } from '../merchants/merchants.module';
+import { RiskEvaluationService } from '../merchants/risk/risk-evaluation.service';
 import { PaymentsModule } from '../payments/payments.module';
 import { WebhooksModule } from '../webhooks/webhooks.module';
 
 import { ChargeExpiryJob } from './charge-expiry.job';
+import { CheckoutExpiryJob } from './checkout-expiry.job';
 import { DisputeDeadlineReminderJob } from './dispute-deadline-reminder.job';
 import { IdempotencyRetentionJob } from './idempotency-retention.job';
 import { OutboxDrainJob } from './outbox-drain.job';
@@ -46,6 +49,7 @@ export const ALL_JOB_NAMES: readonly string[] = [
   'risk-evaluation',
   'unsettled-charge-sweep',
   'dispute-deadline-reminder',
+  'checkout-expiry',
 ];
 
 @Module({
@@ -58,9 +62,13 @@ export const ALL_JOB_NAMES: readonly string[] = [
     PaymentsModule,
     DisputesModule,
     LedgerModule,
+    CheckoutModule,
     TypeOrmModule.forFeature([IdempotencyRecord]),
   ],
   providers: [
+    // Lives here, not in MerchantsModule: it needs ChargeRepository and DisputeRepository too,
+    // and this is the one module that imports all three. See merchants.module.ts.
+    RiskEvaluationService,
     OutboxDrainJob,
     WebhookDeliveryJob,
     IdempotencyRetentionJob,
@@ -69,6 +77,7 @@ export const ALL_JOB_NAMES: readonly string[] = [
     RiskEvaluationJob,
     UnsettledChargeSweepJob,
     ChargeExpiryJob,
+    CheckoutExpiryJob,
   ],
   exports: [
     OutboxDrainJob,
@@ -79,6 +88,7 @@ export const ALL_JOB_NAMES: readonly string[] = [
     RiskEvaluationJob,
     UnsettledChargeSweepJob,
     ChargeExpiryJob,
+    CheckoutExpiryJob,
   ],
 })
 export class JobsModule {}

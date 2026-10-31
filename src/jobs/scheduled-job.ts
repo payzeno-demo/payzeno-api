@@ -17,15 +17,9 @@
  *
  * — apager
  */
-import { Inject } from '@nestjs/common';
-
 import { JOB_LOCK_KEY, type JobLockSpec } from '../common/decorators/job-lock.decorator';
-import {
-  DISTRIBUTED_LOCK,
-  type DistributedLock,
-  type LockHandle,
-} from '../common/lock/distributed-lock';
-import { PAYZENO_LOGGER, type PayzenoLogger } from '../common/logging/logger';
+import type { DistributedLock, LockHandle } from '../common/lock/distributed-lock';
+import type { PayzenoLogger } from '../common/logging/logger';
 
 import { emptyResult, summarise, SKIPPED_NOT_LEADER, type JobResult } from './job.types';
 
@@ -39,9 +33,14 @@ export abstract class ScheduledJob {
   /** One pass. Implementations carry `@JobLock(name, ttlSec)` and call `withLock`. */
   abstract runOnce(): Promise<JobResult>;
 
+  /**
+   * No `@Inject` here — each concrete job injects the lock and the logger and passes them up.
+   * Parameter `@Inject`s on a base class are inherited by index: they made every job's FIRST
+   * constructor argument the distributed lock, whatever the job actually asked for there.
+   */
   protected constructor(
-    @Inject(DISTRIBUTED_LOCK) protected readonly lock: DistributedLock,
-    @Inject(PAYZENO_LOGGER) protected readonly logger: PayzenoLogger,
+    protected readonly lock: DistributedLock,
+    protected readonly logger: PayzenoLogger,
   ) {}
 
   /**

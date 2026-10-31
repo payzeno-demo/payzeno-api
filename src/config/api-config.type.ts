@@ -59,6 +59,12 @@ export interface VaultConfig {
   apiKey: string;
 }
 
+/** The hosted payment page. */
+export interface CheckoutConfig {
+  /** Origin of pay.payzeno.com, no trailing slash. */
+  publicUrl: string;
+}
+
 export interface AcquirerConfig {
   worldflowBaseUrl: string;
   worldflowApiKey: string;
@@ -119,6 +125,32 @@ export interface ApiConfig {
   ledger: LedgerConfig;
   billingLegacy: BillingLegacyConfig;
   vault: VaultConfig;
+  checkout: CheckoutConfig;
+  // --- platform-v2 identity config ---
+  /** Outbound email (RFC platform-v2 §2). Read by EmailDeliveryJob's transport only. */
+  email: {
+    smtpHost: string;
+    smtpPort: number;
+    smtpUser: string | null;
+    smtpPassword: string | null;
+    from: string;
+  };
+  /** Public origins, no trailing slash. Emailed links are built from these and nothing else. */
+  publicUrls: {
+    console: string;
+    admin: string | null;
+  };
+  kyc: {
+    documentsBucket: string;
+  };
+  // --- end identity config ---
+  // --- platform-v2 money config ---
+  /** RFC platform-v2 §7. `fxProviderUrl` null = adaptive pricing switched off (fail closed). */
+  money: {
+    fxProviderUrl: string | null;
+    fxCheckoutMarkupBps: number;
+  };
+  // --- end money config ---
   acquirers: AcquirerConfig;
   auth: AuthConfig;
   webhooks: WebhooksConfig;

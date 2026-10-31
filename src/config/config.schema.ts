@@ -1,5 +1,5 @@
 /**
- * Boot-time validation of the 41 environment variables in .env.example.
+ * Boot-time validation of the 42 environment variables in .env.example.
  *
  * class-validator over a plain class, run once by `loadConfiguration()`. The process exits
  * non-zero on the first failure — a missing var is a crash-on-start, not a 500 an hour later
@@ -86,6 +86,70 @@ export class ConfigSchema {
   @IsString()
   @IsNotEmpty()
   VAULT_API_KEY!: string;
+
+  // --- hosted checkout ------------------------------------------------------
+  /** Origin of pay.payzeno.com. Session URLs and the 3-D Secure return path hang off it. */
+  @IsUrl(URL_OPTS)
+  CHECKOUT_PUBLIC_URL!: string;
+
+  // --- platform-v2 identity config (email, console url, kyc bucket) ---
+  /** SMTP relay. Mailpit (`sim-mail:1025`) locally, SES's SMTP endpoint in AWS. */
+  @IsString()
+  @IsNotEmpty()
+  SMTP_HOST!: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(65535)
+  SMTP_PORT!: number;
+
+  /** Both or neither. Mailpit takes anonymous submissions; SES does not. */
+  @IsOptional()
+  @IsString()
+  SMTP_USER?: string;
+
+  @IsOptional()
+  @IsString()
+  SMTP_PASSWORD?: string;
+
+  /** RFC 5322 mailbox, e.g. `Payzeno <no-reply@payzeno.com>`. */
+  @IsString()
+  @IsNotEmpty()
+  EMAIL_FROM!: string;
+
+  /** Origin of console.payzeno.com. Every emailed link (verify, invite, reset) hangs off it. */
+  @IsUrl(URL_OPTS)
+  CONSOLE_PUBLIC_URL!: string;
+
+  /** Origin of admin.payzeno.com. Optional: only staff-facing copy links to it. */
+  @IsOptional()
+  @IsUrl(URL_OPTS)
+  ADMIN_PUBLIC_URL?: string;
+
+  /** `payzeno-<env>-kyc-documents`. Private; staff read documents through the admin API. */
+  @IsString()
+  @IsNotEmpty()
+  KYC_DOCUMENTS_BUCKET!: string;
+  // --- end identity config ---
+
+  // --- platform-v2 money config (fx provider, risk) ---
+  /**
+   * RFC platform-v2 §7. The FX rates vendor (`GET {url}/v1/rates?base=USD`); the simulated feed
+   * locally. Optional: without it adaptive pricing offers nothing, which is the fail-closed answer.
+   */
+  @IsOptional()
+  @IsUrl(URL_OPTS)
+  FX_PROVIDER_URL?: string;
+
+  /** Payzeno's markup on the provider mid-rate for checkout quotes. 200 = 2%. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(2_000)
+  FX_CHECKOUT_MARKUP_BPS?: number;
+  // --- end money config ---
 
   // --- acquirers ------------------------------------------------------------
   @IsUrl(URL_OPTS)

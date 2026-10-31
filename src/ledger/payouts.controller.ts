@@ -30,6 +30,13 @@ import { RequiredScopes } from '../common/decorators/required-scopes.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { PayoutsService } from './payouts.service';
 
+/**
+ * The global ValidationPipe converts query params implicitly, and a missing `limit` arrives as
+ * `Number(undefined)`, i.e. NaN. Forwarded, that is `limit=NaN` and the ledger 422s the page.
+ */
+const optionalLimit = (limit?: number): number | undefined =>
+  limit !== undefined && Number.isFinite(limit) ? limit : undefined;
+
 @Controller('v1/payouts')
 @MerchantScoped()
 @UseGuards(ApiKeyGuard, SessionGuard, MerchantScopeGuard, RolesGuard)
@@ -45,7 +52,7 @@ export class PayoutsController {
     @Query('cursor') cursor?: string,
     @Query('limit') limit?: number,
   ): Promise<PayoutListResponse> {
-    return this.payouts.list(merchantIdOf(principal), { status, currency, cursor, limit });
+    return this.payouts.list(merchantIdOf(principal), { status, currency, cursor, limit: optionalLimit(limit) });
   }
 
   @Get(':payoutId')

@@ -3,6 +3,8 @@ import type { DataSource, EntityManager } from 'typeorm';
 import { NoopLogger } from 'src/common/logging/logger';
 import type { Clock } from 'src/common/time/clock';
 import type { IdFactory } from 'src/common/ids/id.factory';
+import { ConflictException } from 'src/common/errors/api.exception';
+import { ResourceNotFoundException } from 'src/common/errors/not-found.exceptions';
 import { SupportTaskEntity } from 'src/support/support-task.entity';
 import { SupportTasksService } from 'src/support/support-tasks.service';
 
@@ -318,6 +320,79 @@ describe('SupportTasksService', () => {
         'support_task.resolved',
         expect.objectContaining({ affected: 0 }),
       );
+    });
+  });
+
+  describe('the admin back office (RFC platform-v2 §1)', () => {
+    function taskRow(overrides: Partial<SupportTaskEntity> = {}): SupportTaskEntity {
+      const task = new SupportTaskEntity();
+      Object.assign(task, {
+        id: 'sup_1',
+        merchantId: MERCHANT,
+        livemode: true,
+        kind: 'duplicate_settlement',
+        severity: 'high',
+        status: 'open',
+        chargeId: CHARGE,
+        title: 'Possible double charge',
+        body: 'facts',
+        sourceEventId: null,
+        assignedTo: null,
+        resolvedAt: null,
+        resolutionNote: null,
+        createdAt: NOW,
+        updatedAt: NOW,
+        ...overrides,
+      });
+      return task;
+    }
+
+    it('lists every merchant\'s tasks as the contract shape, filtered', async () => {
+      selectBuilder.getMany.mockResolvedValue([taskRow()]);
+
+      const page = await service.listForStaff(
+        { status: 'open', kind: 'duplicate_settlement', merchantId: MERCHANT },
+        { limit: 25, cursor: null, createdAfter: null, createdBefore: null },
+      );
+
+      expect(selectBuilder.andWhere).toHaveBeenCalledWith('support_task.status = :status', { status: 'open' });
+      expect(selectBuilder.andWhere).toHaveBeenCalledWith('support_task.merchant_id = :merchantId', { merchantId: MERCHANT });
+      expect(page.data[0]).toMatchObject({
+        id: 'sup_1',
+        object: 'support_task',
+        body: 'facts',
+        resolved_at: null,
+        created_at: NOW.toISOString(),
+      });
+    });
+
+    it('resolves an open task and answers the resolved row', async () => {
+      repositoryFindOne
+        .mockResolvedValueOnce(taskRow())
+        .mockResolvedValueOnce(taskRow({ status: 'resolved', resolvedAt: NOW, resolutionNote: 'refunded', assignedTo: 'stf_1' }));
+
+      const task = await service.resolveForStaff('sup_1', 'refunded', 'stf_1');
+
+      expect(updateBuilder.set).toHaveBeenCalledWith({
+        status: 'resolved',
+        resolvedAt: NOW,
+        resolutionNote: 'refunded',
+        assignedTo: 'stf_1',
+      });
+      expect(task).toMatchObject({ status: 'resolved', resolution_note: 'refunded', assigned_to: 'stf_1' });
+    });
+
+    it('404s an unknown task', async () => {
+      repositoryFindOne.mockResolvedValue(null);
+
+      await expect(service.resolveForStaff('sup_nope', null, 'stf_1')).rejects.toBeInstanceOf(ResourceNotFoundException);
+    });
+
+    it('409s a task that is already closed', async () => {
+      repositoryFindOne.mockResolvedValue(taskRow({ status: 'dismissed' }));
+      updateBuilder.execute.mockResolvedValue({ affected: 0 });
+
+      await expect(service.resolveForStaff('sup_1', null, 'stf_1')).rejects.toBeInstanceOf(ConflictException);
     });
   });
 });

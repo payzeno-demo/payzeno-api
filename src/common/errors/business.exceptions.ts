@@ -98,3 +98,20 @@ export class RateLimitedException extends ApiException {
     super('Too many requests', { retry_after: retryAfterSec, limit });
   }
 }
+
+/**
+ * 403. RFC platform-v2 §3: live payments need an `active` merchant. Thrown when a live-mode
+ * PaymentIntent or checkout session is created before onboarding is approved. Test mode is
+ * never refused — a merchant integrates from the day they sign up.
+ */
+export class MerchantNotActivatedException extends ApiException {
+  readonly code: ErrorCode = 'merchant_not_activated';
+  readonly httpStatus = 403;
+
+  constructor(readonly merchantId: string, status: string) {
+    super(`Live payments are not enabled until the merchant is activated (status '${status}')`, {
+      merchant_id: merchantId,
+      status,
+    });
+  }
+}

@@ -3,7 +3,21 @@
   "compilerOptions": {
     "sourceMap": false,
     "declaration": false,
-    "types": ["node"]
+    "types": [
+      "node"
+    ],
+    "rootDir": "./src",
+    "paths": {
+      "@payzeno/contracts": [
+        "../payzeno-contracts/dist/index.d.ts"
+      ],
+      "@payzeno/contracts/*": [
+        "../payzeno-contracts/dist/*.d.ts"
+      ],
+      "src/*": [
+        "src/*"
+      ]
+    }
   },
   "exclude": [
     "node_modules",

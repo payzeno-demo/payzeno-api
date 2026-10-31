@@ -6,7 +6,7 @@
  * redaction pass runs on the way in (RedactionInterceptor) and this logger only ever sees a
  * flat LogContext, which it scrubs once more against the denylist before writing.
  */
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import pino, { type Logger as PinoLogger } from 'pino';
 
 import { API_CONFIG, type ApiConfig } from '../../config/api-config.type';
@@ -15,12 +15,21 @@ import { redactLogContext } from '../redaction/redaction.denylist';
 import { describeError, type LogContext, type PayzenoLogger } from './logger';
 import { currentCorrelationId, currentRequestId } from './request-context';
 
+/** Optional DI token: a pre-built root pino logger to use instead of the stdout one. */
+export const PINO_ROOT = Symbol('PINO_ROOT');
+
 @Injectable()
 export class PinoPayzenoLogger implements PayzenoLogger {
   private readonly pino: PinoLogger;
   private readonly redactPan: boolean;
 
-  constructor(@Inject(API_CONFIG) config: ApiConfig, root?: PinoLogger) {
+  // `root` is for child loggers and specs, and for a process that must log somewhere other than
+  // stdout — the demo seed binds PINO_ROOT to a stderr logger so stdout carries only its JSON.
+  // The API binds nothing and gets the stdout logger below.
+  constructor(
+    @Inject(API_CONFIG) config: ApiConfig,
+    @Optional() @Inject(PINO_ROOT) root?: PinoLogger,
+  ) {
     this.redactPan = config.flags.redactPanInLogs;
     this.pino =
       root ??

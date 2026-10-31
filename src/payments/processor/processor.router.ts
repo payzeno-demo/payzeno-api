@@ -43,9 +43,8 @@ export class ProcessorRouter {
     const candidates = this.adapters.filter((adapter) => adapterSupports(adapter, currency));
     if (candidates.length === 0) {
       throw new ProcessorUnavailableException(
-        `no acquirer is configured for ${currency}`,
         this.defaultAcquirer,
-        { currency },
+        `no acquirer is configured for ${currency}`,
       );
     }
 
@@ -70,7 +69,7 @@ export class ProcessorRouter {
     }
     const adapter = this.adapters.find((candidate) => candidate.acquirer === acquirer);
     if (!adapter) {
-      throw new ProcessorUnavailableException(`acquirer ${acquirer} is not configured`, acquirer);
+      throw new ProcessorUnavailableException(acquirer, 'not configured');
     }
     return adapter;
   }

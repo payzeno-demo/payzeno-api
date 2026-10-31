@@ -66,8 +66,11 @@ export function attachPrincipal(principal: AuthPrincipal): void {
       ctx.livemode = principal.mode === 'live';
       break;
     case 'dashboard_session':
+      ctx.merchantId = principal.merchant_id;
+      break;
     case 'client_secret':
       ctx.merchantId = principal.merchant_id;
+      ctx.livemode = principal.livemode;
       break;
     case 'staff_session':
       ctx.merchantId = principal.acting_merchant_id;

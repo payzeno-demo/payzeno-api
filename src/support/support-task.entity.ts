@@ -15,26 +15,28 @@
  */
 import { Column, Entity, Index, JoinColumn, ManyToOne } from 'typeorm';
 
-import type { ChargeId, MerchantId } from '@payzeno/contracts';
+import {
+  SUPPORT_TASK_KINDS,
+  SUPPORT_TASK_SEVERITIES,
+  SUPPORT_TASK_STATUSES,
+  type ChargeId,
+  type MerchantId,
+  type SupportTask,
+  type SupportTaskKind,
+  type SupportTaskSeverity,
+  type SupportTaskStatus,
+} from '@payzeno/contracts';
 
 import { MerchantScopedEntity } from '../common/base/merchant-scoped.entity';
 import { MerchantEntity } from '../merchants/merchant.entity';
 
-export const SUPPORT_TASK_KINDS = [
-  'duplicate_settlement',
-  'ledger_imbalance',
-  'settlement_variance',
-  'payout_returned',
-  'dunning_escalation',
-  'manual_review',
-] as const;
-export type SupportTaskKind = (typeof SUPPORT_TASK_KINDS)[number];
-
-export const SUPPORT_TASK_SEVERITIES = ['low', 'normal', 'high', 'critical'] as const;
-export type SupportTaskSeverity = (typeof SUPPORT_TASK_SEVERITIES)[number];
-
-export const SUPPORT_TASK_STATUSES = ['open', 'acknowledged', 'resolved', 'dismissed'] as const;
-export type SupportTaskStatus = (typeof SUPPORT_TASK_STATUSES)[number];
+/**
+ * The vocabularies moved to @payzeno/contracts when the admin back office became the first
+ * reader outside this service (RFC platform-v2 §1). Re-exported so existing importers — the
+ * internal route's DTO, the ledger consumer — keep their import path.
+ */
+export { SUPPORT_TASK_KINDS, SUPPORT_TASK_SEVERITIES, SUPPORT_TASK_STATUSES };
+export type { SupportTaskKind, SupportTaskSeverity, SupportTaskStatus };
 
 @Entity({ name: 'support_task' })
 @Index('ix_support_task_merchant_created', ['merchantId', 'createdAt'])
@@ -84,7 +86,27 @@ export class SupportTaskEntity extends MerchantScopedEntity {
     return this.status === 'open' || this.status === 'acknowledged';
   }
 
-  /** What the staff console lists. Deliberately not a contracts type — this is internal. */
+  /** `GET /v1/admin/support-tasks` — the full row, body and resolution included. */
+  toSupportTask(): SupportTask {
+    return {
+      id: this.id,
+      object: 'support_task',
+      merchant_id: this.merchantId,
+      livemode: this.livemode,
+      kind: this.kind,
+      severity: this.severity,
+      status: this.status,
+      charge_id: this.chargeId,
+      title: this.title,
+      body: this.body,
+      assigned_to: this.assignedTo,
+      resolved_at: this.resolvedAt ? this.resolvedAt.toISOString() : null,
+      resolution_note: this.resolutionNote,
+      created_at: this.toIsoCreatedAt(),
+    };
+  }
+
+  /** The compact form, for log lines and the incident channel. */
   toSummary(): {
     id: string;
     merchant_id: MerchantId;

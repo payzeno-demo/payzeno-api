@@ -142,7 +142,7 @@ describe('LedgerHttpClient', () => {
         expect(err).toBeInstanceOf(LedgerRejectedException);
         const rejected = err as LedgerRejectedException;
         expect(rejected.code).toBe('settlement_locked');
-        expect(rejected.status).toBe(409);
+        expect(rejected.httpStatus).toBe(409);
       }
     });
 
@@ -154,7 +154,7 @@ describe('LedgerHttpClient', () => {
 
       await expect(
         client.retryReconciliationItem('ri_1', { reason: 'x' } as never),
-      ).rejects.toMatchObject({ status: 422, code: 'batch_not_reconcilable' });
+      ).rejects.toMatchObject({ httpStatus: 422, code: 'batch_not_reconcilable' });
     });
 
     it.each([

@@ -26,14 +26,15 @@ import type {
   WebhookEndpoint,
 } from '@payzeno/contracts';
 
-import { ChargeNotFoundException, MerchantNotFoundException, ResourceNotFoundException } from '../common/errors/not-found.exceptions';
+import { MerchantNotFoundException } from '../common/errors/not-found.exceptions';
 import { PAYZENO_LOGGER, type PayzenoLogger } from '../common/logging/logger';
 import { TransactionManager } from '../common/persistence/transaction.manager';
 import { CLOCK, type Clock } from '../common/time/clock';
 import { AuditService } from '../audit/audit.service';
 import { BankAccountsService } from '../merchants/bank-accounts/bank-accounts.service';
-import { MerchantsService } from '../merchants/merchants.service';
+import { MerchantsService, toMerchantResponse } from '../merchants/merchants.service';
 import { ChargesService } from '../payments/charges.service';
+import type { SupportTaskKind, SupportTaskSeverity } from '../support/support-task.entity';
 import { SupportTasksService } from '../support/support-tasks.service';
 import { WebhookEndpointsService } from '../webhooks/webhook-endpoints.service';
 
@@ -49,10 +50,10 @@ export interface MarkChargeSettledInput {
 
 /** Body of `POST /internal/v1/support-tasks`. */
 export interface CreateSupportTaskInput {
-  kind: string;
+  kind: SupportTaskKind;
   merchant_id: MerchantId;
   charge_id?: string | null;
-  severity: 'low' | 'medium' | 'high' | 'critical';
+  severity: SupportTaskSeverity;
   title: string;
   body: string;
   source_event_id: string;
@@ -81,16 +82,13 @@ export class InternalService {
     }
 
     this.logger.debug('internal.merchant_read', { merchant_id: merchantId, caller });
-    return merchant;
+    return toMerchantResponse(merchant);
   }
 
   /** `GET /internal/v1/charges/:chargeId`. The ledger reconciling an orphaned item. */
   async getCharge(chargeId: string, caller: InternalCallerName): Promise<Charge> {
-    const charge = await this.charges.findInternal(chargeId);
-
-    if (!charge) {
-      throw new ChargeNotFoundException(chargeId);
-    }
+    // Throws ChargeNotFoundException for an orphan we have no row for.
+    const charge = await this.charges.getInternal(chargeId);
 
     this.logger.debug('internal.charge_read', { charge_id: chargeId, caller });
     return charge;
@@ -143,11 +141,7 @@ export class InternalService {
         livemode: true,
       });
 
-      const charge = await this.charges.findInternal(chargeId);
-      if (!charge) {
-        throw new ChargeNotFoundException(chargeId);
-      }
-      return charge;
+      return this.charges.getInternal(chargeId);
     });
   }
 
@@ -186,7 +180,7 @@ export class InternalService {
     caller: InternalCallerName,
   ): Promise<{ id: string }> {
     return this.transactions.runInTransaction(async (tx) => {
-      const task = await this.supportTasks.open(tx, {
+      const taskId = await this.supportTasks.open(tx, {
         kind: input.kind,
         merchantId: input.merchant_id,
         chargeId: input.charge_id ?? null,
@@ -202,7 +196,7 @@ export class InternalService {
         actorId: caller,
         action: 'support_task.open',
         resourceType: 'support_task',
-        resourceId: task.id,
+        resourceId: taskId,
         before: null,
         after: {
           kind: input.kind,
@@ -214,14 +208,14 @@ export class InternalService {
       });
 
       this.logger.info('internal.support_task_created', {
-        task_id: task.id,
+        task_id: taskId,
         kind: input.kind,
         severity: input.severity,
         merchant_id: input.merchant_id,
         caller,
       });
 
-      return { id: task.id };
+      return { id: taskId };
     });
   }
 
@@ -235,17 +229,14 @@ export class InternalService {
     bankAccountId: string,
     caller: InternalCallerName,
   ): Promise<BankAccount> {
-    const account = await this.bankAccounts.findInternal(bankAccountId);
-
-    if (!account) {
-      throw new ResourceNotFoundException('bank_account', bankAccountId);
-    }
+    // Throws ResourceNotFoundException('bank_account') when there is no such row.
+    const account = await this.bankAccounts.getForInternal(bankAccountId);
 
     this.logger.debug('internal.bank_account_read', {
       bank_account_id: bankAccountId,
       caller,
     });
-    return account;
+    return account.toBankAccount();
   }
 
   /** Stamped on responses so a caller can tell a cold read from a cached one. */

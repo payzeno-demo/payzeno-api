@@ -11,7 +11,6 @@ import type {
 import { ResourceNotFoundException } from '../common/errors/not-found.exceptions';
 import { InvalidStateTransitionException } from '../common/errors/state.exceptions';
 import { IdFactory } from '../common/ids/id.factory';
-import { ApiIdPrefix } from '../common/ids/id.prefix';
 import { PAYZENO_LOGGER, type PayzenoLogger } from '../common/logging/logger';
 import { CLOCK, type Clock } from '../common/time/clock';
 import type { WebhookEndpointEntity } from './webhook-endpoint.entity';
@@ -52,7 +51,7 @@ export class WebhookEventsService {
 
     const rows = input.endpoints.map((endpoint) => {
       const row = new WebhookEventEntity();
-      row.id = this.ids.generate(ApiIdPrefix.WEBHOOK_EVENT);
+      row.id = this.ids.webhookEventId();
       row.merchantId = input.merchantId;
       row.endpointId = endpoint.id;
       row.type = input.type;

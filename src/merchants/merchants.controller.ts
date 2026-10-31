@@ -28,7 +28,7 @@ import { RequiredScopes } from '../common/decorators/required-scopes.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { StaffOnly } from '../common/decorators/staff-only.decorator';
 import { PermissionDeniedException } from '../common/errors/auth.exceptions';
-import { ListQueryDto } from '../common/pagination/list-query.dto';
+import { StatusListQueryDto } from '../common/pagination/filtered-list-query.dto';
 import { ApiKeyGuard } from '../auth/guards/api-key.guard';
 import { MerchantScopeGuard } from '../auth/guards/merchant-scope.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -52,7 +52,7 @@ export class MerchantsController extends BaseController {
   @Get()
   @StaffOnly('risk', 'support')
   async list(
-    @Query() query: ListQueryDto,
+    @Query() query: StatusListQueryDto,
     @Query('status') status?: MerchantStatus,
   ): Promise<Paginated<Merchant>> {
     return this.merchants.listForStaff(query, status);

@@ -5,7 +5,7 @@ import {
   ExpiredCardException,
   InsufficientFundsException,
 } from 'src/common/errors/card.exceptions';
-import { NoopLogger, PayzenoLogger } from 'src/common/logging/logger';
+import { NoopLogger, PAYZENO_LOGGER } from 'src/common/logging/logger';
 import { TransactionManager } from 'src/common/persistence/transaction.manager';
 import { OutboxEventPublisher } from 'src/events/outbox-event.publisher';
 import { ChargeAuthorizationService } from 'src/payments/charge-authorization.service';
@@ -93,7 +93,7 @@ describe('ChargeAuthorizationService', () => {
             runInTransaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => unknown) => cb({})),
           },
         },
-        { provide: PayzenoLogger, useValue: new NoopLogger() },
+        { provide: PAYZENO_LOGGER, useValue: new NoopLogger() },
       ],
     }).compile();
 

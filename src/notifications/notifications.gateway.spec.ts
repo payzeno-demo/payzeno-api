@@ -1,5 +1,7 @@
 import type { IncomingMessage } from 'node:http';
 
+import { AuthenticationRequiredException } from '../common/errors/auth.exceptions';
+
 import { NotificationsGateway } from './notifications.gateway';
 import type { Notification } from './notification.types';
 
@@ -59,12 +61,17 @@ describe('NotificationsGateway', () => {
     };
   }
 
-  let sessions: { read: jest.Mock };
+  let sessions: { resolveForUpgrade: jest.Mock };
   let gateway: NotificationsGateway;
 
   beforeEach(() => {
     sessions = {
-      read: jest.fn(async () => ({ merchantId: 'mch_1', livemode: true, userId: 'usr_1' })),
+      resolveForUpgrade: jest.fn(async () => ({
+        kind: 'dashboard_session',
+        merchant_id: 'mch_1',
+        user_id: 'usr_1',
+        role: 'admin',
+      })),
     };
 
     gateway = new NotificationsGateway(
@@ -112,7 +119,9 @@ describe('NotificationsGateway', () => {
   });
 
   it('refuses an upgrade whose session no longer resolves', async () => {
-    sessions.read.mockResolvedValueOnce(null);
+    sessions.resolveForUpgrade.mockRejectedValueOnce(
+      new AuthenticationRequiredException('Session expired or unknown'),
+    );
     const socket = makeSocket();
 
     await gateway.handleConnection(
@@ -136,16 +145,13 @@ describe('NotificationsGateway', () => {
       expect(JSON.parse(second.sent[1]).notification.title).toBe('Payout failed');
     });
 
-    it('never crosses livemode — a live notification skips a test-mode socket', async () => {
-      sessions.read.mockResolvedValueOnce({
-        merchantId: 'mch_1',
-        livemode: false,
-        userId: 'usr_2',
-      });
+    // Console sessions are always live (`livemodeOf`), so the crossing is exercised from the
+    // other side: a test-mode notification must not reach a live socket.
+    it('never crosses livemode — a test-mode notification skips a live socket', async () => {
       const socket = makeSocket();
       await gateway.handleConnection(socket as never, upgrade('pz_session=c; pz_csrf=t', 't'));
 
-      expect(gateway.push(notification({ livemode: true }))).toBe(0);
+      expect(gateway.push(notification({ livemode: false }))).toBe(0);
     });
 
     it('returns 0 when the merchant has nothing open — not an error', () => {

@@ -30,7 +30,7 @@ import { ApiVersion } from '../common/decorators/api-version.decorator';
 import { CurrentPrincipal } from '../common/decorators/current-principal.decorator';
 import { MerchantScoped } from '../common/decorators/merchant-scoped.decorator';
 import { RequiredScopes } from '../common/decorators/required-scopes.decorator';
-import { ListQueryDto } from '../common/pagination/list-query.dto';
+import { ChargeListQueryDto } from '../common/pagination/filtered-list-query.dto';
 import { ChargesService } from './charges.service';
 
 @Controller('v1/charges')
@@ -45,7 +45,7 @@ export class ChargesController extends BaseController {
   @RequiredScopes('charges:read')
   list(
     @CurrentPrincipal() principal: AuthPrincipal,
-    @Query() query: ListQueryDto,
+    @Query() query: ChargeListQueryDto,
     @Query('status') status?: ChargeStatus,
     @Query('payment_intent_id') paymentIntentId?: PaymentIntentId,
     @Query('settlement_batch_id') settlementBatchId?: SettlementBatchId,

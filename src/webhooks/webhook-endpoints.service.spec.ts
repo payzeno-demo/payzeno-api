@@ -50,8 +50,9 @@ describe('WebhookEndpointsService', () => {
     service = new WebhookEndpointsService(
       repo as never,
       secrets as never,
-      { generate: () => 'whe_01HTEST' } as never,
+      { opaque: (prefix: string) => `${prefix}01HTEST` } as never,
       { now: () => now } as never,
+      { runtime: { nodeEnv: 'production' } } as never,
       logger as never,
     );
   });
@@ -76,6 +77,25 @@ describe('WebhookEndpointsService', () => {
     await expect(
       service.create('mer_1', true, { ...(dto as object), url: 'http://insecure.example' } as never),
     ).rejects.toThrow(/https/);
+  });
+
+  it('accepts an http endpoint outside production — the local demo shops have no certificate', async () => {
+    // Regression: assertHttps refused http://sim-shops:3000/... in every environment.
+    const dev = new WebhookEndpointsService(
+      repo as never,
+      secrets as never,
+      { opaque: (prefix: string) => `${prefix}01HTEST` } as never,
+      { now: () => now } as never,
+      { runtime: { nodeEnv: 'development' } } as never,
+      logger as never,
+    );
+
+    const created = await dev.create('mer_1', true, {
+      ...(dto as object),
+      url: 'http://sim-shops:3000/webhooks/northwind',
+    } as never);
+
+    expect(created.url).toBe('http://sim-shops:3000/webhooks/northwind');
   });
 
   it('rejects an event type outside PUBLIC_EVENT_TYPES', async () => {

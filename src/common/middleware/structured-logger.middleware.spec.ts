@@ -181,7 +181,7 @@ describe('StructuredLoggerMiddleware', () => {
   it('never logs a request body', () => {
     const response = res(200);
     middleware.use(
-      { method: 'POST', url: '/v1/bank-accounts', body: { account_number: '00012345' } },
+      { method: 'POST', url: '/v1/bank-accounts', body: { account_number: '00012345' } } as never,
       response,
       () => undefined,
     );

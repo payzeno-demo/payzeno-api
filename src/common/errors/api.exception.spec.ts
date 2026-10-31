@@ -77,13 +77,13 @@ const cases: Array<{ name: string; error: ApiException; status: number; code: st
   { name: 'InvalidStateTransitionException', error: new InvalidStateTransitionException('charge', 'settled', 'capture'), status: 409, code: 'invalid_state' },
   { name: 'InvalidMerchantTransitionException', error: new InvalidMerchantTransitionException('closed', 'approve'), status: 409, code: 'invalid_state' },
   { name: 'ChargeNotCapturableException', error: new ChargeNotCapturableException(TEST_CHARGE_ID, 'expired'), status: 409, code: 'invalid_state' },
-  { name: 'RefundAmountExceededException', error: new RefundAmountExceededException(TEST_CHARGE_ID, 4_500, 9_000), status: 422, code: 'refund_amount_exceeded' },
+  { name: 'RefundAmountExceededException', error: new RefundAmountExceededException(TEST_CHARGE_ID, 4_500, 9_000, 'USD'), status: 422, code: 'refund_amount_exceeded' },
   { name: 'RefundWindowClosedException', error: new RefundWindowClosedException(TEST_CHARGE_ID, 180), status: 422, code: 'refund_window_closed' },
   { name: 'DuplicateDisputeException', error: new DuplicateDisputeException(TEST_CHARGE_ID), status: 409, code: 'duplicate_dispute' },
   { name: 'DisputeWindowClosedException', error: new DisputeWindowClosedException('dp_1', null), status: 422, code: 'dispute_window_closed' },
-  { name: 'MerchantRestrictedException', error: new MerchantRestrictedException(TEST_MERCHANT_ID, 'restricted'), status: 403, code: 'merchant_restricted' },
+  { name: 'MerchantRestrictedException', error: new MerchantRestrictedException(TEST_MERCHANT_ID, 'restricted', 'receive payouts'), status: 403, code: 'merchant_restricted' },
   { name: 'RateLimitedException', error: new RateLimitedException(60, 300), status: 429, code: 'rate_limited' },
-  { name: 'CardDeclinedException', error: new CardDeclinedException('declined', 'do_not_honor'), status: 402, code: 'card_declined' },
+  { name: 'CardDeclinedException', error: new CardDeclinedException('do_not_honor', 'declined'), status: 402, code: 'card_declined' },
   { name: 'InsufficientFundsException', error: new InsufficientFundsException(), status: 402, code: 'insufficient_funds' },
   { name: 'ExpiredCardException', error: new ExpiredCardException(), status: 402, code: 'expired_card' },
   { name: 'ProcessorUnavailableException', error: new ProcessorUnavailableException('worldflow'), status: 502, code: 'processor_unavailable' },
@@ -94,7 +94,7 @@ const cases: Array<{ name: string; error: ApiException; status: number; code: st
 describe('ApiException hierarchy', () => {
   describe.each(cases)('$name', ({ error, status, code }) => {
     it('carries the documented status', () => {
-      expect(error.status).toBe(status);
+      expect(error.httpStatus).toBe(status);
     });
 
     it('carries the documented error code', () => {
@@ -172,13 +172,13 @@ describe('ApiException hierarchy', () => {
       const err = new LedgerRejectedException('settlement_locked', 409, 'item already settled');
 
       expect(err.code).toBe('settlement_locked');
-      expect(err.status).toBe(409);
+      expect(err.httpStatus).toBe(409);
     });
 
     it('does not collapse a 422 into a 502', () => {
       const err = new LedgerRejectedException('batch_not_reconcilable', 422, 'still open');
 
-      expect(err.status).toBe(422);
+      expect(err.httpStatus).toBe(422);
     });
 
     it('carries the ledger’s details into the response envelope', () => {
@@ -194,7 +194,7 @@ describe('ApiException hierarchy', () => {
 
   describe('details', () => {
     it('CardDeclinedException carries the decline code', () => {
-      const err = new CardDeclinedException('declined', 'lost_card');
+      const err = new CardDeclinedException('lost_card', 'declined');
 
       expect(err.withRequestId('req_1').toResponse().error.details).toMatchObject({
         decline_code: 'lost_card',

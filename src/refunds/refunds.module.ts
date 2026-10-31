@@ -7,7 +7,7 @@
  * MerchantOnboardingService — which is how a module graph turns into a ball of string.
  */
 
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { CommonModule } from '../common/common.module';
@@ -24,7 +24,9 @@ import { RefundStateMachine } from './state/refund.state-machine';
 @Module({
   imports: [
     CommonModule,
-    PaymentsModule,
+    // The other half of PaymentsModule's forwardRef. Both sides of a module cycle need one:
+    // whichever file Node loads second sees the first's export as still undefined.
+    forwardRef(() => PaymentsModule),
     LedgerModule,
     EventsModule,
     TypeOrmModule.forFeature([RefundEntity]),

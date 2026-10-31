@@ -48,6 +48,7 @@ export const JOB_BATCH_LIMITS = {
   riskEvaluation: 200,
   unsettledSweep: 500,
   chargeExpiry: 500,
+  checkoutExpiry: 500,
 } as const;
 
 export interface JobRunRecord {

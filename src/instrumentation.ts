@@ -18,6 +18,10 @@
  *
  * dhotfix's file. docs/runbooks/payzeno-api.md § "traces are missing".
  */
+// Before anything else: this file reads the config, whose class-transformer decorators need
+// the Reflect metadata API, and @nestjs/core — which would normally load it — comes later.
+import 'reflect-metadata';
+
 import { diag, DiagConsoleLogger, DiagLogLevel } from '@opentelemetry/api';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';

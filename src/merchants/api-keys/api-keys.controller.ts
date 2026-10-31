@@ -24,6 +24,7 @@ import { CurrentPrincipal } from '../../common/decorators/current-principal.deco
 import { Idempotent } from '../../common/decorators/idempotent.decorator';
 import { MerchantScoped } from '../../common/decorators/merchant-scoped.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { ReturnsSecretFields } from '../../common/decorators/secret-fields.decorator';
 import { ListQueryDto } from '../../common/pagination/list-query.dto';
 import { MerchantScopeGuard } from '../../auth/guards/merchant-scope.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
@@ -63,6 +64,7 @@ export class ApiKeysController extends BaseController {
   @Roles('owner', 'admin')
   @Idempotent()
   @AuditLog('api_key.create', { resourceType: 'api_key' })
+  @ReturnsSecretFields('secret')
   async create(
     @CurrentPrincipal() principal: AuthPrincipal,
     @Body() body: CreateApiKeyDto,

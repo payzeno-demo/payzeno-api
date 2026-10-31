@@ -18,6 +18,10 @@
  *                           would be a module cycle. The table lives here, so the hasher does.
  *   BankAccountsService     InternalController#getBankAccount, the ledger's stale-projection
  *                           fallback
+ *   MerchantUserTokensService  AuthService (verify / accept / reset) and signup — the emailed
+ *                           links of RFC platform-v2 §3-§4
+ *   MerchantMailerService   every "tell the merchant's owners and admins" email: onboarding
+ *                           decisions, `dispute_opened`, payouts, risk reviews
  */
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -33,6 +37,7 @@ import { ApiKeyRepository, ApiKeysService } from './api-keys/api-keys.service';
 import { BankAccountEntity } from './bank-accounts/bank-account.entity';
 import { BankAccountsController } from './bank-accounts/bank-accounts.controller';
 import { BankAccountRepository, BankAccountsService } from './bank-accounts/bank-accounts.service';
+import { MerchantMailerService } from './merchant-mailer.service';
 import { MerchantOnboardingService } from './merchant-onboarding.service';
 import { MerchantStatusStateMachine } from './merchant-status.state-machine';
 import { MerchantEntity } from './merchant.entity';
@@ -40,9 +45,11 @@ import { MerchantRepository } from './merchant.repository';
 import { MerchantsController } from './merchants.controller';
 import { MerchantsService } from './merchants.service';
 import { DisputeRateCalculator } from './risk/dispute-rate.calculator';
-import { RiskEvaluationService } from './risk/risk-evaluation.service';
+import { MerchantUserTokenEntity } from './users/merchant-user-token.entity';
+import { MerchantUserTokenRepository } from './users/merchant-user-token.repository';
 import { MerchantUserEntity } from './users/merchant-user.entity';
 import { MerchantUserRepository } from './users/merchant-user.repository';
+import { MerchantUserTokensService } from './users/user-tokens.service';
 import { MerchantUsersController } from './users/users.controller';
 import { MerchantUsersService } from './users/users.service';
 
@@ -51,7 +58,13 @@ import { MerchantUsersService } from './users/users.service';
     CommonModule,
     LedgerModule,
     EventsModule,
-    TypeOrmModule.forFeature([MerchantEntity, MerchantUserEntity, ApiKeyEntity, BankAccountEntity]),
+    TypeOrmModule.forFeature([
+      MerchantEntity,
+      MerchantUserEntity,
+      MerchantUserTokenEntity,
+      ApiKeyEntity,
+      BankAccountEntity,
+    ]),
   ],
   controllers: [
     MerchantsController,
@@ -68,20 +81,26 @@ import { MerchantUsersService } from './users/users.service';
     MerchantOnboardingService,
     MerchantsService,
     MerchantUsersService,
+    MerchantUserTokenRepository,
+    MerchantUserTokensService,
+    MerchantMailerService,
     ApiKeysService,
     BankAccountsService,
     ApiKeyHasher,
     DisputeRateCalculator,
     /**
-     * `RiskEvaluationService` reaches into ChargeRepository and DisputeRepository, which live
-     * in PaymentsModule and DisputesModule — both of which import this one. It is provided
-     * here and wired by `JobsModule`, which imports all three, so the graph stays a DAG.
+     * `RiskEvaluationService` is NOT provided here. It reaches into ChargeRepository and
+     * DisputeRepository, which live in PaymentsModule and DisputesModule — both of which import
+     * this one — so it is provided by `JobsModule`, which imports all three, and the graph
+     * stays a DAG. Provided here, it cannot see ChargeRepository and the app does not boot.
      */
-    RiskEvaluationService,
   ],
   exports: [
     MerchantsService,
+    MerchantOnboardingService,
     MerchantUsersService,
+    MerchantUserTokensService,
+    MerchantMailerService,
     ApiKeysService,
     BankAccountsService,
     MerchantRepository,
@@ -89,7 +108,6 @@ import { MerchantUsersService } from './users/users.service';
     ApiKeyRepository,
     BankAccountRepository,
     MerchantStatusStateMachine,
-    RiskEvaluationService,
     DisputeRateCalculator,
     ApiKeyHasher,
     TypeOrmModule,

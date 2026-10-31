@@ -12,6 +12,7 @@ import type {
   AuthConfig,
   AwsConfig,
   BillingLegacyConfig,
+  CheckoutConfig,
   DatabaseConfig,
   FlagsConfig,
   IdempotencyBackend,
@@ -84,6 +85,10 @@ function vault(env: ConfigSchema): VaultConfig {
     publicUrl: env.VAULT_PUBLIC_URL,
     apiKey: env.VAULT_API_KEY,
   };
+}
+
+function checkout(env: ConfigSchema): CheckoutConfig {
+  return { publicUrl: env.CHECKOUT_PUBLIC_URL.replace(/\/+$/, '') };
 }
 
 function acquirers(env: ConfigSchema): AcquirerConfig {
@@ -165,6 +170,27 @@ export function loadConfiguration(source: NodeJS.ProcessEnv = process.env): ApiC
     ledger: ledger(env),
     billingLegacy: billingLegacy(env),
     vault: vault(env),
+    checkout: checkout(env),
+    // --- platform-v2 identity config ---
+    email: {
+      smtpHost: env.SMTP_HOST,
+      smtpPort: env.SMTP_PORT,
+      smtpUser: env.SMTP_USER || null,
+      smtpPassword: env.SMTP_PASSWORD || null,
+      from: env.EMAIL_FROM,
+    },
+    publicUrls: {
+      console: env.CONSOLE_PUBLIC_URL.replace(/\/+$/, ''),
+      admin: env.ADMIN_PUBLIC_URL ? env.ADMIN_PUBLIC_URL.replace(/\/+$/, '') : null,
+    },
+    kyc: { documentsBucket: env.KYC_DOCUMENTS_BUCKET },
+    // --- end identity config ---
+    // --- platform-v2 money config ---
+    money: {
+      fxProviderUrl: env.FX_PROVIDER_URL ? env.FX_PROVIDER_URL.replace(/\/+$/, '') : null,
+      fxCheckoutMarkupBps: env.FX_CHECKOUT_MARKUP_BPS ?? 200,
+    },
+    // --- end money config ---
     acquirers: acquirers(env),
     auth: auth(env),
     webhooks: webhooks(env),

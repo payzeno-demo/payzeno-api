@@ -32,6 +32,7 @@ import { EventsModule } from '../events/events.module';
 import { LedgerModule } from '../ledger/ledger.module';
 import { MerchantsModule } from '../merchants/merchants.module';
 import { RefundsModule } from '../refunds/refunds.module';
+import { RiskModule } from '../risk/risk.module';
 import { ChargeAuthorizationService } from './charge-authorization.service';
 import { ChargeCaptureService } from './charge-capture.service';
 import { ChargeExpiryPolicy } from './charge-expiry.policy';
@@ -42,12 +43,14 @@ import { ChargesService } from './charges.service';
 import { CancelPaymentFlow } from './flows/cancel-payment.flow';
 import { CapturePaymentFlow } from './flows/capture-payment.flow';
 import { ConfirmPaymentFlow } from './flows/confirm-payment.flow';
+import { RiskGate } from './flows/risk-gate';
 import { PaymentIntentEntity } from './payment-intent.entity';
 import { PaymentIntentRepository } from './payment-intent.repository';
 import { PaymentIntentsController } from './payment-intents.controller';
 import { PaymentIntentsService } from './payment-intents.service';
 import { ProcessorWebhookController } from './processor-webhook.controller';
 import { ProcessorWebhookService } from './processor-webhook.service';
+import { ReceiptEmailsService } from './receipt-emails.service';
 import { AcquirerHttpClient } from './processor/acquirer-http.client';
 import { NordpayAdapter } from './processor/nordpay.adapter';
 import { PROCESSOR_ADAPTERS, type ProcessorAdapter } from './processor/processor.adapter';
@@ -71,6 +74,8 @@ const NORDPAY_HTTP = Symbol('NORDPAY_HTTP');
     LedgerModule,
     EventsModule,
     AuditModule,
+    // RFC platform-v2 §8: authorisation asks the rules engine; the confirm flow opens reviews.
+    RiskModule,
     forwardRef(() => RefundsModule),
     forwardRef(() => DisputesModule),
     TypeOrmModule.forFeature([PaymentIntentEntity, ChargeEntity]),
@@ -87,6 +92,8 @@ const NORDPAY_HTTP = Symbol('NORDPAY_HTTP');
     ConfirmPaymentFlow,
     CapturePaymentFlow,
     CancelPaymentFlow,
+    RiskGate,
+    ReceiptEmailsService,
     PaymentIntentStateMachine,
     ChargeStateMachine,
     ProcessorWebhookService,
@@ -218,6 +225,11 @@ const NORDPAY_HTTP = Symbol('NORDPAY_HTTP');
     ChargeStateMachine,
     ProcessorRouter,
     VaultClient,
+    // RFC platform-v2: ReviewsService decides held payments through the same flows a merchant
+    // capture or cancel uses; RefundsService queues refund receipts.
+    CapturePaymentFlow,
+    CancelPaymentFlow,
+    ReceiptEmailsService,
   ],
 })
 export class PaymentsModule {}

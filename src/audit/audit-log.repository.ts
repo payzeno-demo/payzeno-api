@@ -7,7 +7,7 @@ import { DataSource, type EntityManager } from 'typeorm';
 
 import type { MerchantId } from '@payzeno/contracts';
 
-import { PayzenoRepository } from '../common/persistence/payzeno.repository';
+import { PayzenoRepository, toInsertRow, toInsertRows } from '../common/persistence/payzeno.repository';
 
 import { AuditLog } from './audit-log.entity';
 
@@ -35,7 +35,7 @@ export class AuditLogRepository extends PayzenoRepository<AuditLog> {
    */
   async append(row: AuditLog, manager?: EntityManager): Promise<AuditLog> {
     const repo = manager ? manager.getRepository(AuditLog) : this;
-    await repo.insert(row);
+    await repo.insert(toInsertRow(row));
     return row;
   }
 
@@ -45,7 +45,7 @@ export class AuditLogRepository extends PayzenoRepository<AuditLog> {
       return 0;
     }
     const repo = manager ? manager.getRepository(AuditLog) : this;
-    await repo.insert([...rows]);
+    await repo.insert(toInsertRows(rows));
     return rows.length;
   }
 

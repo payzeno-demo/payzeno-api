@@ -3,7 +3,7 @@ import type { PayzenoEvent } from '@payzeno/contracts/events';
 import { isApiOwnedEvent, topicOf } from './publisher';
 import { SnsEventPublisher } from './sns-event.publisher';
 
-const send = jest.fn(async () => ({}));
+const send = jest.fn(async (_command: unknown) => ({}));
 jest.mock('@aws-sdk/client-sns', () => {
   const actual = jest.requireActual('@aws-sdk/client-sns');
   return {
@@ -47,7 +47,7 @@ describe('SnsEventPublisher', () => {
       config as never,
       { now: () => new Date('2026-04-02T08:00:00.000Z') } as never,
       { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn(), child: jest.fn() } as never,
-      { generate: () => 'evt_01HSNS' } as never,
+      { webhookEventId: () => 'evt_01HSNS' } as never,
     );
   });
 
